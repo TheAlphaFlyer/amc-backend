@@ -34,6 +34,8 @@ DEBUG = bool(os.environ.get('DEBUG'))
 
 ALLOWED_HOSTS = [*os.environ.get('ALLOWED_HOSTS', '').split(' '), 'localhost', '127.0.0.1']
 
+DISCORD_ERRORS_WEBHOOK = os.environ.get('DISCORD_ERRORS_WEBHOOK')
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -41,10 +43,26 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
         },
+        "discord": {
+            "class": "amc_backend.discord_error_handler.DiscordExceptionHandler",
+            "level": "ERROR",
+        },
     },
     "root": {
         "handlers": ["console"],
         "level": "WARNING",
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["discord"],
+            "level": "ERROR",
+            "propagate": True,
+        },
+        "django.security": {
+            "handlers": ["discord"],
+            "level": "ERROR",
+            "propagate": True,
+        },
     },
 }
 
