@@ -46,9 +46,6 @@ from amc.mod_server import (
   show_popup,
   teleport_player,
   get_player,
-  toggle_rp_session,
-  get_rp_mode,
-  set_character_name,
   set_world_vehicle_decal,
   spawn_assets,
   spawn_garage,
@@ -99,25 +96,6 @@ def enqueue_discord_message(channel_id: str, content: str, timestamp):
     # Process immediately since we're using run_coroutine_threadsafe
     _process_discord_queue()
 
-
-async def _handle_rp_mode_async(http_client_mod, character):
-    """Fire-and-forget RP mode synchronization."""
-    try:
-        is_rp_mode = await get_rp_mode(http_client_mod, character.guid)
-        if character.rp_mode and not is_rp_mode:
-            await toggle_rp_session(http_client_mod, character.guid)
-            is_rp_mode = True
-
-        new_name = character.name
-        if is_rp_mode and '[RP]' not in new_name:
-            new_name = f"{new_name}[RP]"
-        elif not is_rp_mode and '[RP]' in new_name:
-            new_name = character.name.replace('[RP]', '')
-
-        if new_name != character.name:
-            await set_character_name(http_client_mod, character.guid, new_name)
-    except Exception as e:
-        logger.exception(f"RP mode handling failed for {character.name}: {e}")
 
 
 def get_welcome_message(last_login, player_name):
@@ -299,14 +277,15 @@ async def process_log_event(event: LogEvent, http_client=None, http_client_mod=N
           is_current_event=bool(is_current_event)
       )
       
-      if await registry.execute(message, cmd_ctx):
-          pass
+      # Fire-and-forget: don't block event processing on command execution
+      asyncio.create_task(registry.execute(message, cmd_ctx))
 
       # Emit SSE event for all chat messages (allows bot to build conversation history)
+      # Fire-and-forget to avoid blocking event processing
       if is_current_event:
         from amc.api.bot_events import emit_bot_event
         is_bot_command = message.startswith("/bot ")
-        await emit_bot_event({
+        asyncio.create_task(emit_bot_event({
           "type": "chat_message",
           "timestamp": timestamp.isoformat(),
           "player_name": player_name,
@@ -315,7 +294,7 @@ async def process_log_event(event: LogEvent, http_client=None, http_client_mod=N
           "character_guid": str(character.guid) if character and character.guid else None,
           "message": message[5:] if is_bot_command else message,
           "is_bot_command": is_bot_command,
-        })
+        }))
 
       if discord_client and ctx.get('startup_time') and timestamp > ctx.get('startup_time'):
         forward_message = (
@@ -437,9 +416,6 @@ Not everyone likes to be roughed up!
       if character:
         await process_login_event(character.id, timestamp)
         asyncio.create_task(send_player_messages(http_client_mod, player))
-
-        if http_client_mod:
-          asyncio.create_task(_handle_rp_mode_async(http_client_mod, character))
 
       if discord_client and ctx.get('startup_time') and timestamp > ctx.get('startup_time'):
         forward_message = (
@@ -606,19 +582,13 @@ Not everyone likes to be roughed up!
           await spawn_assets(http_client_mod, [wt.generate_asset_data()])
 
       asyncio.create_task(
-        delay(spawn_world_vehicles(), 20)
+        delay(spawn_dealerships(), 15)
       )
       asyncio.create_task(
-        delay(spawn_dealerships(), 30)
+        delay(_spawn_assets(), 20)
       )
       asyncio.create_task(
-        delay(_spawn_assets(), 35)
-      )
-      asyncio.create_task(
-        delay(spawn_garages(), 45)
-      )
-      asyncio.create_task(
-        delay(spawn_player_vehicles(), 60)
+        delay(spawn_garages(), 25)
       )
 
     case UnknownLogEntry():

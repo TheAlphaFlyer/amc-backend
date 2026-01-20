@@ -119,6 +119,7 @@ async def monitor_jobs(ctx):
 
     job_templates = (
         DeliveryJobTemplate.objects.exclude_has_conflicting_active_job()
+        .filter(rp_mode=False)
         .exclude_recently_posted()
         .prefetch_related(
             Prefetch("cargos", queryset=Cargo.objects.select_related("type").all()),
@@ -207,7 +208,6 @@ async def monitor_jobs(ctx):
         if random.random() > chance:
             continue
 
-        rp_mode = template.rp_mode or random.random() < 0.15
         bonus_multiplier = round(
             template.bonus_multiplier * random.uniform(0.8, 1.2), 2
         )
@@ -219,8 +219,6 @@ async def monitor_jobs(ctx):
             * random.uniform(0.7, 1.3)
         )
         completion_bonus = int(treasury_health * completion_bonus)
-        if rp_mode and not template.rp_mode:
-            completion_bonus = completion_bonus * 1.5
 
         active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
         if active_term:
@@ -236,7 +234,7 @@ async def monitor_jobs(ctx):
             bonus_multiplier=bonus_multiplier,
             completion_bonus=completion_bonus,
             description=template.description,
-            rp_mode=rp_mode,
+            rp_mode=False,
             created_from=template,
             funding_term=active_term,
         )

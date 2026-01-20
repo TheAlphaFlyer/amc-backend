@@ -184,15 +184,7 @@ async def get_status(session):
     return data['data']
 
 async def get_rp_mode(session, player_id):
-  if not session:
-    return False
-  async with session.get(f'/rp_sessions/{player_id}') as resp:
-    if resp.status != 200:
-      return False
-    data = await resp.json()
-    if not data or not data.get('isRpMode'):
-      return False
-    return data['isRpMode']
+  return False
 
 async def get_decal(session, player_id):
   async with session.get(f'/player_vehicles/{player_id}/decal') as resp:

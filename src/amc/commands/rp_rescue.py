@@ -3,7 +3,6 @@ from amc.command_framework import registry, CommandContext
 from amc.models import RescueRequest
 from django.contrib.gis.geos import Point
 from amc.mod_server import (
-    get_rp_mode, set_character_name,
     get_players as get_players_mod, list_player_vehicles,
     send_system_message
 )
@@ -14,22 +13,6 @@ from django.conf import settings
 from django.utils.translation import gettext as _, gettext_lazy
 from amc.mod_server import get_player
 
-@registry.register(["/rp_mode", "/rp"], description=gettext_lazy("Toggle Roleplay Mode"), category="RP & Rescue") # type: ignore
-async def cmd_rp_mode(ctx: CommandContext, verification_code: str = ""):
-    if verification_code:
-        is_rp_mode = await get_rp_mode(ctx.http_client_mod, ctx.character.guid)
-        ctx.character.rp_mode = is_rp_mode
-        await ctx.character.asave(update_fields=['rp_mode'])
-        
-        # Name Update Logic
-        new_name = None
-        if is_rp_mode and '[RP]' not in ctx.character.name:
-            new_name = f"{ctx.character.name}[RP]"
-        elif not is_rp_mode and '[RP]' in ctx.character.name:
-            new_name = ctx.character.name.replace('[RP]', '')
-        if new_name:
-            await set_character_name(ctx.http_client_mod, ctx.character.guid, new_name)
-        
 
 
 @registry.register("/rescue", description=gettext_lazy("Calls for rescue service"), category="RP & Rescue", featured=True) # type: ignore
