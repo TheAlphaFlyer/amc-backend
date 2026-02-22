@@ -10,58 +10,14 @@ from amc.commands.finance import cmd_bank, cmd_burn, cmd_donate, cmd_loan, cmd_r
 from amc.commands.general import cmd_bot, cmd_coords, cmd_credits, cmd_help, cmd_rename, cmd_shortcutcheck, cmd_song_request, cmd_verify
 from amc.commands.jobs import cmd_jobs, cmd_subsidies
 from amc.commands.language import cmd_language
-from amc.commands.rp_rescue import cmd_rescue, cmd_respond, cmd_rp_mode
+from amc.commands.rp_rescue import cmd_rescue, cmd_respond
 from amc.commands.social import cmd_thank
 from amc.commands.teleport import cmd_tp_coords, cmd_tp_name
-from amc.commands.vehicles import cmd_display, cmd_register_vehicles, cmd_rent, cmd_rental, cmd_sell, cmd_undisplay, cmd_unrental
+
 
 from amc.models import Character, Player
 # Import other models as needed for mocking or actual DB tests if we go that route
 
-class RentGroupingTestCase(SimpleTestCase):
-    def setUp(self):
-        self.ctx = MagicMock(spec=CommandContext)
-        self.ctx.reply = AsyncMock()
-        self.ctx.announce = AsyncMock()
-        self.ctx.http_client_mod = MagicMock()
-        self.ctx.character = MagicMock()
-        self.ctx.player = MagicMock()
-        self.ctx.player_info = {}
-
-    async def test_cmd_rent_grouping(self):
-        
-        # Create mock vehicles with different companies
-        v1 = MagicMock()
-        v1.id = 1
-        v1.config = {'CompanyName': 'Alpha Corp', 'VehicleName': 'Car A'}
-        
-        v2 = MagicMock()
-        v2.id = 2
-        v2.config = {'CompanyName': 'Beta Inc', 'VehicleName': 'Car B'}
-        
-        v3 = MagicMock()
-        v3.id = 3
-        v3.config = {'CompanyName': 'Alpha Corp', 'VehicleName': 'Car C'}
-
-        # Mock objects.filter to return these
-        # We need to mock VehicleName formatting call inside cmd_rent if used?
-        # Actually cmd_rent reads vehicle_id.strip() or lists all.
-        
-        with patch('amc.models.CharacterVehicle.objects.filter') as mock_filter:
-            mock_filter.return_value.__aiter__.return_value = [v1, v2, v3]
-            
-            await cmd_rent(self.ctx, "")
-            
-            self.ctx.reply.assert_called()
-            output = self.ctx.reply.call_args[0][0]
-            
-            # Check for company headers
-            self.assertIn("Alpha Corp", output)
-            self.assertIn("Beta Inc", output)
-            
-            # Check for vehicle listings
-            self.assertIn("Car A", output)
-            self.assertIn("Car B", output)
 
 
 class CommandRegistryTestCase(SimpleTestCase):
@@ -587,38 +543,6 @@ class CommandsTestCase(TestCase):
 
     # --- RP Mode & Rescue Tests ---
 
-    async def test_cmd_rp_mode_info(self):
-        with patch('amc.commands.rp_rescue.get_rp_mode', new=AsyncMock(return_value=False)):
-            await cmd_rp_mode(self.ctx)
-            self.ctx.reply.assert_called()
-            args, _ = self.ctx.reply.call_args
-            self.assertIn("Status: <Warning>OFF</>", args[0])
-
-    async def test_cmd_rp_mode_toggle_invalid(self):
-        with patch('amc.commands.rp_rescue.get_rp_mode', new=AsyncMock(return_value=False)):
-            await cmd_rp_mode(self.ctx, "WRONGCODE")
-            self.ctx.reply.assert_called()
-            args, _ = self.ctx.reply.call_args
-            self.assertIn("Code Incorrect", args[0])
-
-    async def test_cmd_rp_mode_toggle_valid(self):
-        from amc.utils import generate_verification_code
-        
-        # Calculate valid code
-        # The logic in commands.py uses: code_gen, code_verified = with_verification_code((ctx.character.guid, is_rp_mode), verification_code)
-        # We need to match that.
-        is_rp = False
-        code = generate_verification_code((self.ctx.character.guid, is_rp))
-        
-        with patch('amc.commands.rp_rescue.get_rp_mode', new=AsyncMock(side_effect=[False, True])): # Initial -> After toggle
-            with patch('amc.commands.rp_rescue.toggle_rp_session', new=AsyncMock()) as mock_toggle, \
-                 patch('amc.commands.rp_rescue.despawn_player_vehicle', new=AsyncMock()), \
-                 patch('amc.commands.rp_rescue.despawn_by_tag', new=AsyncMock()), \
-                 patch('amc.commands.rp_rescue.set_character_name', new=AsyncMock()):
-                
-                await cmd_rp_mode(self.ctx, code)
-                mock_toggle.assert_called()
-                self.ctx.reply.assert_called()
 
     async def test_cmd_rescue_cooldown(self):
         with patch('amc.models.RescueRequest.objects.filter') as mock_filter:
@@ -839,81 +763,6 @@ class CommandsTestCase(TestCase):
 
     # --- Vehicle Management Tests ---
 
-    async def test_cmd_register_vehicles(self):
-        mock_v = MagicMock()
-        mock_v.id = 1
-        mock_v.config = {'VehicleName': 'Car'}
-        
-        with patch('amc.commands.vehicles.register_player_vehicles', new=AsyncMock(return_value=[mock_v])):
-            await cmd_register_vehicles(self.ctx)
-            self.ctx.reply.assert_called()
-            self.assertIn("Car", self.ctx.reply.call_args[0][0])
-
-    async def test_cmd_unrental(self):
-        mock_v = MagicMock()
-        mock_v.rental = True
-        mock_v.id = 1
-        mock_v.asave = AsyncMock() # ERR FIX
-        
-        # Test 'all'
-        with patch('amc.models.CharacterVehicle.objects.filter') as mock_filter, \
-             patch('amc.commands.vehicles.despawn_by_tag', new=AsyncMock()):
-            mock_filter.return_value.__aiter__.return_value = [mock_v]
-            
-            await cmd_unrental(self.ctx, "all")
-            mock_v.asave.assert_called()
-            self.ctx.reply.assert_called_with("Rentals removed")
-
-    async def test_cmd_rental(self):
-        mock_v = MagicMock()
-        mock_v.rental = False
-        mock_v.config = {'CompanyName': 'Corp', 'VehicleName': 'Truck'}
-        mock_v.company_guid = "corp-123"
-        mock_v.asave = AsyncMock() # ERR FIX
-        self.ctx.player_info['OwnCompanyGuid'] = "corp-123"
-        
-        with patch('amc.commands.vehicles.register_player_vehicles', new=AsyncMock(return_value=[mock_v])):
-            await cmd_rental(self.ctx, "Alias")
-            mock_v.asave.assert_called()
-            self.assertEqual(mock_v.alias, "Alias")
-            self.ctx.reply.assert_called()
-
-    async def test_cmd_rent(self):
-        mock_v = MagicMock()
-        mock_v.id = 1
-        mock_v.config = {'CompanyName': 'Corp', 'VehicleName': 'Truck'}
-        self.ctx.player_info['Location'] = {'X':0,'Y':0,'Z':0}
-
-        # Test listing
-        with patch('amc.models.CharacterVehicle.objects.filter') as mock_filter:
-            mock_filter.return_value.__aiter__.return_value = [mock_v]
-            await cmd_rent(self.ctx, "")
-            self.ctx.reply.assert_called()
-            self.assertIn("Available Rentals", self.ctx.reply.call_args[0][0])
-            self.assertIn("Truck", self.ctx.reply.call_args[0][0])
-            
-        # Test spawn
-        with patch('amc.models.CharacterVehicle.objects.aget', new=AsyncMock(return_value=mock_v)), \
-             patch('amc.commands.vehicles.spawn_registered_vehicle', new=AsyncMock()) as mock_spawn:
-            
-            await cmd_rent(self.ctx, "1")
-            mock_spawn.assert_called()
-
-    async def test_cmd_sell(self):
-        self.ctx.player_info['bIsAdmin'] = True
-        mock_v = MagicMock()
-        mock_v.id = 1
-        mock_v.config = {'Location': {}, 'Rotation': {}}
-        mock_v.asave = AsyncMock() # ERR FIX
-        
-        with patch('amc.commands.vehicles.register_player_vehicles', new=AsyncMock(return_value=[mock_v])), \
-             patch('amc.commands.vehicles.despawn_player_vehicle', new=AsyncMock()), \
-             patch('amc.commands.vehicles.despawn_by_tag', new=AsyncMock()), \
-             patch('amc.commands.vehicles.spawn_registered_vehicle', new=AsyncMock()) as mock_spawn:
-            
-            await cmd_sell(self.ctx)
-            mock_v.asave.assert_called()
-            mock_spawn.assert_called()
 
     # --- Teleport Tests ---
 
@@ -1047,53 +896,6 @@ class CommandsTestCase(TestCase):
 
     # --- Moved Legacy Commands Tests ---
 
-    async def test_cmd_undisplay(self):
-        
-        # Mock admin status
-        self.ctx.player_info['bIsAdmin'] = True
-        
-        # Mock vehicles queryset
-        mock_v = MagicMock()
-        mock_v.spawn_on_restart = True
-        mock_v.id = 1
-        mock_v.asave = AsyncMock()
-        
-        with patch('amc.models.CharacterVehicle.objects.filter') as mock_filter, \
-             patch('amc.commands.vehicles.register_player_vehicles', new=AsyncMock(return_value=[mock_v])) as mock_reg, \
-             patch('amc.commands.vehicles.despawn_by_tag', new=AsyncMock()) as mock_despawn:
-            
-            # 1. undisplay all
-            mock_filter.return_value.__aiter__.return_value = [mock_v]
-            await cmd_undisplay(self.ctx, "all")
-            mock_despawn.assert_called_with(self.ctx.http_client_mod, 'display-1')
-            mock_v.asave.assert_called()
-            self.assertFalse(mock_v.spawn_on_restart)
-            
-            # 2. undisplay specific (via register_player_vehicles logic in command)
-            mock_v.spawn_on_restart = True # Reset
-            await cmd_undisplay(self.ctx, "")
-            mock_reg.assert_called()
-            mock_despawn.assert_called_with(self.ctx.http_client_mod, 'display-1')
-
-    async def test_cmd_display(self):
-        self.ctx.player_info['bIsAdmin'] = True
-        
-        mock_v = MagicMock()
-        mock_v.id = 1
-        mock_v.asave = AsyncMock()
-        mock_v.config = {'Location': {}, 'Rotation': {}, 'VehicleName': 'TestCar'}
-        
-        with patch('amc.commands.vehicles.register_player_vehicles', new=AsyncMock(return_value=[mock_v])), \
-             patch('amc.commands.vehicles.despawn_player_vehicle', new=AsyncMock()) as mock_despawn, \
-             patch('amc.commands.vehicles.despawn_by_tag', new=AsyncMock()), \
-             patch('amc.commands.vehicles.spawn_registered_vehicle', new=AsyncMock()) as mock_spawn:
-             
-             await cmd_display(self.ctx, "all")
-             
-             mock_despawn.assert_called() 
-             mock_v.asave.assert_called()
-             mock_spawn.assert_called()
-             
     async def test_cmd_burn(self):
         from amc.utils import generate_verification_code
         

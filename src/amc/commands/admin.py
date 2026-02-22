@@ -82,6 +82,7 @@ async def cmd_remove_garage(ctx: CommandContext):
     player_x, player_y, player_z = player_loc['X'], player_loc['Y'], player_loc['Z']
     
     removed_count = 0
+    no_tag_count = 0
     async for garage in Garage.objects.all():
         if garage.config is None:
             continue
@@ -96,12 +97,17 @@ async def cmd_remove_garage(ctx: CommandContext):
             # Despawn from game world
             if garage.tag:
                 await despawn_by_tag(ctx.http_client_mod, garage.tag)
+            else:
+                no_tag_count += 1
             # Delete from database
             await garage.adelete()
             removed_count += 1
     
     if removed_count > 0:
-        await ctx.reply(_("<Title>Garage Removed</>\n\nRemoved {count} garage(s) near your location.").format(count=removed_count))
+        msg = _("<Title>Garage Removed</>\n\nRemoved {count} garage(s) near your location.").format(count=removed_count)
+        if no_tag_count > 0:
+            msg += _("\n\n<Warning>{no_tag} garage(s) had no tag and could not be despawned from the game world. They were only removed from the database.</Warning>").format(no_tag=no_tag_count)
+        await ctx.reply(msg)
     else:
         await ctx.reply(_("<Title>No Garages Found</>\n\nNo garages within 100 units of your location."))
 

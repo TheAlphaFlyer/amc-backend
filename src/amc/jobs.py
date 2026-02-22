@@ -54,7 +54,7 @@ async def get_job_success_rate(hours_lookback: int = 24) -> tuple[float, int, in
 
 def calculate_adaptive_multiplier(
     success_rate: float,
-    target_rate: float = 0.80,
+    target_rate: float = 0.50,
     min_mult: float = 0.5,
     max_mult: float = 2.0,
 ) -> float:
