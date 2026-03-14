@@ -2,7 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import F, Sum
+from django.db.models import F, OuterRef, Subquery, Sum
 from asgiref.sync import sync_to_async
 from amc.models import Player, Delivery, CharacterLocation
 from amc_finance.models import Account, JournalEntry, LedgerEntry
@@ -535,6 +535,36 @@ INTEREST_RATE = 0.022
 ONLINE_INTEREST_MULTIPLIER = 2.0
 
 
+def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
+    """Create all interest journal entries in a single transaction."""
+    if not entries_to_create:
+        return
+
+    with transaction.atomic():
+        total_expense = Decimal(0)
+        for account, amount in entries_to_create:
+            je = JournalEntry.objects.create(
+                date=now,
+                description="Interest Payment",
+                creator=None,
+            )
+            LedgerEntry.objects.create(
+                journal_entry=je, account=account, debit=0, credit=amount,
+            )
+            LedgerEntry.objects.create(
+                journal_entry=je, account=bank_expense_account,
+                debit=amount, credit=0,
+            )
+            # Update account balance (LIABILITY: credit increases balance)
+            account.balance = cast(Any, F("balance") + amount)
+            account.save(update_fields=["balance"])
+            total_expense += amount
+
+        # Update bank expense balance once (EXPENSE: debit increases balance)
+        bank_expense_account.balance = cast(Any, F("balance") + total_expense)
+        bank_expense_account.save(update_fields=["balance"])
+
+
 async def apply_interest_to_bank_accounts(
     ctx,
     interest_rate=INTEREST_RATE,
@@ -550,29 +580,32 @@ async def apply_interest_to_bank_accounts(
         },
     )
 
-    accounts_qs = Account.objects.select_related(
-        "character", "character__player"
-    ).filter(
-        account_type=Account.AccountType.LIABILITY,
-        book=Account.Book.BANK,
-        character__isnull=False,
-        balance__gt=0,
+    # Single query: annotate accounts with latest CharacterLocation timestamp
+    latest_location_sq = Subquery(
+        CharacterLocation.objects.filter(character=OuterRef("character"))
+        .order_by("-timestamp")
+        .values("timestamp")[:1]
     )
+    accounts = await sync_to_async(lambda: list(  # pyrefly: ignore
+        Account.objects.filter(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character__isnull=False,
+            balance__gt=0,
+        ).annotate(last_online=latest_location_sq)
+    ))()
 
-    async for account in accounts_qs:
-        if account.balance == 0:
-            continue
-
+    # Calculate interest in-memory
+    now = timezone.now()
+    entries_to_create = []
+    for account in accounts:
         character_interest_rate = interest_rate
-        character = account.character
 
-        try:
-            last_online = await CharacterLocation.objects.filter(
-                character=character
-            ).alatest("timestamp")
-            time_since_last_online = timezone.now() - last_online.timestamp
-        except CharacterLocation.DoesNotExist:
+        last_online_ts = account.last_online  # type: ignore[attr-defined]
+        if last_online_ts is None:
             time_since_last_online = timedelta(days=365)
+        else:
+            time_since_last_online = now - last_online_ts
 
         if time_since_last_online <= timedelta(hours=1):
             character_interest_rate = (
@@ -593,23 +626,12 @@ async def apply_interest_to_bank_accounts(
             / Decimal(24 / compounding_hours)
         )
         if amount >= Decimal(0.01):
-            await sync_to_async(create_journal_entry)(
-                timezone.now(),
-                "Interest Payment",
-                None,
-                [
-                    {
-                        "account": account,
-                        "debit": 0,
-                        "credit": amount,
-                    },
-                    {
-                        "account": bank_expense_account,
-                        "debit": amount,
-                        "credit": 0,
-                    },
-                ],
-            )
+            entries_to_create.append((account, amount))
+
+    # Bulk create in single transaction
+    await sync_to_async(_bulk_create_interest_entries)(
+        entries_to_create, bank_expense_account, now
+    )
 
 
 async def make_treasury_bank_deposit(amount, description):
