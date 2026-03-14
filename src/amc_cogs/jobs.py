@@ -204,9 +204,12 @@ class JobsCog(commands.Cog):
 
         # CREATE path
         if not job.discord_message_id:
-            new_message = await channel.send(embed=embed)
-            job.discord_message_id = new_message.id
-            await job.asave(update_fields=['discord_message_id'])
+            try:
+                new_message = await channel.send(embed=embed)
+                job.discord_message_id = new_message.id
+                await job.asave(update_fields=['discord_message_id'])
+            except Exception as e:
+                print(f"Error creating message for job {job.id}: {e}")
         print('Embed CREATED done')
 
     # --- 2. CLEAN UP STALE MESSAGES (DELETE) ---
@@ -244,9 +247,12 @@ class JobsCog(commands.Cog):
   @tasks.loop(minutes=1) # Reduced loop time for better responsiveness
   async def update_loop(self):
     """Periodically runs the synchronization logic."""
-    print("Running job synchronization...")
-    await self.update_jobs()
-    print("Job synchronization finished.")
+    try:
+      print("Running job synchronization...")
+      await self.update_jobs()
+      print("Job synchronization finished.")
+    except Exception as e:
+      print(f"Error in job synchronization loop: {e}")
 
   @update_loop.before_loop
   async def before_update_loop(self):
