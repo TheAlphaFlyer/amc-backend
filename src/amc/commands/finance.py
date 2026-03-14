@@ -72,8 +72,13 @@ async def cmd_donate(ctx: CommandContext, amount: str, verification_code: str = 
     code_expected, verified = with_verification_code((amount_int, ctx.character.id), verification_code)
     
     if not verified:
-        await ctx.reply(_("<Title>Donation</>\nConfirm: <Highlight>/donate {amount} {code_expected}</>").format(
-            amount=amount, code_expected=code_expected.upper()
+        await ctx.reply(_(
+            "<Title>Donate to the Treasury</>\n"
+            "Thank you for wanting to donate <Highlight>{amount:,}</>!\n"
+            "To confirm, type: <Highlight>/donate {amount} {code_expected}</>\n"
+            "<Secondary>This code is to make sure you don't donate by accident.</>"
+        ).format(
+            amount=amount_int, code_expected=code_expected.upper()
         ))
         return
 
