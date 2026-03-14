@@ -525,6 +525,53 @@
             touch $out
           '';
 
+        checks.pytest =
+          pkgs.runCommand "amc-backend-pytest" {
+            buildInputs = [
+              virtualenv
+              (pkgs.postgresql_16.withPackages (p: [p.postgis]))
+              pkgs.redis
+              pkgs.gdal
+              pkgs.geos
+            ];
+            GDAL_LIBRARY_PATH = "${pkgs.gdal}/lib/libgdal${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+            GEOS_LIBRARY_PATH = "${pkgs.geos}/lib/libgeos_c${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
+          } ''
+            export HOME=$(mktemp -d)
+            export DJANGO_SETTINGS_MODULE=amc_backend.settings
+
+            # Setup local Postgres in sandbox
+            export PGHOST=$HOME/postgres
+            export PGDATA=$PGHOST/data
+            export PGUSER=$(whoami)
+            mkdir -p $PGHOST
+            initdb -D $PGDATA > /dev/null
+
+            # Start postgres on a unix socket in the sandbox
+            pg_ctl -w -D $PGDATA -o "-k $PGHOST -h '''" start > /dev/null
+            createdb -h $PGHOST amc
+            psql -h $PGHOST amc -c "CREATE EXTENSION IF NOT EXISTS postgis;" > /dev/null
+
+            # Setup local Redis in sandbox
+            redis-server --port 6379 --daemonize yes > /dev/null
+
+            # Copy source to writable directory
+            cp -r ${./.}/src .
+            chmod -R +w .
+            export PYTHONPATH=src
+
+            # Run migrations
+            python src/manage.py migrate > /dev/null
+
+            # Run pytest
+            python -m pytest src/ --tb=short -q
+
+            # Cleanup
+            pg_ctl -D $PGDATA stop > /dev/null
+
+            touch $out
+          '';
+
         # Git hooks configuration
         pre-commit.settings.hooks = {
           ruff.enable = true;
