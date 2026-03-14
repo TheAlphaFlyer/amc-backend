@@ -230,6 +230,9 @@ class Character(models.Model):
   rp_mode = models.BooleanField(default=False)
   reject_ubi = models.BooleanField(default=False)
   ubi_multiplier = models.FloatField(default=1.0)
+  # Cached from CharacterLocation — updated by monitor_locations
+  last_location = models.PointField(srid=0, dim=3, null=True, blank=True)
+  last_vehicle_key = models.CharField(max_length=100, null=True, blank=True)
 
   objects: ClassVar[CharacterManager] = CharacterManager()
 
@@ -914,6 +917,9 @@ class CharacterLocation(models.Model):
         fields=['timestamp', 'character'],
         name='unique_character_location'
       )
+    ]
+    indexes = [
+      models.Index(fields=['character', '-timestamp'], name='charloc_char_ts_idx'),
     ]
 
   @classmethod
