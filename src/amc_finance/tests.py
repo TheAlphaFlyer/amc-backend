@@ -56,6 +56,8 @@ class InterestTestCase(TestCase):
 
   async def test_onine_interest(self):
     character = await sync_to_async(CharacterFactory)()
+    character.last_online = timezone.now()-timedelta(minutes=5)  # pyrefly: ignore
+    await character.asave(update_fields=['last_online'])
     await CharacterLocation.objects.acreate(
       timestamp=timezone.now()-timedelta(minutes=5),
       character=character,

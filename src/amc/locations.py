@@ -1,5 +1,6 @@
 import asyncio
 from django.contrib.gis.geos import Point
+from django.utils import timezone
 from amc.models import Character, CharacterLocation
 from amc.mod_server import show_popup, teleport_player
 from django.conf import settings
@@ -134,6 +135,7 @@ async def monitor_locations(ctx):
 
   new_locations = []
   characters_to_update = []
+  now = timezone.now()
 
   for guid, player_info in guid_to_player_info.items():
     character = characters.get(guid)
@@ -159,6 +161,7 @@ async def monitor_locations(ctx):
     ))
     character.last_location = new_point
     character.last_vehicle_key = vehicle_key
+    character.last_online = now
     characters_to_update.append(character)
 
   # Bulk insert all locations in one query (ignore timestamp conflicts)
@@ -169,5 +172,5 @@ async def monitor_locations(ctx):
   if characters_to_update:
     await Character.objects.abulk_update(
       characters_to_update,
-      ['last_location', 'last_vehicle_key']
+      ['last_location', 'last_vehicle_key', 'last_online']
     )

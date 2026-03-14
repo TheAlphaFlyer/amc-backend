@@ -233,6 +233,7 @@ class Character(models.Model):
   # Cached from CharacterLocation — updated by monitor_locations
   last_location = models.PointField(srid=0, dim=3, null=True, blank=True)
   last_vehicle_key = models.CharField(max_length=100, null=True, blank=True)
+  last_online = models.DateTimeField(null=True, blank=True)
 
   objects: ClassVar[CharacterManager] = CharacterManager()
 

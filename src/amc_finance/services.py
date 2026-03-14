@@ -2,9 +2,9 @@ from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import F, OuterRef, Subquery, Sum
+from django.db.models import F, Sum
 from asgiref.sync import sync_to_async
-from amc.models import Player, Delivery, CharacterLocation
+from amc.models import Player, Delivery
 from amc_finance.models import Account, JournalEntry, LedgerEntry
 
 
@@ -580,19 +580,14 @@ async def apply_interest_to_bank_accounts(
         },
     )
 
-    # Single query: annotate accounts with latest CharacterLocation timestamp
-    latest_location_sq = Subquery(
-        CharacterLocation.objects.filter(character=OuterRef("character"))
-        .order_by("-timestamp")
-        .values("timestamp")[:1]
-    )
+    # Read last_online directly from Character (cached by monitor_locations)
     accounts = await sync_to_async(lambda: list(  # pyrefly: ignore
         Account.objects.filter(
             account_type=Account.AccountType.LIABILITY,
             book=Account.Book.BANK,
             character__isnull=False,
             balance__gt=0,
-        ).annotate(last_online=latest_location_sq)
+        ).select_related('character')
     ))()
 
     # Calculate interest in-memory
@@ -601,7 +596,7 @@ async def apply_interest_to_bank_accounts(
     for account in accounts:
         character_interest_rate = interest_rate
 
-        last_online_ts = account.last_online  # type: ignore[attr-defined]
+        last_online_ts = account.character.last_online  # pyrefly: ignore
         if last_online_ts is None:
             time_since_last_online = timedelta(days=365)
         else:
