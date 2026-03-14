@@ -234,6 +234,8 @@ class Character(models.Model):
   last_location = models.PointField(srid=0, dim=3, null=True, blank=True)
   last_vehicle_key = models.CharField(max_length=100, null=True, blank=True)
   last_online = models.DateTimeField(null=True, blank=True)
+  
+  total_donations = models.PositiveBigIntegerField(default=0)
 
   objects: ClassVar[CharacterManager] = CharacterManager()
 

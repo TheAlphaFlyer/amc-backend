@@ -366,6 +366,8 @@ async def player_donation(amount, character):
             },
         ],
     )
+    character.total_donations = F('total_donations') + amount
+    await character.asave(update_fields=['total_donations'])
 
 
 async def send_fund_to_player_wallet(amount, character, description):

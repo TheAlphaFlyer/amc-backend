@@ -88,7 +88,23 @@ class EconomyCog(commands.Cog):
   async def daily_top_haulers_task(self):
     embed = await self.build_top_haulers_embed()
     general_channel = self.bot.get_channel(self.general_channel_id)
-    await general_channel.send(embed=embed)
+    if general_channel:
+        await general_channel.send(embed=embed)
+
+  async def send_donation_embed(self, character, amount: int):
+    channel_id = getattr(settings, 'DISCORD_TREASURY_CHANNEL_ID', 1402660537619320872)
+    channel = self.bot.get_channel(channel_id)
+    if not channel:
+      return
+
+    embed = discord.Embed(
+      title="New Donation! 💖",
+      description=f"**{character.name}** has donated **${amount:,}** to the treasury!",
+      color=discord.Color.gold()
+    )
+    embed.add_field(name="Total Overall Donations", value=f"${character.total_donations:,}")
+    
+    await channel.send(embed=embed)
 
   async def player_autocomplete(self, interaction, current):
     return await self.player_autocomplete(interaction, current)

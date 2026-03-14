@@ -79,6 +79,17 @@ async def cmd_donate(ctx: CommandContext, amount: str, verification_code: str = 
 
     await register_player_withdrawal(amount_int, ctx.character, ctx.player)
     await player_donation(amount_int, ctx.character)
+    
+    await ctx.character.arefresh_from_db()
+    if ctx.discord_client:
+        economy_cog = ctx.discord_client.get_cog("EconomyCog")
+        if economy_cog:
+            import asyncio
+            asyncio.run_coroutine_threadsafe(
+                economy_cog.send_donation_embed(ctx.character, amount_int),
+                ctx.discord_client.loop
+            )
+
     await ctx.reply(_("Donated {amount_int:,}!").format(amount_int=amount_int))
 
 @registry.register("/withdraw", description=gettext_lazy("Withdraw money from your account"), category="Finance")
