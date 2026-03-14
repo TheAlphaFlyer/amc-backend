@@ -91,6 +91,10 @@ async def cmd_donate(ctx: CommandContext, amount: str, verification_code: str = 
             )
 
     await ctx.reply(_("Donated {amount_int:,}!").format(amount_int=amount_int))
+    await ctx.announce(
+        f"Thank you {ctx.character.name} for donating {amount_int:,} to the treasury!"
+        f" (Total donations: {ctx.character.total_donations:,})"
+    )
 
 @registry.register("/withdraw", description=gettext_lazy("Withdraw money from your account"), category="Finance")
 async def cmd_withdraw(ctx: CommandContext, amount: str, verification_code: str = ""):
