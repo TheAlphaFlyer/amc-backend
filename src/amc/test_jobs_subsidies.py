@@ -8,7 +8,7 @@ class SubsidyBugTest(TestCase):
         self.player = Player.objects.create(unique_id=123)
         self.character = Character.objects.create(player=self.player, name="TestChar")
         self.cargo, _ = Cargo.objects.get_or_create(key="SunflowerSeed", defaults={"label": "Sunflower Seed"})
-        self.point, _ = DeliveryPoint.objects.get_or_create(guid="dasa", defaults={"name": "Dasa", "type": "T", "coord": "POINT(0 0 0)"})
+        self.point, _ = DeliveryPoint.objects.get_or_create(guid="dasa", defaults={"name": "Dasa", "coord": "POINT(0 0 0)"})
 
     def test_insane_bonus_repro(self):
         # Create a job with a multiplier

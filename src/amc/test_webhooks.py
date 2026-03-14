@@ -156,8 +156,8 @@ class ProcessEventTests(TestCase):
     await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
     
     # Needs points for delivery creation
-    await DeliveryPoint.objects.acreate(guid="1", name="mine", type="mine", coord=Point(0,0,0))
-    await DeliveryPoint.objects.acreate(guid="2", name="factory", type="factory", coord=Point(1000,1000,0))
+    await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0,0,0))
+    await DeliveryPoint.objects.acreate(guid="2", name="factory", coord=Point(1000,1000,0))
 
     event = {
       'hook': "ServerCargoArrived", 
@@ -188,8 +188,8 @@ class ProcessEventTests(TestCase):
       character = await sync_to_async(CharacterFactory)(player=player)
       await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
       
-      p1 = await DeliveryPoint.objects.acreate(guid="j1", name="J1", type="generic", coord=Point(0,0,0))
-      p2 = await DeliveryPoint.objects.acreate(guid="j2", name="J2", type="generic", coord=Point(100,100,0))
+      p1 = await DeliveryPoint.objects.acreate(guid="j1", name="J1", coord=Point(0,0,0))
+      p2 = await DeliveryPoint.objects.acreate(guid="j2", name="J2", coord=Point(100,100,0))
       
       job = await DeliveryJob.objects.acreate(
           name="Test Job",
@@ -375,8 +375,8 @@ class ProcessEventsTests(TestCase):
       }
     }]
     
-    await DeliveryPoint.objects.acreate(guid="1", name="mine", type="mine", coord=Point(0,0,0))
-    await DeliveryPoint.objects.acreate(guid="2", name="factory", type="factory", coord=Point(1000,1000,0))
+    await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0,0,0))
+    await DeliveryPoint.objects.acreate(guid="2", name="factory", coord=Point(1000,1000,0))
 
     await process_events(events, http_client, http_client_mod, discord_client)
     
@@ -411,8 +411,8 @@ class ExtraWebhookTests(TestCase):
         )
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
-        await DeliveryPoint.objects.acreate(guid="s1", name="S1", type="generic", coord=Point(0,0,0))
-        await DeliveryPoint.objects.acreate(guid="d1", name="D1", type="generic", coord=Point(100,100,0))
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0,0,0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100,100,0))
         
         events = [{
             'hook': "ServerCargoArrived",
@@ -466,8 +466,8 @@ class ExtraWebhookTests(TestCase):
             timestamp=timezone.now()
         )
         
-        await DeliveryPoint.objects.acreate(guid="s1", name="S1", type="generic", coord=Point(0,0,0))
-        await DeliveryPoint.objects.acreate(guid="d1", name="D1", type="generic", coord=Point(100,100,0))
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0,0,0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100,100,0))
         
         event = {
             'hook': "ServerCargoArrived",
@@ -589,8 +589,8 @@ class ExtraWebhookTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player, guid="test-char-rp-fix")
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
-        await DeliveryPoint.objects.acreate(guid="s1", name="S1", type="generic", coord=Point(0,0,0))
-        await DeliveryPoint.objects.acreate(guid="d1", name="D1", type="generic", coord=Point(100,100,0))
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0,0,0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100,100,0))
 
         event = {
             'hook': "ServerCargoArrived",
@@ -719,8 +719,8 @@ class ExtraWebhookTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player, guid="test-char-over")
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
-        p1 = await DeliveryPoint.objects.acreate(guid="s_over", name="S_Over", type="generic", coord=Point(0,0,0))
-        p2 = await DeliveryPoint.objects.acreate(guid="d_over", name="D_Over", type="generic", coord=Point(100,100,0))
+        p1 = await DeliveryPoint.objects.acreate(guid="s_over", name="S_Over", coord=Point(0,0,0))
+        p2 = await DeliveryPoint.objects.acreate(guid="d_over", name="D_Over", coord=Point(100,100,0))
         
         # 1. Create a job with 29/30 fulfilled
         job = await DeliveryJob.objects.acreate(
@@ -794,8 +794,8 @@ class ExtraWebhookTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player, guid="test-char-multi")
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
-        p1 = await DeliveryPoint.objects.acreate(guid="s_multi", name="S_Multi", type="generic", coord=Point(0,0,0))
-        p2 = await DeliveryPoint.objects.acreate(guid="d_multi", name="D_Multi", type="generic", coord=Point(100,100,0))
+        p1 = await DeliveryPoint.objects.acreate(guid="s_multi", name="S_Multi", coord=Point(0,0,0))
+        p2 = await DeliveryPoint.objects.acreate(guid="d_multi", name="D_Multi", coord=Point(100,100,0))
         
         # Job A: Apples
         job_a = await DeliveryJob.objects.acreate(
@@ -879,8 +879,8 @@ class ExtraWebhookTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player, guid="test-char-reward")
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
-        p1 = await DeliveryPoint.objects.acreate(guid="s_rew", name="S_Rew", type="generic", coord=Point(0,0,0))
-        p2 = await DeliveryPoint.objects.acreate(guid="d_rew", name="D_Rew", type="generic", coord=Point(100,100,0))
+        p1 = await DeliveryPoint.objects.acreate(guid="s_rew", name="S_Rew", coord=Point(0,0,0))
+        p2 = await DeliveryPoint.objects.acreate(guid="d_rew", name="D_Rew", coord=Point(100,100,0))
         
         job = await DeliveryJob.objects.acreate(
             name="Reward Job",
@@ -975,8 +975,8 @@ class SubsidyIntegrationTests(TestCase):
         await rule.cargos.aadd(cargo_apple)
         
         # Delivery Points
-        await DeliveryPoint.objects.acreate(guid="s1", name="S1", type="generic", coord=Point(0,0,0))
-        await DeliveryPoint.objects.acreate(guid="d1", name="D1", type="generic", coord=Point(100,100,0))
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0,0,0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100,100,0))
         
         event = {
             'hook': "ServerCargoArrived",
@@ -1033,8 +1033,8 @@ class SubsidyIntegrationTests(TestCase):
         )
         await rule.cargos.aadd(cargo_gold)
         
-        await DeliveryPoint.objects.acreate(guid="s1", name="S1", type="generic", coord=Point(0,0,0))
-        await DeliveryPoint.objects.acreate(guid="d1", name="D1", type="generic", coord=Point(100,100,0))
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0,0,0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100,100,0))
         
         event = {
             'hook': "ServerCargoArrived",
@@ -1075,7 +1075,7 @@ class SubsidyIntegrationTests(TestCase):
 
         # Rule requires specific source point
         # Point is at (0,0)
-        p_zero = await DeliveryPoint.objects.acreate(guid="p0", name="Zero Point", type="generic", coord=Point(0,0,0))
+        p_zero = await DeliveryPoint.objects.acreate(guid="p0", name="Zero Point", coord=Point(0,0,0))
         
         rule = await SubsidyRule.objects.acreate(
             name="Proximity Rule",
@@ -1180,7 +1180,7 @@ class SubsidyIntegrationTests(TestCase):
         await CharacterLocation.objects.acreate(character=character, location=Point(0,0,0), vehicle_key="TestVehicle")
         
         cargo, _ = await Cargo.objects.aget_or_create(key="coal", defaults={"label": "Coal"})
-        p_start = await DeliveryPoint.objects.acreate(guid="pS", name="Start", type="generic", coord=Point(0,0,0))
+        p_start = await DeliveryPoint.objects.acreate(guid="pS", name="Start", coord=Point(0,0,0))
         
         rule = await SubsidyRule.objects.acreate(
             name="Treasury Check",

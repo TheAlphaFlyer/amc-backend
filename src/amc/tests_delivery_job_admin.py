@@ -17,8 +17,8 @@ class DeliveryJobAdminTestCase(TestCase):
         self.client.login(username='admin', password='password')
         
         self.cargo = Cargo.objects.create(key="test_cargo", label="Test Cargo")
-        self.dp_source = DeliveryPoint.objects.create(guid="source", name="Source", type="Warehouse", coord="POINT(0 0 0)")
-        self.dp_dest = DeliveryPoint.objects.create(guid="dest", name="Dest", type="Warehouse", coord="POINT(10 10 0)")
+        self.dp_source = DeliveryPoint.objects.create(guid="source", name="Source", coord="POINT(0 0 0)")
+        self.dp_dest = DeliveryPoint.objects.create(guid="dest", name="Dest", coord="POINT(10 10 0)")
 
         self.template = DeliveryJobTemplate.objects.create(
             name="Test Template",
