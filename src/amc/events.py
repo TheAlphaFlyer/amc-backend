@@ -10,6 +10,7 @@ from django.db.models import F, Prefetch, Exists, OuterRef, Window
 from django.db.models.functions import RowNumber
 from amc.mod_server import show_popup, send_system_message, teleport_player
 from amc.game_server import announce
+from amc.utils import skip_if_running
 from amc.models import (
   Character,
   GameEvent,
@@ -288,6 +289,7 @@ async def show_scheduled_event_results_popup(http_client, scheduled_event, playe
   await show_results_popup(http_client, participants, player_id=player_id, character_guid=character_guid)
 
 
+@skip_if_running
 async def monitor_events(ctx, http_client):
   discord_client = ctx.get('discord_client')
   events_cog = discord_client.get_cog('EventsCog')
@@ -421,6 +423,7 @@ async def send_event_embed(game_event, channel):
       game_event.discord_message_id = message.id
       await game_event.asave(update_fields=['discord_message_id'])
 
+@skip_if_running
 async def send_event_embeds(ctx):
   http_client = ctx.get('http_client_event_mod')
   discord_client = ctx.get('discord_client')

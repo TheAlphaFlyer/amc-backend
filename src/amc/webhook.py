@@ -10,6 +10,7 @@ from asgiref.sync import sync_to_async
 from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
+from amc.utils import skip_if_running
 from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode
 from amc.subsidies import (
   repay_loan_for_profit,
@@ -94,6 +95,7 @@ async def post_discord_delivery_embed(
       )
     )
 
+@skip_if_running
 async def monitor_webhook(ctx):
   http_client = ctx.get('http_client')
   http_client_mod = ctx.get('http_client_mod')
@@ -102,6 +104,7 @@ async def monitor_webhook(ctx):
   events = await get_webhook_events2(http_client_webhook)
   await process_events(events, http_client, http_client_mod, discord_client)
 
+@skip_if_running
 async def monitor_webhook_test(ctx):
   http_client = ctx.get('http_client_test')
   http_client_mod = ctx.get('http_client_test_mod')

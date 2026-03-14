@@ -1,4 +1,8 @@
+import aiohttp
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
+
+# Tighter timeout for high-frequency read-only monitoring endpoints
+FAST_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
 async def show_popup(session, message, player_id=None, character_guid=None):
   params = {'message': message}
@@ -59,7 +63,7 @@ async def kick_player_from_event(session, event_guid, player_id):
 
 
 async def get_events(session):
-  async with session.get('/events') as resp:
+  async with session.get('/events', timeout=FAST_TIMEOUT) as resp:
     if resp.status != 200:
       raise Exception('Failed to fetch events')
     data = await resp.json()
@@ -172,12 +176,12 @@ async def get_webhook_events(session):
     return data
 
 async def get_webhook_events2(session):
-  async with session.get('/events') as resp:
+  async with session.get('/events', timeout=FAST_TIMEOUT) as resp:
     data = await resp.json()
     return data['events']
 
 async def get_status(session):
-  async with session.get('/status/general') as resp:
+  async with session.get('/status/general', timeout=FAST_TIMEOUT) as resp:
     data = await resp.json()
     if not data or not data.get('data'):
       return None

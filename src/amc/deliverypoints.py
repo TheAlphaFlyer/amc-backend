@@ -1,14 +1,11 @@
-import asyncio
 import re
 from django.contrib.gis.geos import Point
 from amc.models import Cargo, DeliveryPoint, DeliveryPointStorage, DeliveryJobTemplate
 from amc.game_server import get_deliverypoints
 from amc.enums import CargoKey
+from amc.utils import skip_if_running
 
 cargo_key_by_label = { v: k for k, v in CargoKey.choices }
-
-# Concurrency guard: prevents cascading pile-up when the game server is slow
-_monitor_lock = asyncio.Lock()
 
 def normalise_inventory(inventory):
   cargo = inventory['cargo']
@@ -27,15 +24,8 @@ def parse_location(location_str):
   return Point(float(match.group(1)), float(match.group(2)), float(match.group(3)), srid=3857)
 
 
+@skip_if_running
 async def monitor_deliverypoints(ctx):
-  # Non-blocking lock: skip this run if a previous one is still in progress
-  if _monitor_lock.locked():
-    return
-  async with _monitor_lock:
-    await _monitor_deliverypoints_inner(ctx)
-
-
-async def _monitor_deliverypoints_inner(ctx):
   session = ctx['http_client']
 
   dps_info = await get_deliverypoints(session)

@@ -1,4 +1,5 @@
 import asyncio
+from functools import wraps
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import difflib
@@ -8,6 +9,20 @@ from django.utils import timezone
 from django.core.signing import Signer
 from django.conf import settings
 from amc.game_server import announce
+
+def skip_if_running(func):
+  """Decorator that skips a cron invocation if the previous one is still running.
+  Each decorated function gets its own asyncio.Lock automatically."""
+  lock = asyncio.Lock()
+
+  @wraps(func)
+  async def wrapper(*args, **kwargs):
+    if lock.locked():
+      return
+    async with lock:
+      return await func(*args, **kwargs)
+
+  return wrapper
 
 def fuzzy_find_player(players: List[Tuple[str, dict]], name_query: str) -> Optional[str]:
     """

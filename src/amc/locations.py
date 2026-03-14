@@ -2,6 +2,7 @@ import asyncio
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 from amc.models import Character, CharacterLocation
+from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
 from django.conf import settings
 
@@ -111,7 +112,7 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
       )
       await asyncio.sleep(0.1)
 
-
+@skip_if_running
 async def monitor_locations(ctx):
   http_client = ctx.get('http_client_mod')
   async with http_client.get('/players') as resp:

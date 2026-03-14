@@ -2,7 +2,9 @@ import psutil # type: ignore[import-untyped]
 from amc.mod_server import get_status, set_config, list_player_vehicles, teleport_player
 from amc.game_server import get_players, announce
 from amc.models import ServerStatus, Character
+from amc.utils import skip_if_running
 
+@skip_if_running
 async def monitor_server_status(ctx):
   status = await get_status(ctx['http_client_mod'])
   try:

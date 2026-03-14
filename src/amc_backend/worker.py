@@ -23,6 +23,9 @@ from amc_finance.services import apply_interest_to_bank_accounts  # noqa: E402
 
 REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
 
+# Global timeout for all game/mod server API calls (prevents 5-min default)
+GAME_SERVER_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
 bot_task_handle = None
 # pyrefly: ignore [unknown-name]
 loop = None
@@ -49,14 +52,14 @@ async def run_discord():
 async def startup(ctx):
   global bot_task_handle
   ctx['startup_time'] = timezone.now()
-  ctx['http_client'] = aiohttp.ClientSession(base_url=settings.GAME_SERVER_API_URL)
-  ctx['http_client_mod'] = aiohttp.ClientSession(base_url=settings.MOD_SERVER_API_URL)
-  ctx['http_client_webhook'] = aiohttp.ClientSession(base_url=settings.WEBHOOK_SERVER_API_URL)
-  ctx['http_client_event'] = aiohttp.ClientSession(base_url=settings.EVENT_GAME_SERVER_API_URL)
-  ctx['http_client_event_mod'] = aiohttp.ClientSession(base_url=settings.EVENT_MOD_SERVER_API_URL)
-  ctx['http_client_test'] = aiohttp.ClientSession(base_url=settings.TEST_GAME_SERVER_API_URL)
-  ctx['http_client_test_mod'] = aiohttp.ClientSession(base_url=settings.TEST_MOD_SERVER_API_URL)
-  ctx['http_client_test_webhook'] = aiohttp.ClientSession(base_url=settings.TEST_WEBHOOK_SERVER_API_URL)
+  ctx['http_client'] = aiohttp.ClientSession(base_url=settings.GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_mod'] = aiohttp.ClientSession(base_url=settings.MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_webhook'] = aiohttp.ClientSession(base_url=settings.WEBHOOK_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_event'] = aiohttp.ClientSession(base_url=settings.EVENT_GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_event_mod'] = aiohttp.ClientSession(base_url=settings.EVENT_MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_test'] = aiohttp.ClientSession(base_url=settings.TEST_GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_test_mod'] = aiohttp.ClientSession(base_url=settings.TEST_MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
+  ctx['http_client_test_webhook'] = aiohttp.ClientSession(base_url=settings.TEST_WEBHOOK_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT)
 
   if settings.DISCORD_TOKEN:
     ctx['discord_client'] = discord_client
