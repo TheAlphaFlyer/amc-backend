@@ -1,3 +1,4 @@
+import asyncio
 import re
 from django.contrib.gis.geos import Point
 from amc.models import Cargo, DeliveryPoint, DeliveryPointStorage, DeliveryJobTemplate
@@ -5,6 +6,9 @@ from amc.game_server import get_deliverypoints
 from amc.enums import CargoKey
 
 cargo_key_by_label = { v: k for k, v in CargoKey.choices }
+
+# Concurrency guard: prevents cascading pile-up when the game server is slow
+_monitor_lock = asyncio.Lock()
 
 def normalise_inventory(inventory):
   cargo = inventory['cargo']
@@ -24,6 +28,14 @@ def parse_location(location_str):
 
 
 async def monitor_deliverypoints(ctx):
+  # Non-blocking lock: skip this run if a previous one is still in progress
+  if _monitor_lock.locked():
+    return
+  async with _monitor_lock:
+    await _monitor_deliverypoints_inner(ctx)
+
+
+async def _monitor_deliverypoints_inner(ctx):
   session = ctx['http_client']
 
   dps_info = await get_deliverypoints(session)
@@ -32,6 +44,8 @@ async def monitor_deliverypoints(ctx):
   cargo_by_key = {cargo.key: cargo async for cargo in Cargo.objects.select_related('type').all()}
 
   seen_guids = set()
+  # Collect storage objects for batch upsert
+  storage_upserts = []
 
   for dp_info in dps_data.values():
     guid = dp_info['guid'].lower()
@@ -91,31 +105,35 @@ async def monitor_deliverypoints(ctx):
     }
     await dp.asave()
 
+    # Collect storage upserts for batch operation
     for inventory in dp.data['inputInventory']:
       cargo = cargo_by_key.get(inventory['cargoKey'])
-
-      await DeliveryPointStorage.objects.aupdate_or_create(
+      storage_upserts.append(DeliveryPointStorage(
         delivery_point=dp,
         kind=DeliveryPointStorage.Kind.INPUT,
         cargo_key=inventory['cargoKey'],
-        defaults={
-          'cargo': cargo,
-          'amount': inventory['amount'],
-        }
-      )
+        cargo=cargo,
+        amount=inventory['amount'],
+      ))
 
     for inventory in dp.data['outputInventory']:
       cargo = cargo_by_key.get(inventory['cargoKey'])
-
-      await DeliveryPointStorage.objects.aupdate_or_create(
+      storage_upserts.append(DeliveryPointStorage(
         delivery_point=dp,
         kind=DeliveryPointStorage.Kind.OUTPUT,
         cargo_key=inventory['cargoKey'],
-        defaults={
-          'cargo': cargo_by_key.get(inventory['cargoKey']),
-          'amount': inventory['amount'],
-        }
-      )
+        cargo=cargo,
+        amount=inventory['amount'],
+      ))
+
+  # Batch upsert all storage records
+  if storage_upserts:
+    await DeliveryPointStorage.objects.abulk_create(
+      storage_upserts,
+      update_conflicts=True,
+      unique_fields=['delivery_point', 'kind', 'cargo_key'],
+      update_fields=['cargo', 'amount'],
+    )
 
   # Mark removed: DB entries not seen in the API
   newly_removed = []

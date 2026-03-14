@@ -127,7 +127,7 @@ class WorkerSettings:
         cron(send_event_embeds, second=set(range(0, 60, 10))),
         # cron(monitor_event_locations, second=None),
         # pyrefly: ignore [bad-argument-type]
-        cron(monitor_deliverypoints, second=set(range(0, 60, 7))),
+        cron(monitor_deliverypoints, second=set(range(0, 60, 30))),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_jobs, second=37),
         #cron(monitor_corporations, second=23),

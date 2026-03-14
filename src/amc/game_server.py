@@ -1,9 +1,10 @@
 import asyncio
 from typing import Any, cast
 import urllib.parse
+import aiohttp
 from yarl import URL
 
-async def game_api_request(session, url, method='get', password='', params={}):
+async def game_api_request(session, url, method='get', password='', params={}, timeout=15):
   req_params = {'password': password, **params}
   params_str = urllib.parse.urlencode(req_params, quote_via=cast(Any, urllib.parse.quote))
   try:
@@ -12,7 +13,8 @@ async def game_api_request(session, url, method='get', password='', params={}):
     print(f"Invalid method: {e}")
     raise e
 
-  async with fn(URL(f"{url}?{params_str}", encoded=True)) as resp:
+  request_timeout = aiohttp.ClientTimeout(total=timeout)
+  async with fn(URL(f"{url}?{params_str}", encoded=True), timeout=request_timeout) as resp:
     resp_json = await resp.json()
     return resp_json
 
