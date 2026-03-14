@@ -3,7 +3,7 @@ name = "amc-backend"
 version = "0.1.0"
 description = "ASEAN Motor Club backend"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "django>=5.2.3",
     "django-ninja>=1.4.3",
@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]>=3.2.9",
     "uvicorn[standard]>=0.34.3",
     "uvicorn-worker>=0.3.0",
+    "django-oauth-toolkit>=3.0.1",
     "aiohttp>=3.12.13",
     "django-asgi-lifespan>=0.4.0",
     "arq>=0.26.3",
@@ -70,6 +71,5 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-django>=4.9.0",
     "django-stubs-ext>=5.2.8",
-    "psutil-stubs>=6.1.1.20241221",
 ]
 

@@ -1,6 +1,26 @@
-from ninja import NinjaAPI
+from ninja import NinjaAPI, Schema
+from amc_backend.auth import OAuth2Bearer
 
 api = NinjaAPI()
+
+class UserMeSchema(Schema):
+    user: str
+    name: str
+    mail: str
+    grps: list[str]
+
+@api.get('/users/me/', response=UserMeSchema, auth=OAuth2Bearer())
+async def get_user_me(request):
+    user = request.auth
+    groups = [
+        group.name async for group in user.groups.all()
+    ]
+    return {
+        "user": user.username,
+        "name": user.discord_name if hasattr(user, 'discord_name') else user.username,
+        "mail": user.email or "",
+        "grps": groups,
+    }
 api.add_router('/stats/', 'amc.api.routes.stats_router')
 api.add_router('/players/', 'amc.api.routes.players_router')
 api.add_router('/characters/', 'amc.api.routes.characters_router')

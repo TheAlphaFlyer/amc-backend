@@ -82,6 +82,7 @@ if os.environ.get('GDAL_LIBRARY_PATH') and os.environ.get('GEOS_LIBRARY_PATH'):
     INSTALLED_APPS += ['django.contrib.gis']
 
 INSTALLED_APPS += [
+    'oauth2_provider',
     'amc',
     'amc_finance',
     'necesse',

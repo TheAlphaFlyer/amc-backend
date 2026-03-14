@@ -1,0 +1,15 @@
+from ninja.security import HttpBearer
+from asgiref.sync import sync_to_async
+from oauth2_provider.models import AccessToken
+from django.utils import timezone
+
+class OAuth2Bearer(HttpBearer):
+    async def authenticate(self, request, token):
+        try:
+            access_token = await AccessToken.objects.select_related('user').aget(
+                token=token,
+                expires__gt=timezone.now()
+            )
+            return access_token.user
+        except AccessToken.DoesNotExist:
+            return None
