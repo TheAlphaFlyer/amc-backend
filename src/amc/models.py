@@ -903,6 +903,20 @@ class CharacterLocationManager(models.Manager):
       )
     )
 
+  def filter_characters_activity(self, characters, start_time, end_time):
+    """Batch version: fetch location rows for multiple characters in one query."""
+    return self.filter(
+      character__in=characters,
+      timestamp__gte=start_time,
+      timestamp__lt=end_time,
+    ).annotate(
+      prev_location=Window(
+        expression=Lag('location'),
+        partition_by=[F('character')],
+        order_by=[F('timestamp').asc()]
+      )
+    ).order_by('character_id', 'timestamp')
+
 @final
 class CharacterLocation(models.Model):
   timestamp = models.DateTimeField(db_index=True, auto_now_add=True)
@@ -939,6 +953,41 @@ class CharacterLocation(models.Model):
       if total_dis > afk_treshold:
         return (True, True)
     return (True, False)
+
+  @classmethod
+  async def batch_get_character_activity(cls, characters, start_time, end_time, afk_threshold=1000, teleport_threshold=10000):
+    """
+    Batch activity check for multiple characters in a single query.
+    Returns dict[character_id, (is_online, is_active)].
+    """
+    qs = cls.objects.filter_characters_activity(characters, start_time, end_time)
+
+    # Accumulate distance per character
+    totals: dict[int, float] = {}
+    result: dict[int, tuple[bool, bool]] = {}
+
+    # Mark all queried characters as offline by default
+    for c in characters:
+      result[c.id] = (False, False)
+
+    async for cl in qs:
+      char_id = cl.character_id
+      if char_id not in totals:
+        totals[char_id] = 0.0
+        result[char_id] = (True, False)  # online but not yet proven active
+
+      if cl.prev_location is None:
+        continue
+
+      dis = cl.prev_location.distance(cl.location)
+      if dis > teleport_threshold:
+        continue
+
+      totals[char_id] += dis
+      if totals[char_id] > afk_threshold:
+        result[char_id] = (True, True)
+
+    return result
 
 
 @final

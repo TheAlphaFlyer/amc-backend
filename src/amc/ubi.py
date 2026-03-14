@@ -19,19 +19,46 @@ async def handout_ubi(ctx):
   http_client = ctx.get('http_client')
   http_client_mod = ctx.get('http_client_mod')
   now = timezone.now()
+  start_time = now - timedelta(minutes=TASK_FREQUENCY)
 
   players = await get_players(http_client)
-  for player_id, player in players:
-    try:
-      character = await Character.objects.aget(guid=player['character_guid'])
-      if not character.driver_level or character.reject_ubi:
-        continue
+  if not players:
+    return
 
-      is_online, is_active = await CharacterLocation.get_character_activity(
-        character,
-        now - timedelta(minutes=TASK_FREQUENCY),
-        now
-      )
+  # Batch fetch all characters in one query
+  guids = [p['character_guid'] for _, p in players]
+  characters = {
+    c.guid: c
+    async for c in Character.objects.filter(
+      guid__in=guids,
+      driver_level__isnull=False,
+      reject_ubi=False,
+    )
+  }
+
+  # Filter out characters with no driver_level (driver_level=0 is falsy)
+  eligible = {guid: c for guid, c in characters.items() if c.driver_level}
+
+  if not eligible:
+    return
+
+  # Batch activity check: single query for all characters
+  activity = await CharacterLocation.batch_get_character_activity(
+    list(eligible.values()),
+    start_time,
+    now,
+  )
+
+  # Process payouts sequentially (transactional money operations)
+  for player_id, player in players:
+    guid = player['character_guid']
+    character = eligible.get(guid)
+    if not character:
+      continue
+
+    try:
+      is_online, is_active = activity.get(character.id, (False, False))
+
       if is_active:
         grant_amount = ACTIVE_GRANT_AMOUNT
       else:
@@ -49,4 +76,3 @@ async def handout_ubi(ctx):
     except Exception as e:
       print(f"Error handing out UBI to player {player_id}: {e}")
       continue
-

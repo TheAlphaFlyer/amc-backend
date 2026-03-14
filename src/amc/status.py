@@ -1,7 +1,7 @@
 import psutil # type: ignore[import-untyped]
 from amc.mod_server import get_status, set_config, list_player_vehicles, teleport_player
 from amc.game_server import get_players, announce
-from amc.models import ServerStatus, CharacterLocation
+from amc.models import ServerStatus, Character
 
 async def monitor_server_status(ctx):
   status = await get_status(ctx['http_client_mod'])
@@ -87,17 +87,19 @@ async def monitor_rp_mode(ctx):
 
     is_autopilot = any([v.get('isLastVehicle') and v.get('bIsAIDriving') and not is_position_zero(v.get('position')) for v in player_vehicles.values()])
     if is_autopilot:
-      character_location = await (CharacterLocation.objects
-        .filter(character__guid=player.get('character_guid'))
-        .alatest('timestamp')
-      )
+      character = await Character.objects.filter(
+        guid=player.get('character_guid'),
+        last_location__isnull=False,
+      ).afirst()
+      if not character or not character.last_location:
+        continue
       await teleport_player(
         ctx['http_client_mod'],
         player_id,
         {
-          'X': character_location.location.x,
-          'Y': character_location.location.y,
-          'Z': character_location.location.z,
+          'X': character.last_location.x,
+          'Y': character.last_location.y,
+          'Z': character.last_location.z,
         },
         no_vehicles=False,
         reset_trailers=False,
