@@ -22,27 +22,31 @@ async def handout_ubi(ctx):
 
   players = await get_players(http_client)
   for player_id, player in players:
-    character = await Character.objects.aget(guid=player['character_guid'])
-    if not character.driver_level or character.reject_ubi:
+    try:
+      character = await Character.objects.aget(guid=player['character_guid'])
+      if not character.driver_level or character.reject_ubi:
+        continue
+
+      is_online, is_active = await CharacterLocation.get_character_activity(
+        character,
+        now - timedelta(minutes=TASK_FREQUENCY),
+        now
+      )
+      if is_active:
+        grant_amount = ACTIVE_GRANT_AMOUNT
+      else:
+        grant_amount = AFK_GRANT_AMOUNT
+      amount = min(Decimal(str(grant_amount)), character.driver_level * Decimal(str(grant_amount)) * Decimal(str(character.ubi_multiplier)) / MAX_LEVEL)
+
+      await send_fund_to_player_wallet(amount, character, 'Universal Basic Income')
+      await transfer_money(
+        http_client_mod,
+        int(amount),
+        'Universal Basic Income',
+        player_id
+      )
+      await asyncio.sleep(1)
+    except Exception as e:
+      print(f"Error handing out UBI to player {player_id}: {e}")
       continue
-
-    is_online, is_active = await CharacterLocation.get_character_activity(
-      character,
-      now - timedelta(minutes=TASK_FREQUENCY),
-      now
-    )
-    if is_active:
-      grant_amount = ACTIVE_GRANT_AMOUNT
-    else:
-      grant_amount = AFK_GRANT_AMOUNT
-    amount = min(Decimal(str(grant_amount)), character.driver_level * Decimal(str(grant_amount)) * character.ubi_multiplier / MAX_LEVEL)
-
-    await send_fund_to_player_wallet(amount, character, 'Universal Basic Income')
-    await transfer_money(
-      http_client_mod,
-      int(amount),
-      'Universal Basic Income',
-      player_id
-    )
-    await asyncio.sleep(1)
 
