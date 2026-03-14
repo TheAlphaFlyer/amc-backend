@@ -334,7 +334,8 @@
 
             systemd.services.amc-backend = {
               wantedBy = [ "multi-user.target" ]; 
-              after = [ "network.target" ];
+              requires = [ "amc-backend-migrate.service" ];
+              after = [ "network.target" "amc-backend-migrate.service" ];
               description = "API Server";
               environment = {
                 inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
@@ -405,6 +406,8 @@
 
             systemd.services.amc-backend-migrate = {
               description = "Migrate backend db";
+              requires = [ "postgresql.service" ];
+              after = [ "postgresql.service" ];
               environment = {
                 DJANGO_SETTINGS_MODULE = "amc_backend.settings";
                 inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
