@@ -1,5 +1,4 @@
 from ninja.security import HttpBearer
-from asgiref.sync import sync_to_async
 from oauth2_provider.models import AccessToken
 from django.utils import timezone
 
