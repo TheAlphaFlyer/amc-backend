@@ -53,10 +53,15 @@ class VoteView(ui.View):
         self.add_item(CandidateSelect(candidates))
 
 class CommerceCog(commands.Cog):
+    """DEPRECATED: Ministry of Commerce has been retired. This cog is no longer
+    registered with the bot. The election loop and all commands are disabled.
+    Kept for reference and test compatibility."""
+
     def __init__(self, bot: "AMCDiscordBot", channel_id=settings.DISCORD_GENERAL_CHANNEL_ID):
         self.bot = bot
         self.channel_id = channel_id
-        self.manage_elections_task.start()
+        # DEPRECATED: election loop disabled — Ministry of Commerce retired
+        # self.manage_elections_task.start()
 
     async def cog_unload(self):
         self.manage_elections_task.cancel()
