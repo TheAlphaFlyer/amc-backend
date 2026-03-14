@@ -948,10 +948,11 @@ class PlayerMailMessage(models.Model):
 class DeliveryPoint(models.Model):
   guid = models.CharField(max_length=200, primary_key=True)
   name = models.CharField(max_length=200)
-  type = models.CharField(max_length=200)
+  type = models.CharField(max_length=200, blank=True, default="")
   coord = models.PointField(srid=3857, dim=3)
   data = models.JSONField(null=True, blank=True)
   last_updated = models.DateTimeField(editable=False, auto_now=True, null=True)
+  removed = models.BooleanField(default=False)
 
   def __str__(self):
     return f"{self.name} ({self.type})"
@@ -1226,6 +1227,7 @@ class DeliveryJobTemplate(models.Model):
   bonus_multiplier = models.FloatField(default=1.0)
   completion_bonus = models.PositiveIntegerField(default=50000)
   rp_mode = models.BooleanField(default=False, help_text="Requires the job to be done in RP mode")
+  enabled = models.BooleanField(default=True, help_text="Disabled templates are skipped during job posting")
   
   # Template specific settings
   expected_player_count_for_quantity = models.PositiveIntegerField(null=True, blank=True, help_text="When player count is lower than this, quantity will be scaled down")

@@ -119,7 +119,7 @@ async def monitor_jobs(ctx):
 
     job_templates = (
         DeliveryJobTemplate.objects.exclude_has_conflicting_active_job()
-        .filter(rp_mode=False)
+        .filter(rp_mode=False, enabled=True)
         .exclude_recently_posted()
         .prefetch_related(
             Prefetch("cargos", queryset=Cargo.objects.select_related("type").all()),
