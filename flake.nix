@@ -307,7 +307,7 @@
               settings = {
                 client_encoding = "UTF8";
                 timezone = "UTC";
-                listen_addresses = "'*'";  # Container-internal; host firewall limits exposure
+                listen_addresses = pkgs.lib.mkForce "'*'";  # Container-internal; host firewall limits exposure
               };
               authentication = pkgs.lib.mkOverride 10 ''
                 local all all trust
