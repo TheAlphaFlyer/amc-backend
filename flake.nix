@@ -289,7 +289,7 @@
             services.postgresql = {
               enable = true;
               package = pkgs.postgresql_16;
-              extensions = with pkgs.postgresql_16.pkgs; [ postgis timescaledb ];
+              extensions = with pkgs.postgresql_16.pkgs; [ postgis timescaledb pg_partman ];
               ensureDatabases = [
                 cfg.user
               ];
