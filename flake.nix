@@ -187,6 +187,10 @@
             containers.amc-backend = {
               autoStart = true;
               restartIfChanged = true;
+              # Forward PostgreSQL port for Tailscale-only bot read access
+              forwardPorts = [
+                { containerPort = 5432; hostPort = 5432; protocol = "tcp"; }
+              ];
               bindMounts = {
                 "/etc/ssh/ssh_host_ed25519_key".isReadOnly = true;
               } // cfg.extraBindMounts;
@@ -303,10 +307,13 @@
               settings = {
                 client_encoding = "UTF8";
                 timezone = "UTC";
+                listen_addresses = "'*'";  # Container-internal; host firewall limits exposure
               };
               authentication = pkgs.lib.mkOverride 10 ''
                 local all all trust
                 host all all ::1/128 trust
+                # Bot read-only access from Tailscale subnet only
+                host amc amc_bot_login 100.64.0.0/10 md5
               '';
             };
             services.redis.servers."amc-backend".enable = true;
