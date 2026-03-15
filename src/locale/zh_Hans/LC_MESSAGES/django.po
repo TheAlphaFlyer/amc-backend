@@ -94,6 +94,10 @@ msgstr ""
 "\n"
 "请确保名字拼写正确。"
 
+#: amc/commands/admin.py:252
+msgid "You cannot teleport yourself with this command. Use /tp instead."
+msgstr "你不能用此命令传送自己。请使用 /tp。"
+
 #: amc/commands/admin.py:114 amc/commands/teleport.py:45
 #, python-brace-format
 msgid ""

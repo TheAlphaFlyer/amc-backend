@@ -249,6 +249,10 @@ async def cmd_tp_player(
         )
         return
 
+    if str(target_pid) == str(ctx.player.unique_id):
+        await ctx.reply(_("You cannot teleport yourself with this command. Use /tp instead."))
+        return
+
     # Find the location
     try:
         teleport_point = await TeleportPoint.objects.aget(name__iexact=location_name)
