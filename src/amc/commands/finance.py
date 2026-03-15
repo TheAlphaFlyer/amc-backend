@@ -271,9 +271,9 @@ async def cmd_toggle_ubi(ctx: CommandContext):
         await ctx.character.asave(update_fields=["reject_ubi"])
 
         message = (
-            _("You will no longer receive a universal basic income")
+            _("You will no longer receive UBI and subsidies")
             if ctx.character.reject_ubi
-            else _("You will start to receive a universal basic income")
+            else _("You will start to receive UBI and subsidies")
         )
 
         asyncio.create_task(

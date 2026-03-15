@@ -46,6 +46,9 @@ async def on_player_profits(player_profits, session):
 
 
 async def on_player_profit(character, total_subsidy, total_payment, session):
+    if character.reject_ubi:
+        total_subsidy = 0
+
     if character.is_gov_employee:
         # Confiscate ALL income from wallet → treasury.
         # total_payment includes subsidy for passenger/tow, but NOT for cargo.

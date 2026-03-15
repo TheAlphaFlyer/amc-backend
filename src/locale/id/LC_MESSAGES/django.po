@@ -332,12 +332,12 @@ msgid "Toggle Universal Basic Income"
 msgstr "Alihkan Pendapatan Dasar Universal (UBI)"
 
 #: amc/commands/finance.py:155
-msgid "You will no longer receive a universal basic income"
-msgstr "Anda tidak akan lagi menerima pendapatan dasar universal (UBI)"
+msgid "You will no longer receive UBI and subsidies"
+msgstr "Anda tidak akan lagi menerima UBI dan subsidi"
 
 #: amc/commands/finance.py:155
-msgid "You will start to receive a universal basic income"
-msgstr "Anda akan mulai menerima pendapatan dasar universal (UBI)"
+msgid "You will start to receive UBI and subsidies"
+msgstr "Anda akan mulai menerima UBI dan subsidi"
 
 #: amc/commands/finance.py:159
 #, python-brace-format

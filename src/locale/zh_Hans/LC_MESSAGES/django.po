@@ -335,12 +335,12 @@ msgid "Toggle Universal Basic Income"
 msgstr "切换全民基本收入 (UBI)"
 
 #: amc/commands/finance.py:155
-msgid "You will no longer receive a universal basic income"
-msgstr "你将不再收到全民基本收入"
+msgid "You will no longer receive UBI and subsidies"
+msgstr "你将不再收到 UBI 和补贴"
 
 #: amc/commands/finance.py:155
-msgid "You will start to receive a universal basic income"
-msgstr "你将开始收到全民基本收入"
+msgid "You will start to receive UBI and subsidies"
+msgstr "你将开始收到 UBI 和补贴"
 
 #: amc/commands/finance.py:159
 #, python-brace-format
