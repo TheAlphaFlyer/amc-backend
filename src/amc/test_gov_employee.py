@@ -128,7 +128,8 @@ class ActivateDeactivateTests(TestCase):
 
 class IncomeRedirectionTests(TestCase):
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
-    async def test_redirect_income_to_treasury(self, mock_donation):
+    @patch("amc.gov_employee.announce", new_callable=AsyncMock, create=True)
+    async def test_redirect_income_to_treasury(self, mock_announce, mock_donation):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
             player=player,
@@ -138,7 +139,9 @@ class IncomeRedirectionTests(TestCase):
 
         await redirect_income_to_treasury(100_000, character, "Test Redirect")
 
-        mock_donation.assert_awaited_once_with(100_000, character)
+        mock_donation.assert_awaited_once_with(
+            100_000, character, description="Test Redirect"
+        )
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 100_000)
 

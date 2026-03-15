@@ -40,12 +40,16 @@ from amc.models import (
 from amc.locations import gwangjin_shortcut
 
 
-async def on_player_profits(player_profits, session):
+async def on_player_profits(player_profits, session, http_client=None):
     for character, total_subsidy, total_payment in player_profits:
-        await on_player_profit(character, total_subsidy, total_payment, session)
+        await on_player_profit(
+            character, total_subsidy, total_payment, session, http_client
+        )
 
 
-async def on_player_profit(character, total_subsidy, total_payment, session):
+async def on_player_profit(
+    character, total_subsidy, total_payment, session, http_client=None
+):
     if character.reject_ubi:
         total_subsidy = 0
 
@@ -71,7 +75,11 @@ async def on_player_profit(character, total_subsidy, total_payment, session):
                 )
             # Record total economic value (base + subsidy) as treasury contribution
             await redirect_income_to_treasury(
-                total_income, character, "Government Service – Earnings"
+                total_income,
+                character,
+                "Government Service – Earnings",
+                http_client=http_client,
+                session=session,
             )
         # Skip subsidy payment, loan repayment, and savings
         return
@@ -566,7 +574,7 @@ async def process_events(
         player_profits.append((character, total_subsidy, total_payment))
 
     if http_client_mod:
-        await on_player_profits(player_profits, http_client_mod)
+        await on_player_profits(player_profits, http_client_mod, http_client)
 
 
 async def process_cargo_log(cargo, player, character, timestamp):

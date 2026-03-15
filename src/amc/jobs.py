@@ -332,7 +332,10 @@ async def on_delivery_job_fulfilled(job, http_client):
                 from amc.gov_employee import redirect_income_to_treasury
 
                 await redirect_income_to_treasury(
-                    reward, character_obj, "Government Service – Job Bonus"
+                    reward,
+                    character_obj,
+                    "Government Service – Job Bonus",
+                    http_client=http_client,
                 )
             else:
                 await send_fund_to_player(reward, character_obj, "Job Completion")

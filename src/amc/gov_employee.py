@@ -59,7 +59,9 @@ async def deactivate_gov_role(character, session):
         )
 
 
-async def redirect_income_to_treasury(amount, character, description):
+async def redirect_income_to_treasury(
+    amount, character, description, http_client=None, session=None
+):
     """Record a government employee's income as a treasury contribution.
 
     This reuses the player_donation accounting pattern (credits Treasury Revenue,
@@ -77,6 +79,26 @@ async def redirect_income_to_treasury(amount, character, description):
     if new_level != character.gov_employee_level:
         character.gov_employee_level = new_level
         await character.asave(update_fields=["gov_employee_level"])
+
+        # Level up logic
+        gov_name = make_gov_name(character.name, new_level)
+        character.custom_name = gov_name
+        await character.asave(update_fields=["custom_name"])
+
+        if session:
+            await set_character_name(session, character.guid, gov_name)
+
+        if http_client:
+            from amc.game_server import announce
+            import asyncio
+
+            asyncio.create_task(
+                announce(
+                    f"🎉 {character.name} has been promoted to Government Employee Level {new_level}!",
+                    http_client,
+                    color="90EE90",
+                )
+            )
 
 
 async def expire_gov_employees(ctx):
