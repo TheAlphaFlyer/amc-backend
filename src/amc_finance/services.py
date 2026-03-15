@@ -1,3 +1,4 @@
+import math
 from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
@@ -346,7 +347,7 @@ async def player_donation(amount, character):
         account_type=Account.AccountType.REVENUE,
         book=Account.Book.GOVERNMENT,
         character=None,
-        name="Treasury Revenue"
+        name="Treasury Revenue",
     )
 
     await sync_to_async(create_journal_entry, thread_sensitive=True)(
@@ -366,8 +367,8 @@ async def player_donation(amount, character):
             },
         ],
     )
-    character.total_donations = F('total_donations') + amount
-    await character.asave(update_fields=['total_donations'])
+    character.total_donations = F("total_donations") + amount
+    await character.asave(update_fields=["total_donations"])
 
 
 async def send_fund_to_player_wallet(amount, character, description):
@@ -381,7 +382,7 @@ async def send_fund_to_player_wallet(amount, character, description):
         account_type=Account.AccountType.EXPENSE,
         book=Account.Book.GOVERNMENT,
         character=None,
-        name="Treasury Expenses"
+        name="Treasury Expenses",
     )
 
     await sync_to_async(create_journal_entry)(
@@ -535,6 +536,8 @@ def create_journal_entry(date, description, creator_character, entries_data):
 
 INTEREST_RATE = 0.022
 ONLINE_INTEREST_MULTIPLIER = 2.0
+INTEREST_THRESHOLD = 10_000_000
+INTEREST_SCALE = 40_000_000
 
 
 def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
@@ -551,11 +554,16 @@ def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
                 creator=None,
             )
             LedgerEntry.objects.create(
-                journal_entry=je, account=account, debit=0, credit=amount,
+                journal_entry=je,
+                account=account,
+                debit=0,
+                credit=amount,
             )
             LedgerEntry.objects.create(
-                journal_entry=je, account=bank_expense_account,
-                debit=amount, credit=0,
+                journal_entry=je,
+                account=bank_expense_account,
+                debit=amount,
+                credit=0,
             )
             # Update account balance (LIABILITY: credit increases balance)
             account.balance = cast(Any, F("balance") + amount)
@@ -583,14 +591,16 @@ async def apply_interest_to_bank_accounts(
     )
 
     # Read last_online directly from Character (cached by monitor_locations)
-    accounts = await sync_to_async(lambda: list(  # pyrefly: ignore
-        Account.objects.filter(
-            account_type=Account.AccountType.LIABILITY,
-            book=Account.Book.BANK,
-            character__isnull=False,
-            balance__gt=0,
-        ).select_related('character')
-    ))()
+    accounts = await sync_to_async(
+        lambda: list(  # pyrefly: ignore
+            Account.objects.filter(
+                account_type=Account.AccountType.LIABILITY,
+                book=Account.Book.BANK,
+                character__isnull=False,
+                balance__gt=0,
+            ).select_related("character")
+        )
+    )()
 
     # Calculate interest in-memory
     now = timezone.now()
@@ -617,9 +627,15 @@ async def apply_interest_to_bank_accounts(
         else:
             character_interest_rate = character_interest_rate / 8
 
+        # Apply balance-based fall-off: full interest up to threshold,
+        # then exponentially decreasing
+        excess = max(Decimal(0), account.balance - INTEREST_THRESHOLD)
+        balance_multiplier = Decimal(math.exp(-float(excess) / INTEREST_SCALE))
+
         amount = (
             account.balance
             * Decimal(character_interest_rate)
+            * balance_multiplier
             / Decimal(24 / compounding_hours)
         )
         if amount >= Decimal(0.01):

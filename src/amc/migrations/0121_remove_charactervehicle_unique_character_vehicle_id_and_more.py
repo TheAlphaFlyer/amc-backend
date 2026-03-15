@@ -4,27 +4,34 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0120_charactervehicle'),
+        ("amc", "0120_charactervehicle"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='charactervehicle',
-            name='unique_character_vehicle_id',
+            model_name="charactervehicle",
+            name="unique_character_vehicle_id",
         ),
         migrations.AddField(
-            model_name='charactervehicle',
-            name='company_guid',
+            model_name="charactervehicle",
+            name="company_guid",
             field=models.CharField(blank=True, max_length=32, null=True),
         ),
         migrations.AddConstraint(
-            model_name='charactervehicle',
-            constraint=models.UniqueConstraint(condition=models.Q(('character__isnull', False)), fields=('character', 'vehicle_id'), name='unique_character_vehicle_id'),
+            model_name="charactervehicle",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("character__isnull", False)),
+                fields=("character", "vehicle_id"),
+                name="unique_character_vehicle_id",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='charactervehicle',
-            constraint=models.UniqueConstraint(condition=models.Q(('character__isnull', True)), fields=('company_guid', 'vehicle_id'), name='unique_company_vehicle_id'),
+            model_name="charactervehicle",
+            constraint=models.UniqueConstraint(
+                condition=models.Q(("character__isnull", True)),
+                fields=("company_guid", "vehicle_id"),
+                name="unique_company_vehicle_id",
+            ),
         ),
     ]

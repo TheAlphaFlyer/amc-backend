@@ -4,16 +4,15 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0001_initial'),
+        ("amc", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='playerchatlog',
-            name='text',
-            field=models.TextField(default=''),
+            model_name="playerchatlog",
+            name="text",
+            field=models.TextField(default=""),
             preserve_default=False,
         ),
     ]

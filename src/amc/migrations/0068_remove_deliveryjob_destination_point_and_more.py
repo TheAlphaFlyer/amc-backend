@@ -4,28 +4,31 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0067_deliveryjob'),
+        ("amc", "0067_deliveryjob"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='deliveryjob',
-            name='destination_point',
+            model_name="deliveryjob",
+            name="destination_point",
         ),
         migrations.RemoveField(
-            model_name='deliveryjob',
-            name='source_point',
+            model_name="deliveryjob",
+            name="source_point",
         ),
         migrations.AddField(
-            model_name='deliveryjob',
-            name='destination_points',
-            field=models.ManyToManyField(related_name='jobs_in', to='amc.deliverypoint'),
+            model_name="deliveryjob",
+            name="destination_points",
+            field=models.ManyToManyField(
+                related_name="jobs_in", to="amc.deliverypoint"
+            ),
         ),
         migrations.AddField(
-            model_name='deliveryjob',
-            name='source_points',
-            field=models.ManyToManyField(related_name='jobs_out', to='amc.deliverypoint'),
+            model_name="deliveryjob",
+            name="source_points",
+            field=models.ManyToManyField(
+                related_name="jobs_out", to="amc.deliverypoint"
+            ),
         ),
     ]

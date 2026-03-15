@@ -4,14 +4,13 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0068_remove_deliveryjob_destination_point_and_more'),
+        ("amc", "0068_remove_deliveryjob_destination_point_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='deliverypoint',
-            options={'ordering': ['name']},
+            name="deliverypoint",
+            options={"ordering": ["name"]},
         ),
     ]

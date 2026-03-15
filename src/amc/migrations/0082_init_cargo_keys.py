@@ -3,21 +3,16 @@
 from django.db import migrations
 from amc.enums import CargoKey
 
+
 def init_cargo_keys(apps, schema_editor):
-  Cargo = apps.get_model('amc', 'Cargo')
-  cargos = [
-    Cargo(key=key, label=label)
-    for key, label in CargoKey.choices
-  ]
-  Cargo.objects.bulk_create(cargos)
+    Cargo = apps.get_model("amc", "Cargo")
+    cargos = [Cargo(key=key, label=label) for key, label in CargoKey.choices]
+    Cargo.objects.bulk_create(cargos)
+
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0081_cargo_deliveryjob_cargos'),
+        ("amc", "0081_cargo_deliveryjob_cargos"),
     ]
 
-    operations = [
-      migrations.RunPython(init_cargo_keys)
-    ]
-
+    operations = [migrations.RunPython(init_cargo_keys)]

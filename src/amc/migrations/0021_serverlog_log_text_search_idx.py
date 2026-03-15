@@ -6,14 +6,16 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0020_playermailmessage'),
+        ("amc", "0020_playermailmessage"),
     ]
 
     operations = [
         migrations.AddIndex(
-            model_name='serverlog',
-            index=django.contrib.postgres.indexes.GinIndex(django.contrib.postgres.search.SearchVector('text', config='english'), name='log_text_search_idx'),
+            model_name="serverlog",
+            index=django.contrib.postgres.indexes.GinIndex(
+                django.contrib.postgres.search.SearchVector("text", config="english"),
+                name="log_text_search_idx",
+            ),
         ),
     ]

@@ -4,55 +4,54 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0111_scheduledevent_discord_message_id_and_more'),
+        ("amc", "0111_scheduledevent_discord_message_id_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='custom_name',
+            model_name="character",
+            name="custom_name",
             field=models.CharField(blank=True, max_length=200, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='bus_level',
+            model_name="character",
+            name="bus_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='driver_level',
+            model_name="character",
+            name="driver_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='money',
+            model_name="character",
+            name="money",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='police_level',
+            model_name="character",
+            name="police_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='racer_level',
+            model_name="character",
+            name="racer_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='taxi_level',
+            model_name="character",
+            name="taxi_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='truck_level',
+            model_name="character",
+            name="truck_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='character',
-            name='wrecker_level',
+            model_name="character",
+            name="wrecker_level",
             field=models.PositiveIntegerField(blank=True, null=True),
         ),
     ]

@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0127_charactervehicle_alias'),
+        ("amc", "0127_charactervehicle_alias"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='displayer',
-            field=models.BooleanField(default=False, help_text='Livery artists, showcase etc'),
+            model_name="player",
+            name="displayer",
+            field=models.BooleanField(
+                default=False, help_text="Livery artists, showcase etc"
+            ),
         ),
     ]

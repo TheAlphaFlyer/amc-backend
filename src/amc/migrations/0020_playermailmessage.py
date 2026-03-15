@@ -5,21 +5,47 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0019_characterlocation'),
+        ("amc", "0019_characterlocation"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PlayerMailMessage',
+            name="PlayerMailMessage",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('content', models.TextField()),
-                ('sent_at', models.DateTimeField(auto_now_add=True)),
-                ('received_at', models.DateTimeField(blank=True, editable=False, null=True)),
-                ('from_player', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='outbox_messages', to='amc.player')),
-                ('to_player', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='inbox_messages', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("content", models.TextField()),
+                ("sent_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "received_at",
+                    models.DateTimeField(blank=True, editable=False, null=True),
+                ),
+                (
+                    "from_player",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="outbox_messages",
+                        to="amc.player",
+                    ),
+                ),
+                (
+                    "to_player",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="inbox_messages",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
     ]

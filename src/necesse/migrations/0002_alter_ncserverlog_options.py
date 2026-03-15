@@ -4,14 +4,16 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('necesse', '0001_initial'),
+        ("necesse", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='ncserverlog',
-            options={'verbose_name': 'Server Log', 'verbose_name_plural': 'Server Logs'},
+            name="ncserverlog",
+            options={
+                "verbose_name": "Server Log",
+                "verbose_name_plural": "Server Logs",
+            },
         ),
     ]

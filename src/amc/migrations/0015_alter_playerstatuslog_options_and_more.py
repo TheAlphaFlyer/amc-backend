@@ -5,39 +5,58 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0014_botinvocationlog_songrequestlog'),
+        ("amc", "0014_botinvocationlog_songrequestlog"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='playerstatuslog',
-            options={'ordering': ['-timespan__startswith']},
+            name="playerstatuslog",
+            options={"ordering": ["-timespan__startswith"]},
         ),
         migrations.AlterField(
-            model_name='botinvocationlog',
-            name='character',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='bot_invocation_logs', to='amc.character'),
+            model_name="botinvocationlog",
+            name="character",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="bot_invocation_logs",
+                to="amc.character",
+            ),
         ),
         migrations.AlterField(
-            model_name='playerchatlog',
-            name='character',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='chat_logs', to='amc.character'),
+            model_name="playerchatlog",
+            name="character",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="chat_logs",
+                to="amc.character",
+            ),
         ),
         migrations.AlterField(
-            model_name='playerstatuslog',
-            name='character',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='status_logs', to='amc.character'),
+            model_name="playerstatuslog",
+            name="character",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="status_logs",
+                to="amc.character",
+            ),
         ),
         migrations.AlterField(
-            model_name='playervehiclelog',
-            name='character',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='vehicle_logs', to='amc.character'),
+            model_name="playervehiclelog",
+            name="character",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="vehicle_logs",
+                to="amc.character",
+            ),
         ),
         migrations.AlterField(
-            model_name='songrequestlog',
-            name='character',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='song_request_logs', to='amc.character'),
+            model_name="songrequestlog",
+            name="character",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="song_request_logs",
+                to="amc.character",
+            ),
         ),
     ]

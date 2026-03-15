@@ -5,35 +5,71 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0004_serverlog'),
+        ("amc", "0004_serverlog"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Vehicle',
+            name="Vehicle",
             fields=[
-                ('id', models.PositiveBigIntegerField(primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=200)),
+                (
+                    "id",
+                    models.PositiveBigIntegerField(primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=200)),
             ],
         ),
         migrations.AlterField(
-            model_name='playerchatlog',
-            name='timestamp',
+            model_name="playerchatlog",
+            name="timestamp",
             field=models.DateTimeField(),
         ),
         migrations.CreateModel(
-            name='PlayerVehicleLog',
+            name="PlayerVehicleLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('action', models.CharField(choices=[('EN', 'Entered'), ('EX', 'Exited'), ('BO', 'Bought'), ('SO', 'Sold')], max_length=2)),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.character')),
-                ('vehicle', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.vehicle')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                (
+                    "action",
+                    models.CharField(
+                        choices=[
+                            ("EN", "Entered"),
+                            ("EX", "Exited"),
+                            ("BO", "Bought"),
+                            ("SO", "Sold"),
+                        ],
+                        max_length=2,
+                    ),
+                ),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.character"
+                    ),
+                ),
+                (
+                    "vehicle",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.vehicle"
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('timestamp', 'character', 'vehicle', 'action'), name='unique_vehicle_log_entry')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("timestamp", "character", "vehicle", "action"),
+                        name="unique_vehicle_log_entry",
+                    )
+                ],
             },
         ),
     ]

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0069_alter_deliverypoint_options'),
+        ("amc", "0069_alter_deliverypoint_options"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='discord_message_id',
+            model_name="deliveryjob",
+            name="discord_message_id",
             field=models.PositiveBigIntegerField(null=True),
         ),
     ]

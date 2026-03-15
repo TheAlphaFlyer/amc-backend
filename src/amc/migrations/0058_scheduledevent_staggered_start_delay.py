@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0057_teleportpoint'),
+        ("amc", "0057_teleportpoint"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduledevent',
-            name='staggered_start_delay',
-            field=models.PositiveIntegerField(default=0, help_text='Delay between staggered start, in seconds. This can be overridden in the game'),
+            model_name="scheduledevent",
+            name="staggered_start_delay",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Delay between staggered start, in seconds. This can be overridden in the game",
+            ),
         ),
     ]

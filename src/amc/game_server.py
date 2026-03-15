@@ -4,79 +4,103 @@ import urllib.parse
 import aiohttp
 from yarl import URL
 
-async def game_api_request(session, url, method='get', password='', params={}, timeout=15):
-  req_params = {'password': password, **params}
-  params_str = urllib.parse.urlencode(req_params, quote_via=cast(Any, urllib.parse.quote))
-  try:
-    fn = getattr(session, method)
-  except AttributeError as e:
-    print(f"Invalid method: {e}")
-    raise e
 
-  request_timeout = aiohttp.ClientTimeout(total=timeout)
-  async with fn(URL(f"{url}?{params_str}", encoded=True), timeout=request_timeout) as resp:
-    resp_json = await resp.json()
-    return resp_json
+async def game_api_request(
+    session, url, method="get", password="", params={}, timeout=15
+):
+    req_params = {"password": password, **params}
+    params_str = urllib.parse.urlencode(
+        req_params, quote_via=cast(Any, urllib.parse.quote)
+    )
+    try:
+        fn = getattr(session, method)
+    except AttributeError as e:
+        print(f"Invalid method: {e}")
+        raise e
 
-
-async def get_players(session, password=''):
-  data = await game_api_request(session, "/player/list")
-  if 'data' not in data:
-    return []
-  players = [
-    (player['unique_id'], player)
-    for player in data['data'].values()
-    if player is not None
-  ]
-  return players
-
-async def is_player_online(player_id, session, password=''):
-  players = await get_players(session, password)
-  player_ids = {str(player_id) for player_id, _ in players}
-  return str(player_id) in player_ids
+    request_timeout = aiohttp.ClientTimeout(total=timeout)
+    async with fn(
+        URL(f"{url}?{params_str}", encoded=True), timeout=request_timeout
+    ) as resp:
+        resp_json = await resp.json()
+        return resp_json
 
 
-async def announcement_request(message, session, password='', type="message", color=None):
-  params = {'message': message}
-  if type:
-    params['type'] = type
-  if color is not None:
-    params['color'] = color
-  return await game_api_request(session, "/chat", method='post', params=params)
+async def get_players(session, password=""):
+    data = await game_api_request(session, "/player/list")
+    if "data" not in data:
+        return []
+    players = [
+        (player["unique_id"], player)
+        for player in data["data"].values()
+        if player is not None
+    ]
+    return players
 
 
-async def announce(message: str, session, password='', clear_banner=True, type="message", color="FFFF00", delay=0):
-  if delay > 0:
-    await asyncio.sleep(delay)
-  message_sanitized = message.strip().replace('\n', ' ')
-  try:
-    await announcement_request(message_sanitized, session, password, type=type, color=color)
-    if type == "announce" and clear_banner:
-      await announcement_request(' ', session, password)
-  except Exception as e:
-    print(f"Error sending message: {e}")
-    raise e
+async def is_player_online(player_id, session, password=""):
+    players = await get_players(session, password)
+    player_ids = {str(player_id) for player_id, _ in players}
+    return str(player_id) in player_ids
 
 
-async def get_deliverypoints(session, password=''):
-  return await game_api_request(session, "/delivery/sites")
+async def announcement_request(
+    message, session, password="", type="message", color=None
+):
+    params = {"message": message}
+    if type:
+        params["type"] = type
+    if color is not None:
+        params["color"] = color
+    return await game_api_request(session, "/chat", method="post", params=params)
 
-async def get_world(session, password=''):
-  return await game_api_request(session, "https://server.aseanmotorclub.com/api/world/")
+
+async def announce(
+    message: str,
+    session,
+    password="",
+    clear_banner=True,
+    type="message",
+    color="FFFF00",
+    delay=0,
+):
+    if delay > 0:
+        await asyncio.sleep(delay)
+    message_sanitized = message.strip().replace("\n", " ")
+    try:
+        await announcement_request(
+            message_sanitized, session, password, type=type, color=color
+        )
+        if type == "announce" and clear_banner:
+            await announcement_request(" ", session, password)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+        raise e
+
+
+async def get_deliverypoints(session, password=""):
+    return await game_api_request(session, "/delivery/sites")
+
+
+async def get_world(session, password=""):
+    return await game_api_request(
+        session, "https://server.aseanmotorclub.com/api/world/"
+    )
+
 
 async def kick_player(unique_id, session):
-  params = {
-    'unique_id': unique_id,
-  }
-  return await game_api_request(session, "/player/kick", method='post', params=params)
+    params = {
+        "unique_id": unique_id,
+    }
+    return await game_api_request(session, "/player/kick", method="post", params=params)
+
 
 async def ban_player(session, unique_id, hours=None, reason=None):
-  params = {
-    'unique_id': unique_id,
-  }
-  if hours:
-    params['hours'] = hours
-  if reason:
-    params['reason'] = reason
-  return await game_api_request(session, "/player/ban", method='post', params=params)
-
+    params = {
+        "unique_id": unique_id,
+    }
+    if hours:
+        params["hours"] = hours
+    if reason:
+        params["reason"] = reason
+    return await game_api_request(session, "/player/ban", method="post", params=params)

@@ -5,15 +5,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0036_deliverypoint_data_deliverypoint_last_updated'),
+        ("amc", "0036_deliverypoint_data_deliverypoint_last_updated"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='lap_times',
-            field=django.contrib.postgres.fields.ArrayField(base_field=models.FloatField(), blank=True, default=list, null=True, size=None),
+            model_name="gameeventcharacter",
+            name="lap_times",
+            field=django.contrib.postgres.fields.ArrayField(
+                base_field=models.FloatField(),
+                blank=True,
+                default=list,
+                null=True,
+                size=None,
+            ),
         ),
     ]

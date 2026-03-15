@@ -4,19 +4,31 @@ import logging
 import importlib
 import pkgutil
 from django.utils import translation
-from typing import Callable, Any, get_type_hints, Dict, List, Union, Optional, TYPE_CHECKING
+from typing import (
+    Callable,
+    Any,
+    get_type_hints,
+    Dict,
+    List,
+    Union,
+    Optional,
+    TYPE_CHECKING,
+)
 from django.utils.translation import gettext as _
+
 if TYPE_CHECKING:
     from django.utils.functional import _StrPromise
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class CommandContext:
     """
     Holds the state for a single command execution.
     """
+
     timestamp: Any
     character: Any
     player: Any
@@ -29,27 +41,38 @@ class CommandContext:
     async def reply(self, message: str):
         """Generic reply via popup"""
         from amc.mod_server import show_popup
+
         if self.http_client_mod:
-             await show_popup(
-                 self.http_client_mod, 
-                 message, 
-                 character_guid=self.character.guid, 
-                 player_id=str(self.player.unique_id)
+            await show_popup(
+                self.http_client_mod,
+                message,
+                character_guid=self.character.guid,
+                player_id=str(self.player.unique_id),
             )
-            
+
     async def announce(self, message: str, **kwargs):
         from amc.game_server import announce
+
         if self.http_client:
             await announce(message, self.http_client, **kwargs)
+
 
 class CommandRegistry:
     def __init__(self):
         self.commands: List[Dict] = []
 
-    def register(self, command: Union[str, List[str]], description: Union[str, "_StrPromise"] = "", category: str = "General", deprecated: bool = False, deprecated_message: Optional[str] = None, featured: bool = False):
+    def register(
+        self,
+        command: Union[str, List[str]],
+        description: Union[str, "_StrPromise"] = "",
+        category: str = "General",
+        deprecated: bool = False,
+        deprecated_message: Optional[str] = None,
+        featured: bool = False,
+    ):
         """
         Decorator to register a command.
-        
+
         Args:
             command: The command string (e.g. "/help") or list of aliases (e.g. ["/teleport", "/tp"])
             description: A short description of what the command does.
@@ -58,23 +81,27 @@ class CommandRegistry:
             deprecated_message: Optional custom message to show when a deprecated command is used.
             featured: If True, command appears in Featured section at top of /help.
         """
+
         def decorator(func: Callable):
             aliases = [command] if isinstance(command, str) else command
             pattern = self._build_regex_from_signature(aliases, func)
-            
-            self.commands.append({
-                'name': aliases[0],
-                'aliases': aliases,
-                'func': func,
-                'pattern': re.compile(pattern, re.IGNORECASE),
-                'hints': get_type_hints(func),
-                'description': description,
-                'category': category,
-                'deprecated': deprecated,
-                'deprecated_message': deprecated_message,
-                'featured': featured
-            })
+
+            self.commands.append(
+                {
+                    "name": aliases[0],
+                    "aliases": aliases,
+                    "func": func,
+                    "pattern": re.compile(pattern, re.IGNORECASE),
+                    "hints": get_type_hints(func),
+                    "description": description,
+                    "category": category,
+                    "deprecated": deprecated,
+                    "deprecated_message": deprecated_message,
+                    "featured": featured,
+                }
+            )
             return func
+
         return decorator
 
     def autodiscover(self, package_path: str):
@@ -93,25 +120,25 @@ class CommandRegistry:
         # 1. Build the command part: (?:/cmd1|/cmd2)
         escaped_aliases = [re.escape(a) for a in aliases]
         cmd_part = f"(?:{'|'.join(escaped_aliases)})"
-        
+
         # 2. Build the args part
         sig = inspect.signature(func)
         params = list(sig.parameters.values())
         regex_parts = [cmd_part]
-        
+
         # Filter out 'ctx' or 'self'
-        args = [p for p in params if p.name not in ('ctx', 'self')]
-        
+        args = [p for p in params if p.name not in ("ctx", "self")]
+
         for i, param in enumerate(args):
-            is_last = (i == len(args) - 1)
+            is_last = i == len(args) - 1
             annotation = param.annotation
             default = param.default
             is_optional = default != inspect.Parameter.empty
-            
+
             # Determine regex for type
             if annotation is int:
                 # Matches digits, optional negative sign
-                type_regex = r"[-]?\d+" 
+                type_regex = r"[-]?\d+"
             elif annotation is float:
                 # Matches float or int
                 type_regex = r"[-]?\d+(?:\.\d+)?"
@@ -119,14 +146,14 @@ class CommandRegistry:
                 # String handling
                 if is_last:
                     # Last string arg takes the rest of the line
-                    type_regex = r".+" 
+                    type_regex = r".+"
                 else:
                     # Intermediate string arg takes until next whitespace
                     type_regex = r"\S+"
 
             # Build the group: (?P<name>regex)
             group = f"(?P<{param.name}>{type_regex})"
-            
+
             if is_optional:
                 # Optional arg: non-capturing group with space and the arg, whole thing optional
                 # e.g. (?:\s+(?P<arg>\d+))?
@@ -135,27 +162,27 @@ class CommandRegistry:
                 # Required arg: must have preceding space
                 regex_parts.append(r"\s+" + group)
 
-        regex_parts.append(r"$") # End of string anchor
+        regex_parts.append(r"$")  # End of string anchor
         return "".join(regex_parts)
 
     def _generate_usage(self, cmd_data: Dict) -> str:
         """Generate usage string for a command."""
-        func = cmd_data['func']
+        func = cmd_data["func"]
         sig = inspect.signature(func)
         params = list(sig.parameters.values())
-        
+
         # Filter out 'ctx' and 'self'
-        args = [p for p in params if p.name not in ('ctx', 'self')]
-        
+        args = [p for p in params if p.name not in ("ctx", "self")]
+
         # Build usage string
-        usage_parts = [cmd_data['name']]
+        usage_parts = [cmd_data["name"]]
         for param in args:
             is_optional = param.default != inspect.Parameter.empty
             if is_optional:
                 usage_parts.append(f"[{param.name}]")
             else:
                 usage_parts.append(f"<{param.name}>")
-        
+
         return " ".join(usage_parts)
 
     async def execute(self, message: str, ctx: CommandContext) -> bool:
@@ -166,52 +193,60 @@ class CommandRegistry:
         # First, check if any command base matches (without args) for usage feedback
         partial_match_cmd: Optional[Dict[str, Any]] = None
         for cmd_data in self.commands:
-            for alias in cmd_data['aliases']:
+            for alias in cmd_data["aliases"]:
                 # Check if message starts with a command alias (case-insensitive)
-                if message.lower() == alias.lower() or message.lower().startswith(alias.lower() + ' '):
+                if message.lower() == alias.lower() or message.lower().startswith(
+                    alias.lower() + " "
+                ):
                     partial_match_cmd = cmd_data
                     break
             if partial_match_cmd:
                 break
-        
+
         for cmd_data in self.commands:
-            match = cmd_data['pattern'].match(message)
+            match = cmd_data["pattern"].match(message)
             if match:
                 # Handle deprecated commands
-                if cmd_data.get('deprecated', False):
+                if cmd_data.get("deprecated", False):
                     if ctx.is_current_event:
-                        deprecation_msg = cmd_data.get('deprecated_message') or _("<Title>Command Deprecated</>\nThis command is no longer available.")
+                        deprecation_msg = cmd_data.get("deprecated_message") or _(
+                            "<Title>Command Deprecated</>\nThis command is no longer available."
+                        )
                         await ctx.reply(deprecation_msg)
                     return True  # Prevent forwarding to Discord
-                
+
                 kwargs = match.groupdict()
-                func = cmd_data['func']
-                hints = cmd_data['hints']
-                
+                func = cmd_data["func"]
+                hints = cmd_data["hints"]
+
                 # Type casting
                 processed_kwargs = {}
                 for k, v in kwargs.items():
-                    if v is None: 
-                        continue 
-                    
+                    if v is None:
+                        continue
+
                     target_type = hints.get(k, str)
                     try:
                         if target_type is int:
                             # Handle "1,000" -> 1000
-                            processed_kwargs[k] = int(v.replace(',', ''))
+                            processed_kwargs[k] = int(v.replace(",", ""))
                         elif target_type is float:
                             processed_kwargs[k] = float(v)
                         else:
                             processed_kwargs[k] = v
                     except ValueError:
-                        # If casting fails, we assume this isn't the right command match 
+                        # If casting fails, we assume this isn't the right command match
                         # (though regex should mostly prevent this) or bad input
-                        continue 
+                        continue
 
                 # Execute
                 try:
-                    lang = 'en-gb'
-                    if ctx.player and hasattr(ctx.player, 'language') and isinstance(ctx.player.language, str):
+                    lang = "en-gb"
+                    if (
+                        ctx.player
+                        and hasattr(ctx.player, "language")
+                        and isinstance(ctx.player.language, str)
+                    ):
                         lang = ctx.player.language
 
                     with translation.override(lang):
@@ -219,34 +254,45 @@ class CommandRegistry:
                     return True
                 except Exception as e:
                     logger.exception(f"Error executing command {cmd_data['name']}")
-                    lang = 'en-gb'
-                    if ctx.player and hasattr(ctx.player, 'language') and isinstance(ctx.player.language, str):
+                    lang = "en-gb"
+                    if (
+                        ctx.player
+                        and hasattr(ctx.player, "language")
+                        and isinstance(ctx.player.language, str)
+                    ):
                         lang = ctx.player.language
 
                     with translation.override(lang):
-                        await ctx.reply(_("<Title>Error</>\n{error}").format(error=str(e)))
+                        await ctx.reply(
+                            _("<Title>Error</>\n{error}").format(error=str(e))
+                        )
                     return True
-        
+
         # If we matched a command base but not the full pattern, show usage
         if partial_match_cmd:
             usage = self._generate_usage(partial_match_cmd)
-            description = partial_match_cmd.get('description', '')
+            description = partial_match_cmd.get("description", "")
             # Force string evaluation for lazy translation
-            if hasattr(description, '__str__'):
+            if hasattr(description, "__str__"):
                 description = str(description)
-            
-            lang = 'en-gb'
-            if ctx.player and hasattr(ctx.player, 'language') and isinstance(ctx.player.language, str):
+
+            lang = "en-gb"
+            if (
+                ctx.player
+                and hasattr(ctx.player, "language")
+                and isinstance(ctx.player.language, str)
+            ):
                 lang = ctx.player.language
-            
+
             with translation.override(lang):
                 msg = _("<Title>Usage</>\n{usage}").format(usage=usage)
                 if description:
                     msg += f"\n\n{description}"
                 await ctx.reply(msg)
             return True
-        
+
         return False
+
 
 # Global instance
 registry = CommandRegistry()

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0053_serversigncontractlog_data_and_more'),
+        ("amc", "0053_serversigncontractlog_data_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='money',
+            model_name="character",
+            name="money",
             field=models.PositiveIntegerField(null=True),
         ),
     ]

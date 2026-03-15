@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0032_serverlog_hostname_serverlog_tag'),
+        ("amc", "0032_serverlog_hostname_serverlog_tag"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduledevent',
-            name='time_trial',
+            model_name="scheduledevent",
+            name="time_trial",
             field=models.BooleanField(default=False),
         ),
     ]

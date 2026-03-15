@@ -5,146 +5,173 @@ from amc.game_server import get_deliverypoints
 from amc.enums import CargoKey
 from amc.utils import skip_if_running
 
-cargo_key_by_label = { v: k for k, v in CargoKey.choices }
+cargo_key_by_label = {v: k for k, v in CargoKey.choices}
+
 
 def normalise_inventory(inventory):
-  cargo = inventory['cargo']
-  cargo_key = cargo_key_by_label.get(cargo['name'], cargo['name'])
-  return {**inventory, 'cargoKey': cargo_key}
+    cargo = inventory["cargo"]
+    cargo_key = cargo_key_by_label.get(cargo["name"], cargo["name"])
+    return {**inventory, "cargoKey": cargo_key}
+
 
 def normalise_delivery(delivery):
-  cargo_key = cargo_key_by_label.get(delivery['cargo_type'], delivery['cargo_type'])
-  return {**delivery, 'cargoKey': cargo_key}
+    cargo_key = cargo_key_by_label.get(delivery["cargo_type"], delivery["cargo_type"])
+    return {**delivery, "cargoKey": cargo_key}
+
 
 def parse_location(location_str):
-  """Parse 'X=... Y=... Z=...' into a Point(x, y, z)."""
-  match = re.match(r'X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)', location_str)
-  if not match:
-    return None
-  return Point(float(match.group(1)), float(match.group(2)), float(match.group(3)), srid=3857)
+    """Parse 'X=... Y=... Z=...' into a Point(x, y, z)."""
+    match = re.match(r"X=([-\d.]+)\s+Y=([-\d.]+)\s+Z=([-\d.]+)", location_str)
+    if not match:
+        return None
+    return Point(
+        float(match.group(1)), float(match.group(2)), float(match.group(3)), srid=3857
+    )
 
 
 @skip_if_running
 async def monitor_deliverypoints(ctx):
-  session = ctx['http_client']
+    session = ctx["http_client"]
 
-  dps_info = await get_deliverypoints(session)
-  dps_data = dps_info.get('data', {})
+    dps_info = await get_deliverypoints(session)
+    dps_data = dps_info.get("data", {})
 
-  cargo_by_key = {cargo.key: cargo async for cargo in Cargo.objects.select_related('type').all()}
-
-  seen_guids = set()
-  # Collect storage objects for batch upsert
-  storage_upserts = []
-
-  for dp_info in dps_data.values():
-    guid = dp_info['guid'].lower()
-    seen_guids.add(guid)
-
-    try:
-      dp = await DeliveryPoint.objects.aget(guid=guid)
-      # Sync name if changed
-      updated_fields = []
-      if dp.name != dp_info['name']:
-        dp.name = dp_info['name']
-        updated_fields.append('name')
-      if dp.removed:
-        dp.removed = False
-        updated_fields.append('removed')
-      if updated_fields:
-        await dp.asave(update_fields=updated_fields + ['last_updated'])
-    except DeliveryPoint.DoesNotExist:
-      # Auto-create new delivery point
-      coord = parse_location(dp_info.get('location', ''))
-      if not coord:
-        print(f"Could not parse location for {dp_info['guid']}: {dp_info.get('location')}")
-        continue
-      dp = await DeliveryPoint.objects.acreate(
-        guid=guid,
-        name=dp_info['name'],
-        coord=coord,
-      )
-      # Create storages from API inventory
-      for inventory in dp_info.get('InputInventory', {}).values():
-        cargo_key = cargo_key_by_label.get(inventory['cargo']['name'], inventory['cargo']['cargo_key'])
-        cargo = cargo_by_key.get(cargo_key)
-        await DeliveryPointStorage.objects.acreate(
-          delivery_point=dp,
-          kind=DeliveryPointStorage.Kind.INPUT,
-          cargo_key=cargo_key,
-          cargo=cargo,
-          amount=inventory['amount'],
-        )
-      for inventory in dp_info.get('OutputInventory', {}).values():
-        cargo_key = cargo_key_by_label.get(inventory['cargo']['name'], inventory['cargo']['cargo_key'])
-        cargo = cargo_by_key.get(cargo_key)
-        await DeliveryPointStorage.objects.acreate(
-          delivery_point=dp,
-          kind=DeliveryPointStorage.Kind.OUTPUT,
-          cargo_key=cargo_key,
-          cargo=cargo,
-          amount=inventory['amount'],
-        )
-      print(f"Created delivery point: {dp_info['name']} ({guid})")
-
-    # Update live data (existing logic)
-    dp.data = {
-      'inputInventory': list(map(normalise_inventory, dp_info.get('InputInventory', {}).values())),
-      'outputInventory': list(map(normalise_inventory, dp_info.get('OutputInventory', {}).values())),
-      'deliveries': list(map(normalise_delivery, dp_info.get('Deliveries', {}).values())),
+    cargo_by_key = {
+        cargo.key: cargo async for cargo in Cargo.objects.select_related("type").all()
     }
-    await dp.asave()
 
-    # Collect storage upserts for batch operation
-    for inventory in dp.data['inputInventory']:
-      cargo = cargo_by_key.get(inventory['cargoKey'])
-      storage_upserts.append(DeliveryPointStorage(
-        delivery_point=dp,
-        kind=DeliveryPointStorage.Kind.INPUT,
-        cargo_key=inventory['cargoKey'],
-        cargo=cargo,
-        amount=inventory['amount'],
-      ))
+    seen_guids = set()
+    # Collect storage objects for batch upsert
+    storage_upserts = []
 
-    for inventory in dp.data['outputInventory']:
-      cargo = cargo_by_key.get(inventory['cargoKey'])
-      storage_upserts.append(DeliveryPointStorage(
-        delivery_point=dp,
-        kind=DeliveryPointStorage.Kind.OUTPUT,
-        cargo_key=inventory['cargoKey'],
-        cargo=cargo,
-        amount=inventory['amount'],
-      ))
+    for dp_info in dps_data.values():
+        guid = dp_info["guid"].lower()
+        seen_guids.add(guid)
 
-  # Batch upsert all storage records
-  if storage_upserts:
-    await DeliveryPointStorage.objects.abulk_create(
-      storage_upserts,
-      update_conflicts=True,
-      unique_fields=['delivery_point', 'kind', 'cargo_key'],
-      update_fields=['cargo', 'amount'],
-    )
+        try:
+            dp = await DeliveryPoint.objects.aget(guid=guid)
+            # Sync name if changed
+            updated_fields = []
+            if dp.name != dp_info["name"]:
+                dp.name = dp_info["name"]
+                updated_fields.append("name")
+            if dp.removed:
+                dp.removed = False
+                updated_fields.append("removed")
+            if updated_fields:
+                await dp.asave(update_fields=updated_fields + ["last_updated"])
+        except DeliveryPoint.DoesNotExist:
+            # Auto-create new delivery point
+            coord = parse_location(dp_info.get("location", ""))
+            if not coord:
+                print(
+                    f"Could not parse location for {dp_info['guid']}: {dp_info.get('location')}"
+                )
+                continue
+            dp = await DeliveryPoint.objects.acreate(
+                guid=guid,
+                name=dp_info["name"],
+                coord=coord,
+            )
+            # Create storages from API inventory
+            for inventory in dp_info.get("InputInventory", {}).values():
+                cargo_key = cargo_key_by_label.get(
+                    inventory["cargo"]["name"], inventory["cargo"]["cargo_key"]
+                )
+                cargo = cargo_by_key.get(cargo_key)
+                await DeliveryPointStorage.objects.acreate(
+                    delivery_point=dp,
+                    kind=DeliveryPointStorage.Kind.INPUT,
+                    cargo_key=cargo_key,
+                    cargo=cargo,
+                    amount=inventory["amount"],
+                )
+            for inventory in dp_info.get("OutputInventory", {}).values():
+                cargo_key = cargo_key_by_label.get(
+                    inventory["cargo"]["name"], inventory["cargo"]["cargo_key"]
+                )
+                cargo = cargo_by_key.get(cargo_key)
+                await DeliveryPointStorage.objects.acreate(
+                    delivery_point=dp,
+                    kind=DeliveryPointStorage.Kind.OUTPUT,
+                    cargo_key=cargo_key,
+                    cargo=cargo,
+                    amount=inventory["amount"],
+                )
+            print(f"Created delivery point: {dp_info['name']} ({guid})")
 
-  # Mark removed: DB entries not seen in the API
-  newly_removed = []
-  async for dp in DeliveryPoint.objects.filter(removed=False).exclude(guid__in=seen_guids):
-    dp.removed = True
-    await dp.asave(update_fields=['removed', 'last_updated'])
-    newly_removed.append(dp)
+        # Update live data (existing logic)
+        dp.data = {
+            "inputInventory": list(
+                map(normalise_inventory, dp_info.get("InputInventory", {}).values())
+            ),
+            "outputInventory": list(
+                map(normalise_inventory, dp_info.get("OutputInventory", {}).values())
+            ),
+            "deliveries": list(
+                map(normalise_delivery, dp_info.get("Deliveries", {}).values())
+            ),
+        }
+        await dp.asave()
 
-  # Disable templates referencing newly removed points
-  if newly_removed:
-    removed_guids = [dp.guid for dp in newly_removed]
-    templates_to_disable = DeliveryJobTemplate.objects.filter(
-      enabled=True,
-    ).filter(
-      source_points__guid__in=removed_guids,
-    ) | DeliveryJobTemplate.objects.filter(
-      enabled=True,
-    ).filter(
-      destination_points__guid__in=removed_guids,
-    )
-    async for template in templates_to_disable.distinct():
-      template.enabled = False
-      await template.asave(update_fields=['enabled'])
-      print(f"Disabled template: {template.name} (id={template.id}) — references removed delivery point")
+        # Collect storage upserts for batch operation
+        for inventory in dp.data["inputInventory"]:
+            cargo = cargo_by_key.get(inventory["cargoKey"])
+            storage_upserts.append(
+                DeliveryPointStorage(
+                    delivery_point=dp,
+                    kind=DeliveryPointStorage.Kind.INPUT,
+                    cargo_key=inventory["cargoKey"],
+                    cargo=cargo,
+                    amount=inventory["amount"],
+                )
+            )
+
+        for inventory in dp.data["outputInventory"]:
+            cargo = cargo_by_key.get(inventory["cargoKey"])
+            storage_upserts.append(
+                DeliveryPointStorage(
+                    delivery_point=dp,
+                    kind=DeliveryPointStorage.Kind.OUTPUT,
+                    cargo_key=inventory["cargoKey"],
+                    cargo=cargo,
+                    amount=inventory["amount"],
+                )
+            )
+
+    # Batch upsert all storage records
+    if storage_upserts:
+        await DeliveryPointStorage.objects.abulk_create(
+            storage_upserts,
+            update_conflicts=True,
+            unique_fields=["delivery_point", "kind", "cargo_key"],
+            update_fields=["cargo", "amount"],
+        )
+
+    # Mark removed: DB entries not seen in the API
+    newly_removed = []
+    async for dp in DeliveryPoint.objects.filter(removed=False).exclude(
+        guid__in=seen_guids
+    ):
+        dp.removed = True
+        await dp.asave(update_fields=["removed", "last_updated"])
+        newly_removed.append(dp)
+
+    # Disable templates referencing newly removed points
+    if newly_removed:
+        removed_guids = [dp.guid for dp in newly_removed]
+        templates_to_disable = DeliveryJobTemplate.objects.filter(
+            enabled=True,
+        ).filter(
+            source_points__guid__in=removed_guids,
+        ) | DeliveryJobTemplate.objects.filter(
+            enabled=True,
+        ).filter(
+            destination_points__guid__in=removed_guids,
+        )
+        async for template in templates_to_disable.distinct():
+            template.enabled = False
+            await template.asave(update_fields=["enabled"])
+            print(
+                f"Disabled template: {template.name} (id={template.id}) — references removed delivery point"
+            )

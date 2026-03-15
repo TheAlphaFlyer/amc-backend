@@ -5,20 +5,31 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0060_character_reject_ubi_character_ubi_multiplier'),
+        ("amc", "0060_character_reject_ubi_character_ubi_multiplier"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='servercargoarrivedlog',
-            name='destination_point',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='deliveries_in', to='amc.deliverypoint'),
+            model_name="servercargoarrivedlog",
+            name="destination_point",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="deliveries_in",
+                to="amc.deliverypoint",
+            ),
         ),
         migrations.AddField(
-            model_name='servercargoarrivedlog',
-            name='sender_point',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='deliveries_out', to='amc.deliverypoint'),
+            model_name="servercargoarrivedlog",
+            name="sender_point",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="deliveries_out",
+                to="amc.deliverypoint",
+            ),
         ),
     ]

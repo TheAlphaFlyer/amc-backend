@@ -5,24 +5,42 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0009_serverlog_event_processed'),
+        ("amc", "0009_serverlog_event_processed"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='playerstatuslog',
-            name='original_log',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='amc.serverlog'),
+            model_name="playerstatuslog",
+            name="original_log",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                to="amc.serverlog",
+            ),
         ),
         migrations.CreateModel(
-            name='PlayerRestockDepotLog',
+            name="PlayerRestockDepotLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('depot_name', models.CharField(max_length=200)),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='restock_depot_logs', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("depot_name", models.CharField(max_length=200)),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="restock_depot_logs",
+                        to="amc.character",
+                    ),
+                ),
             ],
         ),
     ]

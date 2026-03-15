@@ -5,19 +5,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0034_racesetup_name'),
+        ("amc", "0034_racesetup_name"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='DeliveryPoint',
+            name="DeliveryPoint",
             fields=[
-                ('guid', models.CharField(max_length=200, primary_key=True, serialize=False)),
-                ('name', models.CharField(max_length=200)),
-                ('type', models.CharField(max_length=200)),
-                ('coord', django.contrib.gis.db.models.fields.PointField(dim=3, srid=0)),
+                (
+                    "guid",
+                    models.CharField(max_length=200, primary_key=True, serialize=False),
+                ),
+                ("name", models.CharField(max_length=200)),
+                ("type", models.CharField(max_length=200)),
+                (
+                    "coord",
+                    django.contrib.gis.db.models.fields.PointField(dim=3, srid=0),
+                ),
             ],
         ),
     ]

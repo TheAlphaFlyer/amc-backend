@@ -9,51 +9,50 @@ from amc.api.bot_events import emit_bot_event, BOT_EVENTS_CHANNEL
 class BotEventsRedisTest(TestCase):
     """Tests for the bot_events Redis pub/sub functionality."""
 
-    @patch('amc.api.bot_events.aioredis')
+    @patch("amc.api.bot_events.aioredis")
     async def test_emit_bot_event_publishes_to_redis(self, mock_aioredis):
         """Test that emit_bot_event correctly publishes events to Redis."""
         mock_client = AsyncMock()
         mock_aioredis.from_url.return_value = mock_client
-        
+
         event = {
             "type": "chat_message",
             "player_name": "TestPlayer",
             "message": "Hello world",
         }
-        
+
         await emit_bot_event(event)
-        
+
         # Verify Redis client was created and publish was called
         mock_aioredis.from_url.assert_called_once()
         mock_client.publish.assert_called_once_with(
-            BOT_EVENTS_CHANNEL, 
-            json.dumps(event)
+            BOT_EVENTS_CHANNEL, json.dumps(event)
         )
         mock_client.aclose.assert_called_once()
 
-    @patch('amc.api.bot_events.aioredis')
+    @patch("amc.api.bot_events.aioredis")
     async def test_emit_multiple_events(self, mock_aioredis):
         """Test that multiple events are published correctly."""
         mock_client = AsyncMock()
         mock_aioredis.from_url.return_value = mock_client
-        
+
         events = [
             {"type": "chat_message", "message": "First"},
             {"type": "chat_message", "message": "Second"},
         ]
-        
+
         for event in events:
             await emit_bot_event(event)
-        
+
         # Verify publish was called for each event
         self.assertEqual(mock_client.publish.call_count, 2)
 
-    @patch('amc.api.bot_events.aioredis')
+    @patch("amc.api.bot_events.aioredis")
     async def test_emit_event_with_all_fields(self, mock_aioredis):
         """Test that events with all bot event fields are correctly serialized."""
         mock_client = AsyncMock()
         mock_aioredis.from_url.return_value = mock_client
-        
+
         event = {
             "type": "chat_message",
             "timestamp": "2026-01-03T12:00:00+00:00",
@@ -64,9 +63,9 @@ class BotEventsRedisTest(TestCase):
             "message": "Hello bot",
             "is_bot_command": True,
         }
-        
+
         await emit_bot_event(event)
-        
+
         # Verify the event was serialized as JSON
         call_args = mock_client.publish.call_args[0]
         self.assertEqual(call_args[0], BOT_EVENTS_CHANNEL)

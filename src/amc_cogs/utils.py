@@ -4,50 +4,53 @@ from discord import app_commands
 from amc.game_server import get_players
 from amc.models import Character
 
+
 def create_player_autocomplete(session, max_num=25):
-  async def player_autocomplete(
-    interaction: discord.Interaction,
-    current: str
-  ):
-    players = await get_players(session)
-    online_characters = (Character.objects
-      .filter(
-        name__icontains=current
-      )
-      .select_related('player')
-      .filter(player__unique_id__in=[int(player_id) for player_id, _ in players])
-      .with_last_login()
-      .order_by('name', '-last_login')
-    )
-    offline_characters = (Character.objects
-      .filter(
-        name__icontains=current
-      )
-      .select_related('player')
-      .exclude(player__unique_id__in=[int(player_id) for player_id, _ in players])
-      .with_last_login()
-      .order_by('name', '-last_login')
-    )
+    async def player_autocomplete(interaction: discord.Interaction, current: str):
+        players = await get_players(session)
+        online_characters = (
+            Character.objects.filter(name__icontains=current)
+            .select_related("player")
+            .filter(player__unique_id__in=[int(player_id) for player_id, _ in players])
+            .with_last_login()
+            .order_by("name", "-last_login")
+        )
+        offline_characters = (
+            Character.objects.filter(name__icontains=current)
+            .select_related("player")
+            .exclude(player__unique_id__in=[int(player_id) for player_id, _ in players])
+            .with_last_login()
+            .order_by("name", "-last_login")
+        )
 
-    online_choices = [
-      app_commands.Choice(name=f"{character.name} - {character.player.unique_id}", value=str(character.player.unique_id))
-      async for character in online_characters[:max_num]
-    ]
-    offline_choices = []
-    if len(online_choices) < max_num:
-      offline_choices = [
-        app_commands.Choice(name=f"{character.name} - {character.player.unique_id} (Offline)", value=str(character.player.unique_id))
-        async for character in offline_characters[:(max_num - len(online_choices))]
-      ]
+        online_choices = [
+            app_commands.Choice(
+                name=f"{character.name} - {character.player.unique_id}",
+                value=str(character.player.unique_id),
+            )
+            async for character in online_characters[:max_num]
+        ]
+        offline_choices = []
+        if len(online_choices) < max_num:
+            offline_choices = [
+                app_commands.Choice(
+                    name=f"{character.name} - {character.player.unique_id} (Offline)",
+                    value=str(character.player.unique_id),
+                )
+                async for character in offline_characters[
+                    : (max_num - len(online_choices))
+                ]
+            ]
 
-    return [ *online_choices, *offline_choices ][:max_num]
+        return [*online_choices, *offline_choices][:max_num]
 
-  return player_autocomplete
+    return player_autocomplete
 
 
 def is_code_block_open(text):
     """Return True if there's an unclosed code block in the text."""
     return text.count("```") % 2 == 1
+
 
 def split_markdown(text, max_length=2000):
     """
@@ -55,7 +58,7 @@ def split_markdown(text, max_length=2000):
     ensuring that code blocks (and similar formatting) are not broken.
     """
     # Split by paragraphs while preserving the delimiters (empty lines)
-    parts = re.split(r'(\n\s*\n)', text)
+    parts = re.split(r"(\n\s*\n)", text)
     chunks = []
     current_chunk = ""
 
@@ -81,5 +84,3 @@ def split_markdown(text, max_length=2000):
         chunks.append(current_chunk)
 
     return chunks
-
-

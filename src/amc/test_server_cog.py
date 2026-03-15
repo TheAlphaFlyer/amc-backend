@@ -1,7 +1,9 @@
 import os
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "amc_backend.settings")
 
 import django
+
 django.setup()
 
 import unittest  # noqa: E402
@@ -16,7 +18,9 @@ class ServerCogTestCase(unittest.IsolatedAsyncioTestCase):
         # Mock bot
         self.bot = MagicMock()
         self.bot.http_client_game = MagicMock()
-        self.bot.get_channel = MagicMock(return_value=None)  # No audit channel by default
+        self.bot.get_channel = MagicMock(
+            return_value=None
+        )  # No audit channel by default
 
         # Create cog
         self.cog = ServerCog(self.bot)
@@ -82,6 +86,7 @@ class ServerCogTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_cooldown_prevents_rapid_restart(self, mock_get_players):
         """Test that the 5-minute cooldown prevents rapid re-invocation."""
         import time
+
         self.cog._last_restart_time = time.monotonic()  # Just restarted
 
         await cast(Any, self.cog.restart_server.callback)(
@@ -96,6 +101,7 @@ class ServerCogTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_no_cooldown_when_expired(self, mock_get_players):
         """Test that restart is allowed after cooldown expires."""
         import time
+
         self.cog._last_restart_time = time.monotonic() - RESTART_COOLDOWN_SECONDS - 1
 
         mock_get_players.return_value = [("1001", {"name": "Player1"})]

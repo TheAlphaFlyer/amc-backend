@@ -13,6 +13,7 @@ from amc_cogs.roleplay import RoleplayCog
 from amc_cogs.leaderboard import LeaderboardCog
 from amc_cogs.delivery_stats import DeliveryStatsCog
 from amc_cogs.server import ServerCog
+from amc_cogs.profile import PlayerProfileCog
 
 
 class AMCDiscordBot(commands.Bot):
@@ -45,6 +46,7 @@ class AMCDiscordBot(commands.Bot):
         await self.add_cog(LeaderboardCog(self), guild=guild)
         await self.add_cog(DeliveryStatsCog(self), guild=guild)
         await self.add_cog(ServerCog(self), guild=guild)
+        await self.add_cog(PlayerProfileCog(self), guild=guild)
         await self.tree.sync(guild=guild)
 
 

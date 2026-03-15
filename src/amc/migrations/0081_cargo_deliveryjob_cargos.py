@@ -4,22 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0080_alter_player_discord_name_and_more'),
+        ("amc", "0080_alter_player_discord_name_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Cargo',
+            name="Cargo",
             fields=[
-                ('key', models.CharField(max_length=200, primary_key=True, serialize=False)),
-                ('label', models.CharField(max_length=200)),
+                (
+                    "key",
+                    models.CharField(max_length=200, primary_key=True, serialize=False),
+                ),
+                ("label", models.CharField(max_length=200)),
             ],
         ),
         migrations.AddField(
-            model_name='deliveryjob',
-            name='cargos',
-            field=models.ManyToManyField(blank=True, help_text='Use either Cargo Key or this field for multiple cargo types', related_name='jobs', to='amc.cargo'),
+            model_name="deliveryjob",
+            name="cargos",
+            field=models.ManyToManyField(
+                blank=True,
+                help_text="Use either Cargo Key or this field for multiple cargo types",
+                related_name="jobs",
+                to="amc.cargo",
+            ),
         ),
     ]

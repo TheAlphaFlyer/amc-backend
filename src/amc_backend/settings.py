@@ -13,8 +13,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 import os
 from django.utils.translation import gettext_lazy as _
+
 try:
     import django_stubs_ext
+
     django_stubs_ext.monkeypatch()
 except ImportError:
     pass  # django-stubs-ext is only needed for mypy type checking
@@ -27,14 +29,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-#ro&u^cq!$zns+(-sn!c67=nrhyt$1=dyc7b)@0-21m_5!(328')
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-#ro&u^cq!$zns+(-sn!c67=nrhyt$1=dyc7b)@0-21m_5!(328",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(os.environ.get('DEBUG'))
+DEBUG = bool(os.environ.get("DEBUG"))
 
-ALLOWED_HOSTS = [*os.environ.get('ALLOWED_HOSTS', '').split(' '), 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = [
+    *os.environ.get("ALLOWED_HOSTS", "").split(" "),
+    "localhost",
+    "127.0.0.1",
+]
 
-DISCORD_ERRORS_WEBHOOK = os.environ.get('DISCORD_ERRORS_WEBHOOK')
+DISCORD_ERRORS_WEBHOOK = os.environ.get("DISCORD_ERRORS_WEBHOOK")
 
 LOGGING = {
     "version": 1,
@@ -70,82 +79,84 @@ LOGGING = {
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
 ]
 
-if os.environ.get('GDAL_LIBRARY_PATH') and os.environ.get('GEOS_LIBRARY_PATH'):
-    INSTALLED_APPS += ['django.contrib.gis']
+if os.environ.get("GDAL_LIBRARY_PATH") and os.environ.get("GEOS_LIBRARY_PATH"):
+    INSTALLED_APPS += ["django.contrib.gis"]
 
 INSTALLED_APPS += [
-    'oauth2_provider',
-    'amc',
-    'amc_finance',
-    'necesse',
+    "oauth2_provider",
+    "amc",
+    "amc_finance",
+    "necesse",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'django_asgi_lifespan.middleware.LifespanStateMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django_asgi_lifespan.middleware.LifespanStateMiddleware",
 ]
 
-ROOT_URLCONF = 'amc_backend.urls'
+ROOT_URLCONF = "amc_backend.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'amc_backend.wsgi.application'
+WSGI_APPLICATION = "amc_backend.wsgi.application"
 
 # Cross-domain cookie settings for sharing sessions across *.aseanmotorclub.com
-SESSION_COOKIE_DOMAIN = os.environ.get('DJANGO_SESSION_COOKIE_DOMAIN', '.aseanmotorclub.com')
-CSRF_COOKIE_DOMAIN = os.environ.get('DJANGO_CSRF_COOKIE_DOMAIN', '.aseanmotorclub.com')
+SESSION_COOKIE_DOMAIN = os.environ.get(
+    "DJANGO_SESSION_COOKIE_DOMAIN", ".aseanmotorclub.com"
+)
+CSRF_COOKIE_DOMAIN = os.environ.get("DJANGO_CSRF_COOKIE_DOMAIN", ".aseanmotorclub.com")
 SESSION_COOKIE_SECURE = not DEBUG  # HTTPS-only in production
 CSRF_COOKIE_SECURE = not DEBUG
 
-SITE_DOMAIN = os.environ.get('DJANGO_SITE_DOMAIN', 'https://www.aseanmotorclub.com')
+SITE_DOMAIN = os.environ.get("DJANGO_SITE_DOMAIN", "https://www.aseanmotorclub.com")
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get("DB_NAME", 'amc'),
-        'HOST': os.environ.get("PGHOST"),
-        'PORT': os.environ.get('PGPORT'),
-        'USER': os.environ.get('PGUSER'),
-        'CONN_MAX_AGE': int(os.environ.get('CONN_MAX_AGE', '0')),
-        'OPTIONS': {
-          'pool': bool(os.environ.get('POOL_DATABASE')),
-        }
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DB_NAME", "amc"),
+        "HOST": os.environ.get("PGHOST"),
+        "PORT": os.environ.get("PGPORT"),
+        "USER": os.environ.get("PGUSER"),
+        "CONN_MAX_AGE": int(os.environ.get("CONN_MAX_AGE", "0")),
+        "OPTIONS": {
+            "pool": bool(os.environ.get("POOL_DATABASE")),
+        },
     }
 }
 
 # When postgis dependencies are not available, fall back to normal postgres
-if os.environ.get('GDAL_LIBRARY_PATH') and os.environ.get('GEOS_LIBRARY_PATH'):
-  DATABASES['default']['ENGINE'] = 'django.contrib.gis.db.backends.postgis'
+if os.environ.get("GDAL_LIBRARY_PATH") and os.environ.get("GEOS_LIBRARY_PATH"):
+    DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
 
 
 # Password validation
@@ -153,16 +164,16 @@ if os.environ.get('GDAL_LIBRARY_PATH') and os.environ.get('GEOS_LIBRARY_PATH'):
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -171,20 +182,18 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
 LANGUAGES = [
-    ('en-gb', _('English')),
-    ('id', _('Indonesian')),
-    ('zh-hans', _('Simplified Chinese')),
+    ("en-gb", _("English")),
+    ("id", _("Indonesian")),
+    ("zh-hans", _("Simplified Chinese")),
 ]
 
-LANGUAGE_CODE = 'en-gb'
+LANGUAGE_CODE = "en-gb"
 
-TIME_ZONE = 'Asia/Bangkok'
+TIME_ZONE = "Asia/Bangkok"
 
 USE_I18N = True
 
-LOCALE_PATHS = [
-    BASE_DIR / 'locale'
-]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 USE_TZ = True
 
@@ -192,53 +201,89 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = os.environ.get('DJANGO_STATIC_ROOT', BASE_DIR / 'static')
+STATIC_URL = "static/"
+STATIC_ROOT = os.environ.get("DJANGO_STATIC_ROOT", BASE_DIR / "static")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-GEOS_LIBRARY_PATH = os.environ.get('GEOS_LIBRARY_PATH')
-GDAL_LIBRARY_PATH = os.environ.get('GDAL_LIBRARY_PATH')
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH")
+GDAL_LIBRARY_PATH = os.environ.get("GDAL_LIBRARY_PATH")
 
 GAME_SERVER_API_URL = os.environ.get("GAME_SERVER_API_URL", "http://127.0.0.1:8080")
 MOD_SERVER_API_URL = os.environ.get("MOD_SERVER_API_URL", "http://127.0.0.1:5001")
-WEBHOOK_SERVER_API_URL = os.environ.get("WEBHOOK_SERVER_API_URL", "http://127.0.0.1:5000")
-EVENT_GAME_SERVER_API_URL = os.environ.get("EVENT_GAME_SERVER_API_URL", "http://127.0.0.1:8082")
-EVENT_MOD_SERVER_API_URL = os.environ.get("EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011")
-TEST_GAME_SERVER_API_URL = os.environ.get("TEST_GAME_SERVER_API_URL", "http://127.0.0.1:8081")
-TEST_MOD_SERVER_API_URL = os.environ.get("TEST_MOD_SERVER_API_URL", "http://127.0.0.1:55001")
-TEST_WEBHOOK_SERVER_API_URL = os.environ.get("TEST_WEBHOOK_SERVER_API_URL", "http://127.0.0.1:55000")
+WEBHOOK_SERVER_API_URL = os.environ.get(
+    "WEBHOOK_SERVER_API_URL", "http://127.0.0.1:5000"
+)
+EVENT_GAME_SERVER_API_URL = os.environ.get(
+    "EVENT_GAME_SERVER_API_URL", "http://127.0.0.1:8082"
+)
+EVENT_MOD_SERVER_API_URL = os.environ.get(
+    "EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011"
+)
+TEST_GAME_SERVER_API_URL = os.environ.get(
+    "TEST_GAME_SERVER_API_URL", "http://127.0.0.1:8081"
+)
+TEST_MOD_SERVER_API_URL = os.environ.get(
+    "TEST_MOD_SERVER_API_URL", "http://127.0.0.1:55001"
+)
+TEST_WEBHOOK_SERVER_API_URL = os.environ.get(
+    "TEST_WEBHOOK_SERVER_API_URL", "http://127.0.0.1:55000"
+)
 REDIS_SETTINGS = {}
 
 # Discord settings
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
-DISCORD_GUILD_ID = os.environ.get('DISCORD_GUILD_ID')
+DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
 if DISCORD_GUILD_ID:
-  DISCORD_GUILD_ID = int(DISCORD_GUILD_ID)
+    DISCORD_GUILD_ID = int(DISCORD_GUILD_ID)
 
-DISCORD_STATUS_CHANNEL_ID = int(os.environ.get('DISCORD_STATUS_CHANNEL_ID', 0))
-DISCORD_GENERAL_CHANNEL_ID = int(os.environ.get('DISCORD_GENERAL_CHANNEL_ID', 0))
-DISCORD_GAME_CHAT_CHANNEL_ID = int(os.environ.get('DISCORD_GAME_CHAT_CHANNEL_ID', 0))
-DISCORD_VEHICLE_LOGS_CHANNEL_ID = int(os.environ.get('DISCORD_VEHICLE_LOGS_CHANNEL_ID', 0))
-DISCORD_EVENTS_CHANNEL_ID = int(os.environ.get('DISCORD_EVENTS_CHANNEL_ID', 0))
-DISCORD_TEAMS_CHANNEL_ID = int(os.environ.get('DISCORD_TEAMS_CHANNEL_ID', 0))
-DISCORD_RESCUE_CHANNEL_ID = int(os.environ.get('DISCORD_RESCUE_CHANNEL_ID', '1428483540898545805'))
-DISCORD_CHAMPIONSHIP_CHANNEL_ID = int(os.environ.get('DISCORD_CHAMPIONSHIP_CHANNEL_ID', 0))
-DISCORD_JOBS_CHANNEL_ID = int(os.environ.get('DISCORD_JOBS_CHANNEL_ID', '1416713011120439419'))
-DISCORD_DELIVERIES_CHANNEL_ID = int(os.environ.get('DISCORD_DELIVERIES_CHANNEL_ID', '1418466330402881617'))
-DISCORD_TREASURY_CHANNEL_ID = int(os.environ.get('DISCORD_TREASURY_CHANNEL_ID', '1402660537619320872'))
-DISCORD_DECRYPT_SAVE_FILE_CHANNEL_ID = int(os.environ.get('DISCORD_DECRYPT_SAVE_FILE_CHANNEL_ID', '1422477113033887775'))
-DISCORD_LEADERBOARD_CHANNEL_ID = int(os.environ.get('DISCORD_LEADERBOARD_CHANNEL_ID', '1453723104185421997'))
-DISCORD_VERIFIED_ROLE_ID = int(os.environ.get('DISCORD_VERIFIED_ROLE_ID', '1376791968662814750'))
-DISCORD_ADMIN_ROLE_ID = int(os.environ.get('DISCORD_ADMIN_ROLE_ID', '1395460420189421713'))
-DISCORD_AUDIT_CHANNEL_ID = int(os.environ.get('DISCORD_AUDIT_CHANNEL_ID', 0))
+DISCORD_STATUS_CHANNEL_ID = int(os.environ.get("DISCORD_STATUS_CHANNEL_ID", 0))
+DISCORD_GENERAL_CHANNEL_ID = int(os.environ.get("DISCORD_GENERAL_CHANNEL_ID", 0))
+DISCORD_GAME_CHAT_CHANNEL_ID = int(os.environ.get("DISCORD_GAME_CHAT_CHANNEL_ID", 0))
+DISCORD_VEHICLE_LOGS_CHANNEL_ID = int(
+    os.environ.get("DISCORD_VEHICLE_LOGS_CHANNEL_ID", 0)
+)
+DISCORD_EVENTS_CHANNEL_ID = int(os.environ.get("DISCORD_EVENTS_CHANNEL_ID", 0))
+DISCORD_TEAMS_CHANNEL_ID = int(os.environ.get("DISCORD_TEAMS_CHANNEL_ID", 0))
+DISCORD_RESCUE_CHANNEL_ID = int(
+    os.environ.get("DISCORD_RESCUE_CHANNEL_ID", "1428483540898545805")
+)
+DISCORD_CHAMPIONSHIP_CHANNEL_ID = int(
+    os.environ.get("DISCORD_CHAMPIONSHIP_CHANNEL_ID", 0)
+)
+DISCORD_JOBS_CHANNEL_ID = int(
+    os.environ.get("DISCORD_JOBS_CHANNEL_ID", "1416713011120439419")
+)
+DISCORD_DELIVERIES_CHANNEL_ID = int(
+    os.environ.get("DISCORD_DELIVERIES_CHANNEL_ID", "1418466330402881617")
+)
+DISCORD_TREASURY_CHANNEL_ID = int(
+    os.environ.get("DISCORD_TREASURY_CHANNEL_ID", "1402660537619320872")
+)
+DISCORD_DECRYPT_SAVE_FILE_CHANNEL_ID = int(
+    os.environ.get("DISCORD_DECRYPT_SAVE_FILE_CHANNEL_ID", "1422477113033887775")
+)
+DISCORD_LEADERBOARD_CHANNEL_ID = int(
+    os.environ.get("DISCORD_LEADERBOARD_CHANNEL_ID", "1453723104185421997")
+)
+DISCORD_VERIFIED_ROLE_ID = int(
+    os.environ.get("DISCORD_VERIFIED_ROLE_ID", "1376791968662814750")
+)
+DISCORD_ADMIN_ROLE_ID = int(
+    os.environ.get("DISCORD_ADMIN_ROLE_ID", "1395460420189421713")
+)
+DISCORD_AUDIT_CHANNEL_ID = int(os.environ.get("DISCORD_AUDIT_CHANNEL_ID", 0))
 
 # Server management
-RESTART_MOTORTOWN_SCRIPT = os.environ.get('RESTART_MOTORTOWN_SCRIPT', '/usr/local/bin/restart-motortown')
+RESTART_MOTORTOWN_SCRIPT = os.environ.get(
+    "RESTART_MOTORTOWN_SCRIPT", "/usr/local/bin/restart-motortown"
+)
 
-DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID = int(os.environ.get('DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID', '1441342292672909363'))
+DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID = int(
+    os.environ.get("DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID", "1441342292672909363")
+)
 
 HELP_TEXT = """\
 <Bold>Available Commands</>
@@ -319,4 +364,4 @@ These admins help with the day to day running of the community
 """
 
 
-ADMINS = [("Admin", os.environ.get('ADMIN_EMAIL'))]
+ADMINS = [("Admin", os.environ.get("ADMIN_EMAIL"))]

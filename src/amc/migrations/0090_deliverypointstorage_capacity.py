@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0089_serverstatus'),
+        ("amc", "0089_serverstatus"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliverypointstorage',
-            name='capacity',
+            model_name="deliverypointstorage",
+            name="capacity",
             field=models.PositiveIntegerField(null=True),
         ),
     ]

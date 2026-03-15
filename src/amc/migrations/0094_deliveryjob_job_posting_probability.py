@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0093_ticket_issued_by_ticket_player_and_more'),
+        ("amc", "0093_ticket_issued_by_ticket_player_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='job_posting_probability',
-            field=models.FloatField(default=1.0, help_text='The probability at which the job is posted. Defaults to 100% (1.0)'),
+            model_name="deliveryjob",
+            name="job_posting_probability",
+            field=models.FloatField(
+                default=1.0,
+                help_text="The probability at which the job is posted. Defaults to 100% (1.0)",
+            ),
         ),
     ]

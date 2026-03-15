@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0113_teammembership_character_alter_teammembership_player'),
+        ("amc", "0113_teammembership_character_alter_teammembership_player"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='delivery',
-            name='rp_mode',
+            model_name="delivery",
+            name="rp_mode",
             field=models.BooleanField(default=False),
         ),
     ]

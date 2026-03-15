@@ -5,41 +5,67 @@ from amc.subsidies import get_subsidies_text
 from django.db.models import F
 from django.utils.translation import gettext as _, gettext_lazy
 
-@registry.register("/jobs", description=gettext_lazy("List available server jobs"), category="Jobs", featured=True)
+
+@registry.register(
+    "/jobs",
+    description=gettext_lazy("List available server jobs"),
+    category="Jobs",
+    featured=True,
+)
 async def cmd_jobs(ctx: CommandContext):
     jobs = DeliveryJob.objects.filter(
-        quantity_fulfilled__lt=F('quantity_requested'),
+        quantity_fulfilled__lt=F("quantity_requested"),
         expired_at__gte=ctx.timestamp,
-    ).prefetch_related('source_points', 'destination_points', 'cargos')
+    ).prefetch_related("source_points", "destination_points", "cargos")
 
     jobs_str_list: list[str] = []
     async for job in jobs:
-        cargo_key = job.get_cargo_key_display() if job.cargo_key else ', '.join([c.label for c in job.cargos.all()])
-        title = f"({job.quantity_fulfilled}/{job.quantity_requested}) {job.name} · <EffectGood>{job.bonus_multiplier*100:.0f}%</> · <Money>{job.completion_bonus:,}</>"
-        title += "\n" + _("<Secondary>Expiring in {time}</>").format(time=get_time_difference_string(ctx.timestamp, job.expired_at))
-        title += "\n" + _("<Secondary>Cargo: {cargo_key}</>").format(cargo_key=cargo_key)
-        
+        cargo_key = (
+            job.get_cargo_key_display()
+            if job.cargo_key
+            else ", ".join([c.label for c in job.cargos.all()])
+        )
+        title = f"({job.quantity_fulfilled}/{job.quantity_requested}) {job.name} · <EffectGood>{job.bonus_multiplier * 100:.0f}%</> · <Money>{job.completion_bonus:,}</>"
+        title += "\n" + _("<Secondary>Expiring in {time}</>").format(
+            time=get_time_difference_string(ctx.timestamp, job.expired_at)
+        )
+        title += "\n" + _("<Secondary>Cargo: {cargo_key}</>").format(
+            cargo_key=cargo_key
+        )
+
         if source_points := list(job.source_points.all()):
-            title += "\n" + _("<Secondary>ONLY from: {points}</>").format(points=', '.join([p.name for p in source_points]))
-        
+            title += "\n" + _("<Secondary>ONLY from: {points}</>").format(
+                points=", ".join([p.name for p in source_points])
+            )
+
         if destination_points := list(job.destination_points.all()):
-             title += "\n" + _("<Secondary>ONLY to: {points}</>").format(points=', '.join([p.name for p in destination_points]))
-             
+            title += "\n" + _("<Secondary>ONLY to: {points}</>").format(
+                points=", ".join([p.name for p in destination_points])
+            )
+
         jobs_str_list.append(title)
 
     jobs_str = "\n\n".join(jobs_str_list)
-    await ctx.reply(_("""<Title>Delivery Jobs</>
+    await ctx.reply(
+        _("""<Title>Delivery Jobs</>
 <Secondary>Complete jobs solo or with others!</>
 
 {jobs_str}
 
 <Title>RP Mode</>: {rp_status} (/rp_mode)
 <Title>Subsidies</>: Use /subsidies to view.""").format(
-        jobs_str=jobs_str,
-        rp_status='<Warning>OFF</>'
-    ))
+            jobs_str=jobs_str, rp_status="<Warning>OFF</>"
+        )
+    )
 
-@registry.register("/subsidies", description=gettext_lazy("View job subsidies information"), category="Jobs")
+
+@registry.register(
+    "/subsidies",
+    description=gettext_lazy("View job subsidies information"),
+    category="Jobs",
+)
 async def cmd_subsidies(ctx: CommandContext):
     await ctx.reply(await get_subsidies_text())
-    await BotInvocationLog.objects.acreate(timestamp=ctx.timestamp, character=ctx.character, prompt="subsidies")
+    await BotInvocationLog.objects.acreate(
+        timestamp=ctx.timestamp, character=ctx.character, prompt="subsidies"
+    )

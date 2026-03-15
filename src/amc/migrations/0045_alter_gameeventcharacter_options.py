@@ -4,14 +4,21 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0044_remove_gameeventcharacter_net_time_with_penalty_and_more'),
+        ("amc", "0044_remove_gameeventcharacter_net_time_with_penalty_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='gameeventcharacter',
-            options={'ordering': ['disqualified', '-finished', '-laps', '-section_index', 'net_time']},
+            name="gameeventcharacter",
+            options={
+                "ordering": [
+                    "disqualified",
+                    "-finished",
+                    "-laps",
+                    "-section_index",
+                    "net_time",
+                ]
+            },
         ),
     ]

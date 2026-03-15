@@ -5,25 +5,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0015_alter_playerstatuslog_options_and_more'),
+        ("amc", "0015_alter_playerstatuslog_options_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='playervehiclelog',
-            name='vehicle_game_id',
+            model_name="playervehiclelog",
+            name="vehicle_game_id",
             field=models.PositiveBigIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='playervehiclelog',
-            name='vehicle_name',
+            model_name="playervehiclelog",
+            name="vehicle_name",
             field=models.CharField(max_length=100, null=True),
         ),
         migrations.AlterField(
-            model_name='playervehiclelog',
-            name='vehicle',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='amc.vehicle'),
+            model_name="playervehiclelog",
+            name="vehicle",
+            field=models.ForeignKey(
+                null=True, on_delete=django.db.models.deletion.CASCADE, to="amc.vehicle"
+            ),
         ),
     ]

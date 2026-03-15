@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0040_character_guid'),
+        ("amc", "0040_character_guid"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='character',
-            name='guid',
-            field=models.CharField(db_index=True, editable=False, max_length=32, null=True),
+            model_name="character",
+            name="guid",
+            field=models.CharField(
+                db_index=True, editable=False, max_length=32, null=True
+            ),
         ),
     ]

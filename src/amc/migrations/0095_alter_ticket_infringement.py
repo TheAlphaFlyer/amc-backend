@@ -4,15 +4,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0094_deliveryjob_job_posting_probability'),
+        ("amc", "0094_deliveryjob_job_posting_probability"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='ticket',
-            name='infringement',
-            field=models.CharField(choices=[('cluterring', 'Cluterring'), ('griefing', 'Griefing'), ('trolling', 'Trolling'), ('misdemeanor', 'Misdemeanor'), ('other', 'Other')], max_length=200),
+            model_name="ticket",
+            name="infringement",
+            field=models.CharField(
+                choices=[
+                    ("cluterring", "Cluterring"),
+                    ("griefing", "Griefing"),
+                    ("trolling", "Trolling"),
+                    ("misdemeanor", "Misdemeanor"),
+                    ("other", "Other"),
+                ],
+                max_length=200,
+            ),
         ),
     ]

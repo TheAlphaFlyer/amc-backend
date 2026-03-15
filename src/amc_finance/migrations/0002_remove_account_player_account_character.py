@@ -5,20 +5,25 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0049_servercargoarrivedlog_data'),
-        ('amc_finance', '0001_initial'),
+        ("amc", "0049_servercargoarrivedlog_data"),
+        ("amc_finance", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='account',
-            name='player',
+            model_name="account",
+            name="player",
         ),
         migrations.AddField(
-            model_name='account',
-            name='character',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='accounts', to='amc.character'),
+            model_name="account",
+            name="character",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.PROTECT,
+                related_name="accounts",
+                to="amc.character",
+            ),
         ),
     ]

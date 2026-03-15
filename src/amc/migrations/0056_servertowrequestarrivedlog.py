@@ -5,20 +5,35 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0055_character_saving_rate_between_0_1'),
+        ("amc", "0055_character_saving_rate_between_0_1"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerTowRequestArrivedLog',
+            name="ServerTowRequestArrivedLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('payment', models.PositiveIntegerField()),
-                ('data', models.JSONField(blank=True, null=True)),
-                ('player', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='tow_requests_delivered', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("payment", models.PositiveIntegerField()),
+                ("data", models.JSONField(blank=True, null=True)),
+                (
+                    "player",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="tow_requests_delivered",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
     ]

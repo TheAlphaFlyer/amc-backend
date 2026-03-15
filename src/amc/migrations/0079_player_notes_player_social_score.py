@@ -4,21 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0078_alter_deliverypoint_last_updated'),
+        ("amc", "0078_alter_deliverypoint_last_updated"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='notes',
-            field=models.TextField(default=''),
+            model_name="player",
+            name="notes",
+            field=models.TextField(default=""),
             preserve_default=False,
         ),
         migrations.AddField(
-            model_name='player',
-            name='social_score',
+            model_name="player",
+            name="social_score",
             field=models.IntegerField(default=0),
         ),
     ]

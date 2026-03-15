@@ -13,11 +13,11 @@ from amc.game_server import announce
 from amc.utils import skip_if_running
 from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode
 from amc.subsidies import (
-  repay_loan_for_profit,
-  set_aside_player_savings,
-  get_subsidy_for_cargo,
-  get_passenger_subsidy,
-  subsidise_player,
+    repay_loan_for_profit,
+    set_aside_player_savings,
+    get_subsidy_for_cargo,
+    get_passenger_subsidy,
+    subsidise_player,
 )
 from amc_finance.services import (
     get_treasury_fund_balance,
@@ -42,611 +42,646 @@ from amc.locations import gwangjin_shortcut
 
 
 async def on_player_profits(player_profits, session):
-  for character, total_subsidy, total_payment in player_profits:
-    await on_player_profit(character, total_subsidy, total_payment, session)
+    for character, total_subsidy, total_payment in player_profits:
+        await on_player_profit(character, total_subsidy, total_payment, session)
+
 
 async def on_player_profit(character, total_subsidy, total_payment, session):
-  if total_subsidy != 0:
-    await subsidise_player(total_subsidy, character, session)
-  loan_repayment = await repay_loan_for_profit(character, total_payment, session)
-  savings = total_payment - loan_repayment
-  if savings > 0:
-    await set_aside_player_savings(character, savings, session)
-
+    if total_subsidy != 0:
+        await subsidise_player(total_subsidy, character, session)
+    loan_repayment = await repay_loan_for_profit(character, total_payment, session)
+    savings = total_payment - loan_repayment
+    if savings > 0:
+        await set_aside_player_savings(character, savings, session)
 
 
 async def post_discord_delivery_embed(
-  discord_client,
-  character,
-  cargo_key,
-  quantity,
-  delivery_source,
-  delivery_destination,
-  payment,
-  subsidy,
-  vehicle_key,
-  job=None,
+    discord_client,
+    character,
+    cargo_key,
+    quantity,
+    delivery_source,
+    delivery_destination,
+    payment,
+    subsidy,
+    vehicle_key,
+    job=None,
 ):
-  jobs_cog = discord_client.get_cog('JobsCog')
-  delivery_source_name = ''
-  delivery_destination_name = ''
-  if delivery_source:
-    delivery_source_name = delivery_source.name
-  if delivery_destination:
-    delivery_destination_name = delivery_destination.name
+    jobs_cog = discord_client.get_cog("JobsCog")
+    delivery_source_name = ""
+    delivery_destination_name = ""
+    if delivery_source:
+        delivery_source_name = delivery_source.name
+    if delivery_destination:
+        delivery_destination_name = delivery_destination.name
 
-  if jobs_cog and hasattr(jobs_cog, 'post_delivery_embed'):
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(
-      None,
-      lambda: asyncio.run_coroutine_threadsafe(
-        jobs_cog.post_delivery_embed(
-          character.name,
-          cargo_key,
-          quantity,
-          delivery_source_name,
-          delivery_destination_name,
-          payment,
-          subsidy,
-          vehicle_key,
-          job=job,
-        ),
-        discord_client.loop
-      )
-    )
+    if jobs_cog and hasattr(jobs_cog, "post_delivery_embed"):
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(
+            None,
+            lambda: asyncio.run_coroutine_threadsafe(
+                jobs_cog.post_delivery_embed(
+                    character.name,
+                    cargo_key,
+                    quantity,
+                    delivery_source_name,
+                    delivery_destination_name,
+                    payment,
+                    subsidy,
+                    vehicle_key,
+                    job=job,
+                ),
+                discord_client.loop,
+            ),
+        )
+
 
 @skip_if_running
 async def monitor_webhook(ctx):
-  http_client = ctx.get('http_client')
-  http_client_mod = ctx.get('http_client_mod')
-  http_client_webhook = ctx.get('http_client_webhook')
-  discord_client = ctx.get('discord_client')
-  events = await get_webhook_events2(http_client_webhook)
-  await process_events(events, http_client, http_client_mod, discord_client)
+    http_client = ctx.get("http_client")
+    http_client_mod = ctx.get("http_client_mod")
+    http_client_webhook = ctx.get("http_client_webhook")
+    discord_client = ctx.get("discord_client")
+    events = await get_webhook_events2(http_client_webhook)
+    await process_events(events, http_client, http_client_mod, discord_client)
+
 
 @skip_if_running
 async def monitor_webhook_test(ctx):
-  http_client = ctx.get('http_client_test')
-  http_client_mod = ctx.get('http_client_test_mod')
-  http_client_webhook = ctx.get('http_client_test_webhook')
-  discord_client = ctx.get('discord_client')
-  try:
-    events = await get_webhook_events2(http_client_webhook)
-  except Exception as e:
-    print(f"Failed to get webhook events: {e}")
-    return
-  await process_events(events, http_client, http_client_mod, discord_client)
+    http_client = ctx.get("http_client_test")
+    http_client_mod = ctx.get("http_client_test_mod")
+    http_client_webhook = ctx.get("http_client_test_webhook")
+    discord_client = ctx.get("discord_client")
+    try:
+        events = await get_webhook_events2(http_client_webhook)
+    except Exception as e:
+        print(f"Failed to get webhook events: {e}")
+        return
+    await process_events(events, http_client, http_client_mod, discord_client)
 
 
 async def handle_cargo_dumped(event, player, timestamp):
-  cargo = event['data']['Cargo']
-  if cargo['Net_Payment'] < 0:
-    raise ValueError(f"Negative payment for dumped cargo: {cargo}")
-  
-  cargo_data = cargo or {}
-  log = await ServerCargoArrivedLog.objects.acreate(
-    timestamp=timestamp,
-    player=player,
-    cargo_key=cargo_data.get('Net_CargoKey', ''),
-    payment=cargo_data.get('Net_Payment', 0),
-    weight=cargo_data.get('Net_Weight', 0),
-    damage=cargo_data.get('Net_Damage', 0),
-    data=event.get('data'),
-  )
-  subsidy, _, rule = await get_subsidy_for_cargo(log)
-  if rule and subsidy > 0:
-      await SubsidyRule.objects.filter(pk=rule.pk).aupdate(spent=F('spent') + subsidy)
-  return log.payment + subsidy, subsidy
+    cargo = event["data"]["Cargo"]
+    if cargo["Net_Payment"] < 0:
+        raise ValueError(f"Negative payment for dumped cargo: {cargo}")
+
+    cargo_data = cargo or {}
+    log = await ServerCargoArrivedLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        cargo_key=cargo_data.get("Net_CargoKey", ""),
+        payment=cargo_data.get("Net_Payment", 0),
+        weight=cargo_data.get("Net_Weight", 0),
+        damage=cargo_data.get("Net_Damage", 0),
+        data=event.get("data"),
+    )
+    subsidy, _, rule = await get_subsidy_for_cargo(log)
+    if rule and subsidy > 0:
+        await SubsidyRule.objects.filter(pk=rule.pk).aupdate(spent=F("spent") + subsidy)
+    return log.payment + subsidy, subsidy
 
 
 async def handle_contract_signed(event, player, timestamp):
-  contract = event['data'].get('Contract')
-  if not contract:
-     raise ValueError(f"Missing contract data in event: {event}")
-  
-  await ServerSignContractLog.objects.acreate(
-    timestamp=timestamp,
-    player=player,
-    cargo_key=contract['Item'],
-    amount=contract['Amount'],
-    payment=contract['CompletionPayment']['BaseValue'],
-    cost=contract['Cost']['BaseValue'],
-  )
+    contract = event["data"].get("Contract")
+    if not contract:
+        raise ValueError(f"Missing contract data in event: {event}")
+
+    await ServerSignContractLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        cargo_key=contract["Item"],
+        amount=contract["Amount"],
+        payment=contract["CompletionPayment"]["BaseValue"],
+        cost=contract["Cost"]["BaseValue"],
+    )
 
 
 async def handle_contract_delivered(event, player, timestamp):
-  contract = event.get('data')
-  if not contract:
-      # Is this possible? logic suggests it handles cases where contract data is missing 
-      # but guid is present? Or maybe contract IS 'data'?
-      # Original code: contract = event['data']; if contract: ... else: try ...
-      # Wait, event['data'] is a dict. So contract IS the data dict apparently?
-      # "ServerContractCargoDelivered" data IS the contract?
-      # Let's assume yes based on original code usage.
-      pass
+    contract = event.get("data")
+    if not contract:
+        # Is this possible? logic suggests it handles cases where contract data is missing
+        # but guid is present? Or maybe contract IS 'data'?
+        # Original code: contract = event['data']; if contract: ... else: try ...
+        # Wait, event['data'] is a dict. So contract IS the data dict apparently?
+        # "ServerContractCargoDelivered" data IS the contract?
+        # Let's assume yes based on original code usage.
+        pass
 
-  # If contract (event['data']) is present and has Item/Amount etc it's a "full" update
-  # If not, it might just be an update with GUID?
-  
-  guid = event['data'].get('ContractGuid')
-  if not guid:
-      raise ValueError("Missing ContractGuid")
-      
-  defaults = {}
-  if contract and 'Item' in contract:
-      defaults={
-        'timestamp': timestamp,
-        'player': player,
-        'cargo_key': contract['Item'],
-        'amount': contract['Amount'],
-        'payment': contract['CompletionPayment'],
-        'cost': contract.get('Cost', 0),
-        'data': contract
-      }
-      log, _created = await ServerSignContractLog.objects.aget_or_create(
-        guid=guid,
-        defaults=defaults,
-      )
-  else:
-      try:
-        log = await ServerSignContractLog.objects.aget(guid=guid)
-      except ServerSignContractLog.DoesNotExist:
-        return 0, 0
-  
-  log.finished_amount = cast(Any, F('finished_amount') + 1)
-  await log.asave(update_fields=['finished_amount'])
-  await log.arefresh_from_db()
-  
-  payment = 0
-  if log.finished_amount == log.amount and not log.delivered:
-    payment = log.payment
-    log.delivered = True
-    await log.asave(update_fields=['delivered'])
-    
-  return payment, 0
+    # If contract (event['data']) is present and has Item/Amount etc it's a "full" update
+    # If not, it might just be an update with GUID?
+
+    guid = event["data"].get("ContractGuid")
+    if not guid:
+        raise ValueError("Missing ContractGuid")
+
+    defaults = {}
+    if contract and "Item" in contract:
+        defaults = {
+            "timestamp": timestamp,
+            "player": player,
+            "cargo_key": contract["Item"],
+            "amount": contract["Amount"],
+            "payment": contract["CompletionPayment"],
+            "cost": contract.get("Cost", 0),
+            "data": contract,
+        }
+        log, _created = await ServerSignContractLog.objects.aget_or_create(
+            guid=guid,
+            defaults=defaults,
+        )
+    else:
+        try:
+            log = await ServerSignContractLog.objects.aget(guid=guid)
+        except ServerSignContractLog.DoesNotExist:
+            return 0, 0
+
+    log.finished_amount = cast(Any, F("finished_amount") + 1)
+    await log.asave(update_fields=["finished_amount"])
+    await log.arefresh_from_db()
+
+    payment = 0
+    if log.finished_amount == log.amount and not log.delivered:
+        payment = log.payment
+        log.delivered = True
+        await log.asave(update_fields=["delivered"])
+
+    return payment, 0
 
 
 async def handle_passenger_arrived(event, player, timestamp):
-  passenger = event['data'].get('Passenger')
-  passenger_data = passenger or {}
-  base_payment = passenger_data.get('Net_Payment', 0)
-  flag = passenger_data.get('Net_PassengerFlags', 0)
-  
-  if base_payment < 0:
-    raise ValueError(f"Negative payment for passenger: {passenger_data}")
+    passenger = event["data"].get("Passenger")
+    passenger_data = passenger or {}
+    base_payment = passenger_data.get("Net_Payment", 0)
+    flag = passenger_data.get("Net_PassengerFlags", 0)
 
-  log = ServerPassengerArrivedLog(
-    timestamp=timestamp,
-    player=player,
-    passenger_type=passenger_data.get('Net_PassengerType', ''),
-    distance=passenger_data.get('Net_Distance'),
-    payment=base_payment,
-    arrived=passenger_data.get('Net_bArrived', True),
-    comfort=bool(flag & 1),
-    urgent=bool(flag & 2),
-    limo=bool(flag & 4),
-    offroad=bool(flag & 8),
-    comfort_rating=passenger_data.get('Net_LCComfortSatisfaction'),
-    urgent_rating=passenger_data.get('Net_TimeLimitPoint'),
-    data=passenger_data,
-  )
-  
-  if log.passenger_type == ServerPassengerArrivedLog.PassengerType.Taxi:
-    if log.comfort:
-      bonus_per_star = 0.2
-      if log.limo:
-        bonus_per_star = bonus_per_star * 1.3
-      log.payment += base_payment * log.comfort_rating * bonus_per_star 
-    if log.urgent:
-      log.payment += base_payment * log.urgent_rating * 0.3
-      
-  await log.asave()
-  subsidy = get_passenger_subsidy(log)
-  return log.payment, subsidy
+    if base_payment < 0:
+        raise ValueError(f"Negative payment for passenger: {passenger_data}")
+
+    log = ServerPassengerArrivedLog(
+        timestamp=timestamp,
+        player=player,
+        passenger_type=passenger_data.get("Net_PassengerType", ""),
+        distance=passenger_data.get("Net_Distance"),
+        payment=base_payment,
+        arrived=passenger_data.get("Net_bArrived", True),
+        comfort=bool(flag & 1),
+        urgent=bool(flag & 2),
+        limo=bool(flag & 4),
+        offroad=bool(flag & 8),
+        comfort_rating=passenger_data.get("Net_LCComfortSatisfaction"),
+        urgent_rating=passenger_data.get("Net_TimeLimitPoint"),
+        data=passenger_data,
+    )
+
+    if log.passenger_type == ServerPassengerArrivedLog.PassengerType.Taxi:
+        if log.comfort:
+            bonus_per_star = 0.2
+            if log.limo:
+                bonus_per_star = bonus_per_star * 1.3
+            log.payment += base_payment * log.comfort_rating * bonus_per_star
+        if log.urgent:
+            log.payment += base_payment * log.urgent_rating * 0.3
+
+    await log.asave()
+    subsidy = get_passenger_subsidy(log)
+    return log.payment, subsidy
 
 
 async def handle_tow_request(event, player, timestamp):
-  tow_request = event['data'].get('TowRequest')
-  tow_data = tow_request or {}
-  payment = tow_data.get('Net_Payment', 0)
-  await ServerTowRequestArrivedLog.objects.acreate(
-    timestamp=timestamp,
-    player=player,
-    payment=payment,
-    data=tow_data,
-  )
-  
-  match tow_data.get('Net_TowRequestFlags', 0):
-    case 1: # Flipped
-      subsidy = 2_000 + payment * 1.0
-    case _:
-      subsidy = 2_000 + payment * 0.5
-      
-  return payment, subsidy
+    tow_request = event["data"].get("TowRequest")
+    tow_data = tow_request or {}
+    payment = tow_data.get("Net_Payment", 0)
+    await ServerTowRequestArrivedLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        payment=payment,
+        data=tow_data,
+    )
+
+    match tow_data.get("Net_TowRequestFlags", 0):
+        case 1:  # Flipped
+            subsidy = 2_000 + payment * 1.0
+        case _:
+            subsidy = 2_000 + payment * 0.5
+
+    return payment, subsidy
 
 
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
-  if is_rp_mode and character.last_login < timestamp - timedelta(seconds=15):
-    # await despawn_player_vehicle(http_client_mod, player.unique_id)
-    asyncio.create_task(
-      announce(
-        f"{character.name}'s vehicle has been despawned for using roadside recovery while on RP mode",
-        http_client,
-        color="FFA500"
-      )
-    )
-
-
+    if is_rp_mode and character.last_login < timestamp - timedelta(seconds=15):
+        # await despawn_player_vehicle(http_client_mod, player.unique_id)
+        asyncio.create_task(
+            announce(
+                f"{character.name}'s vehicle has been despawned for using roadside recovery while on RP mode",
+                http_client,
+                color="FFA500",
+            )
+        )
 
 
 async def handle_cargo_arrived(
-  event,
-  player,
-  character,
-  timestamp,
-  treasury_balance,
-  is_rp_mode,
-  used_shortcut,
-  http_client,
-  discord_client,
-  active_term=None
+    event,
+    player,
+    character,
+    timestamp,
+    treasury_balance,
+    is_rp_mode,
+    used_shortcut,
+    http_client,
+    discord_client,
+    active_term=None,
 ):
-  valid_cargos = []
-  for cargo in event['data']['Cargos']:
-    if cargo['Net_Payment'] < 0:
-       raise ValueError(f"Negative payment for cargo: {cargo}")
-    valid_cargos.append(cargo)
+    valid_cargos = []
+    for cargo in event["data"]["Cargos"]:
+        if cargo["Net_Payment"] < 0:
+            raise ValueError(f"Negative payment for cargo: {cargo}")
+        valid_cargos.append(cargo)
 
-  logs = await asyncio.gather(*[
-    process_cargo_log(cargo, player, character, timestamp)
-    for cargo in valid_cargos
-  ])
-  await ServerCargoArrivedLog.objects.abulk_create(logs)
+    logs = await asyncio.gather(
+        *[
+            process_cargo_log(cargo, player, character, timestamp)
+            for cargo in valid_cargos
+        ]
+    )
+    await ServerCargoArrivedLog.objects.abulk_create(logs)
 
-  total_subsidy = 0
-  total_payment = sum([log.payment for log in logs])
+    total_subsidy = 0
+    total_payment = sum([log.payment for log in logs])
 
-  vehicle_key = ""
-  if character:
-    try:
-      latest_loc = await CharacterLocation.objects.filter(character=character).alatest('timestamp')
-      vehicle_key = latest_loc.get_vehicle_key_display()
-    except CharacterLocation.DoesNotExist:
-      pass
+    vehicle_key = ""
+    if character:
+        try:
+            latest_loc = await CharacterLocation.objects.filter(
+                character=character
+            ).alatest("timestamp")
+            vehicle_key = latest_loc.get_vehicle_key_display()
+        except CharacterLocation.DoesNotExist:
+            pass
 
-  key_by_cargo = attrgetter('cargo_key')
-  logs.sort(key=key_by_cargo)
-  for cargo_key, group in itertools.groupby(logs, key=key_by_cargo):
-    group_list = list(group)
-    quantity = len(group_list)
-    payment = group_list[0].payment
-    delivery_source = group_list[0].sender_point
-    delivery_destination = group_list[0].destination_point
-    cargo_subsidy_res = await get_subsidy_for_cargo(group_list[0], treasury_balance=treasury_balance)
-    cargo_subsidy = cargo_subsidy_res[0] * quantity
-    rule = cargo_subsidy_res[2]
-    if rule and cargo_subsidy > 0:
-        await SubsidyRule.objects.filter(pk=rule.pk).aupdate(spent=F('spent') + cargo_subsidy)
-        if active_term:
-            await record_ministry_subsidy_spend(cargo_subsidy, active_term.id)
-    cargo_name = group_list[0].get_cargo_key_display()
-
-    job = await (DeliveryJob.objects
-      .filter_active()
-      .filter_by_delivery(delivery_source, delivery_destination, cargo_key)
-    ).afirst()
-    if job is not None and job.rp_mode and not is_rp_mode:
-      job = None
-
-    delivery_data = {
-      'timestamp': timestamp,
-      'character': character,
-      'cargo_key': cargo_key,
-      'quantity': quantity,
-      'payment': payment * quantity,
-      'subsidy': cargo_subsidy, 
-      'sender_point': delivery_source,
-      'destination_point': delivery_destination,
-      'rp_mode': is_rp_mode,
-    }
-
-    if is_rp_mode:
-         # fixed bug: using cargo_subsidy instead of accumulator
-         delivery_data['subsidy'] = int((cargo_subsidy * 1.5) + (payment * quantity * 0.5))
-
-    job_id = job.id if job and not used_shortcut else None
-    
-    job = await sync_to_async(atomic_process_delivery)(job_id, quantity, delivery_data)
-    
-    if job and job.quantity_fulfilled >= job.quantity_requested:
-      rows_updated = await DeliveryJob.objects.filter(
-        pk=job.id,
-        fulfilled_at__isnull=True
-      ).aupdate(fulfilled_at=timestamp)
-      
-      if rows_updated > 0:
-        await job.arefresh_from_db()
-        await on_delivery_job_fulfilled(job, http_client)
-
-    delivery_subsidy = delivery_data['subsidy']
-    
-    if discord_client:
-      asyncio.create_task(
-        post_discord_delivery_embed(
-          discord_client,
-          character,
-          cargo_name,
-          quantity,
-          delivery_source,
-          delivery_destination,
-          payment * quantity,
-          delivery_subsidy,
-          vehicle_key,
-          job=job,
+    key_by_cargo = attrgetter("cargo_key")
+    logs.sort(key=key_by_cargo)
+    for cargo_key, group in itertools.groupby(logs, key=key_by_cargo):
+        group_list = list(group)
+        quantity = len(group_list)
+        payment = group_list[0].payment
+        delivery_source = group_list[0].sender_point
+        delivery_destination = group_list[0].destination_point
+        cargo_subsidy_res = await get_subsidy_for_cargo(
+            group_list[0], treasury_balance=treasury_balance
         )
-      )
+        cargo_subsidy = cargo_subsidy_res[0] * quantity
+        rule = cargo_subsidy_res[2]
+        if rule and cargo_subsidy > 0:
+            await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
+                spent=F("spent") + cargo_subsidy
+            )
+            if active_term:
+                await record_ministry_subsidy_spend(cargo_subsidy, active_term.id)
+        cargo_name = group_list[0].get_cargo_key_display()
 
-    total_subsidy += delivery_subsidy
+        job = await (
+            DeliveryJob.objects.filter_active().filter_by_delivery(
+                delivery_source, delivery_destination, cargo_key
+            )
+        ).afirst()
+        if job is not None and job.rp_mode and not is_rp_mode:
+            job = None
 
-  return total_payment + total_subsidy, total_subsidy
+        delivery_data = {
+            "timestamp": timestamp,
+            "character": character,
+            "cargo_key": cargo_key,
+            "quantity": quantity,
+            "payment": payment * quantity,
+            "subsidy": cargo_subsidy,
+            "sender_point": delivery_source,
+            "destination_point": delivery_destination,
+            "rp_mode": is_rp_mode,
+        }
 
+        if is_rp_mode:
+            # fixed bug: using cargo_subsidy instead of accumulator
+            delivery_data["subsidy"] = int(
+                (cargo_subsidy * 1.5) + (payment * quantity * 0.5)
+            )
+
+        job_id = job.id if job and not used_shortcut else None
+
+        job = await sync_to_async(atomic_process_delivery)(
+            job_id, quantity, delivery_data
+        )
+
+        if job and job.quantity_fulfilled >= job.quantity_requested:
+            rows_updated = await DeliveryJob.objects.filter(
+                pk=job.id, fulfilled_at__isnull=True
+            ).aupdate(fulfilled_at=timestamp)
+
+            if rows_updated > 0:
+                await job.arefresh_from_db()
+                await on_delivery_job_fulfilled(job, http_client)
+
+        delivery_subsidy = delivery_data["subsidy"]
+
+        if discord_client:
+            asyncio.create_task(
+                post_discord_delivery_embed(
+                    discord_client,
+                    character,
+                    cargo_name,
+                    quantity,
+                    delivery_source,
+                    delivery_destination,
+                    payment * quantity,
+                    delivery_subsidy,
+                    vehicle_key,
+                    job=job,
+                )
+            )
+
+        total_subsidy += delivery_subsidy
+
+    return total_payment + total_subsidy, total_subsidy
 
 
 def aggregate_homogenous_events(sorted_events):
-  grouped_events = itertools.groupby(sorted_events, key=lambda e: (e['key_id'], e['hook']))
-  aggregated_events = []
+    grouped_events = itertools.groupby(
+        sorted_events, key=lambda e: (e["key_id"], e["hook"])
+    )
+    aggregated_events = []
 
-  for key, group in grouped_events:
-    if not key[0]: # key_id
-      continue
+    for key, group in grouped_events:
+        if not key[0]:  # key_id
+            continue
 
-    group_events = list(group)
-    match key[1]: # hook
-      case "ServerCargoArrived":
-        cargos = [
-          cargo
-          for event in group_events
-          for cargo in event['data']['Cargos']
-        ]
-        aggregated_events.append({
-          'hook': key[1],
-          'timestamp': group_events[0]['timestamp'],
-          'data': {
-            'CharacterGuid': key[0],
-            'Cargos': cargos,
-          }
-        })
-      case "ServerResetVehicleAtResponse":
-        aggregated_events.append({
-          'hook': key[1],
-          'timestamp': group_events[0]['timestamp'],
-          'data': {
-            'CharacterGuid': key[0],
-            'VehicleId': group_events[0]['data'].get('VehicleId'),
-          }
-        })
-      case _:
-        aggregated_events.extend(group_events)
-  return aggregated_events
-
-
-async def process_events(events, http_client=None, http_client_mod=None, discord_client=None):
-  # Pre-process events to simplify keys
-  for event in events:
-    player_id = event['data'].get('CharacterGuid', '')
-    if not player_id:
-      player_id = event['data'].get('PlayerId', '')
-    event['key_id'] = player_id
-
-  def key_fn(event):
-    return (event['key_id'], event['hook'])
-
-  sorted_events = sorted(events, key=key_fn)
-  aggregated_events = aggregate_homogenous_events(sorted_events)
+        group_events = list(group)
+        match key[1]:  # hook
+            case "ServerCargoArrived":
+                cargos = [
+                    cargo for event in group_events for cargo in event["data"]["Cargos"]
+                ]
+                aggregated_events.append(
+                    {
+                        "hook": key[1],
+                        "timestamp": group_events[0]["timestamp"],
+                        "data": {
+                            "CharacterGuid": key[0],
+                            "Cargos": cargos,
+                        },
+                    }
+                )
+            case "ServerResetVehicleAtResponse":
+                aggregated_events.append(
+                    {
+                        "hook": key[1],
+                        "timestamp": group_events[0]["timestamp"],
+                        "data": {
+                            "CharacterGuid": key[0],
+                            "VehicleId": group_events[0]["data"].get("VehicleId"),
+                        },
+                    }
+                )
+            case _:
+                aggregated_events.extend(group_events)
+    return aggregated_events
 
 
+async def process_events(
+    events, http_client=None, http_client_mod=None, discord_client=None
+):
+    # Pre-process events to simplify keys
+    for event in events:
+        player_id = event["data"].get("CharacterGuid", "")
+        if not player_id:
+            player_id = event["data"].get("PlayerId", "")
+        event["key_id"] = player_id
 
+    def key_fn(event):
+        return (event["key_id"], event["hook"])
 
+    sorted_events = sorted(events, key=key_fn)
+    aggregated_events = aggregate_homogenous_events(sorted_events)
 
-  def key_by_character(event):
-    player_id = event['data'].get('CharacterGuid', '')
-    if not player_id:
-      player_id = event['data'].get('PlayerId', '')
-    return player_id
+    def key_by_character(event):
+        player_id = event["data"].get("CharacterGuid", "")
+        if not player_id:
+            player_id = event["data"].get("PlayerId", "")
+        return player_id
 
-  sorted_player_events = sorted(aggregated_events, key=key_by_character)
-  grouped_player_events = itertools.groupby(sorted_player_events, key=key_by_character)
+    sorted_player_events = sorted(aggregated_events, key=key_by_character)
+    grouped_player_events = itertools.groupby(
+        sorted_player_events, key=key_by_character
+    )
 
-  player_profits = []
+    player_profits = []
 
-  treasury_balance = await get_treasury_fund_balance()
-  active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
-  for character_guid, es in grouped_player_events:
-    if not character_guid:
-      continue
+    treasury_balance = await get_treasury_fund_balance()
+    active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
+    for character_guid, es in grouped_player_events:
+        if not character_guid:
+            continue
 
-    try:
-      character_q = Q(guid=character_guid, guid__isnull=False)
-      try:
-        character_q = character_q | Q(player__unique_id=int(character_guid))
-      except ValueError:
-        pass
+        try:
+            character_q = Q(guid=character_guid, guid__isnull=False)
+            try:
+                character_q = character_q | Q(player__unique_id=int(character_guid))
+            except ValueError:
+                pass
 
-      character = await (Character.objects
-        .select_related('player')
-        .with_last_login()
-        .filter(character_q)
-        .order_by('-last_login')
-        .afirst()
-      )
-      if not character:
-        continue
-      player = character.player
-    except Player.DoesNotExist:
-      continue
+            character = await (
+                Character.objects.select_related("player")
+                .with_last_login()
+                .filter(character_q)
+                .order_by("-last_login")
+                .afirst()
+            )
+            if not character:
+                continue
+            player = character.player
+        except Player.DoesNotExist:
+            continue
 
-    total_payment = 0
-    total_subsidy = 0
+        total_payment = 0
+        total_subsidy = 0
 
-    is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
-    used_shortcut = await CharacterLocation.objects.filter(
-      character=character,
-      location__coveredby=gwangjin_shortcut,
-      timestamp__gte=timezone.now() - timedelta(hours=1)
-    ).aexists()
+        is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
+        used_shortcut = await CharacterLocation.objects.filter(
+            character=character,
+            location__coveredby=gwangjin_shortcut,
+            timestamp__gte=timezone.now() - timedelta(hours=1),
+        ).aexists()
 
-    for event in es:
-      try:
-        payment, subsidy = await process_event(
-          event,
-          player,
-          character,
-          is_rp_mode,
-          used_shortcut,
-          treasury_balance,
-          http_client,
-          http_client_mod,
-          discord_client,
-          active_term=active_term
-        )
-        total_payment += payment
-        total_subsidy += subsidy
-      except Exception as e:
-        event_str = json.dumps(event)
-        asyncio.create_task(
-          show_popup(http_client_mod, f"Webhook failed, please send to discord:\n{e}\n{event_str}", character_guid=character.guid)
-        )
-        raise e
+        for event in es:
+            try:
+                payment, subsidy = await process_event(
+                    event,
+                    player,
+                    character,
+                    is_rp_mode,
+                    used_shortcut,
+                    treasury_balance,
+                    http_client,
+                    http_client_mod,
+                    discord_client,
+                    active_term=active_term,
+                )
+                total_payment += payment
+                total_subsidy += subsidy
+            except Exception as e:
+                event_str = json.dumps(event)
+                asyncio.create_task(
+                    show_popup(
+                        http_client_mod,
+                        f"Webhook failed, please send to discord:\n{e}\n{event_str}",
+                        character_guid=character.guid,
+                    )
+                )
+                raise e
 
-    if used_shortcut:
-      total_payment -= total_subsidy
-      total_subsidy = 0
+        if used_shortcut:
+            total_payment -= total_subsidy
+            total_subsidy = 0
 
-    player_profits.append((character, total_subsidy, total_payment))
+        player_profits.append((character, total_subsidy, total_payment))
 
-  if http_client_mod:
-    await on_player_profits(player_profits, http_client_mod)
+    if http_client_mod:
+        await on_player_profits(player_profits, http_client_mod)
+
 
 async def process_cargo_log(cargo, player, character, timestamp):
-  sender_coord_raw = cargo['Net_SenderAbsoluteLocation']
-  sender_coord = Point(
-    sender_coord_raw['X'],
-    sender_coord_raw['Y'],
-    sender_coord_raw['Z'],
-  ).buffer(1)
-  destination_coord_raw = cargo['Net_DestinationLocation']
-  destination_coord = Point(
-    destination_coord_raw['X'],
-    destination_coord_raw['Y'],
-    destination_coord_raw['Z'],
-  ).buffer(1)
-  sender = await DeliveryPoint.objects.filter(coord__coveredby=sender_coord).afirst()
-  destination = await DeliveryPoint.objects.filter(coord__coveredby=destination_coord).afirst()
-  return ServerCargoArrivedLog(
-    timestamp=timestamp,
-    player=player,
-    character=character,
-    cargo_key=cargo['Net_CargoKey'],
-    payment=cargo['Net_Payment'],
-    weight=cargo.get('Net_Weight', 0),
-    damage=cargo['Net_Damage'],
-    sender_point=sender,
-    destination_point=destination,
-    data=cargo,
-  )
+    sender_coord_raw = cargo["Net_SenderAbsoluteLocation"]
+    sender_coord = Point(
+        sender_coord_raw["X"],
+        sender_coord_raw["Y"],
+        sender_coord_raw["Z"],
+    ).buffer(1)
+    destination_coord_raw = cargo["Net_DestinationLocation"]
+    destination_coord = Point(
+        destination_coord_raw["X"],
+        destination_coord_raw["Y"],
+        destination_coord_raw["Z"],
+    ).buffer(1)
+    sender = await DeliveryPoint.objects.filter(coord__coveredby=sender_coord).afirst()
+    destination = await DeliveryPoint.objects.filter(
+        coord__coveredby=destination_coord
+    ).afirst()
+    return ServerCargoArrivedLog(
+        timestamp=timestamp,
+        player=player,
+        character=character,
+        cargo_key=cargo["Net_CargoKey"],
+        payment=cargo["Net_Payment"],
+        weight=cargo.get("Net_Weight", 0),
+        damage=cargo["Net_Damage"],
+        sender_point=sender,
+        destination_point=destination,
+        data=cargo,
+    )
+
 
 def atomic_process_delivery(job_id, quantity, delivery_data):
-  """
-   atomically updates the job and creates the delivery log
-  """
-  from amc.models import DeliveryJob # import here to avoid circular if any
-  with transaction.atomic():
-    job = None
-    quantity_to_add = 0
-    if job_id:
-      job = DeliveryJob.objects.select_for_update().get(pk=job_id)
-      requested_remaining = job.quantity_requested - job.quantity_fulfilled
-      quantity_to_add = min(requested_remaining, quantity)
-      if quantity_to_add > 0:
-        job.quantity_fulfilled = cast(Any, F('quantity_fulfilled') + quantity_to_add)
-        job.save(update_fields=['quantity_fulfilled'])
-        job.refresh_from_db(fields=['quantity_fulfilled'])
-    
-    bonus = 0
-    if job and quantity_to_add > 0:
-       # Correct multiplier logic: (multiplier - 1) * portion_of_payment
-       # portion_of_payment = (quantity_to_add / delivery_data['quantity']) * delivery_data['payment']
-       # but usually quantity_to_add == delivery_data['quantity']
-       
-       multiplier = max(0, job.bonus_multiplier - 1)
-       bonus = int(delivery_data['payment'] * (quantity_to_add / delivery_data['quantity']) * multiplier + 0.5)
-       if bonus > delivery_data['subsidy']:
-         delivery_data['subsidy'] = bonus
-       
-    Delivery.objects.create(
-      job=job,
-      **delivery_data
-    )
-    return job
+    """
+    atomically updates the job and creates the delivery log
+    """
+    from amc.models import DeliveryJob  # import here to avoid circular if any
+
+    with transaction.atomic():
+        job = None
+        quantity_to_add = 0
+        if job_id:
+            job = DeliveryJob.objects.select_for_update().get(pk=job_id)
+            requested_remaining = job.quantity_requested - job.quantity_fulfilled
+            quantity_to_add = min(requested_remaining, quantity)
+            if quantity_to_add > 0:
+                job.quantity_fulfilled = cast(
+                    Any, F("quantity_fulfilled") + quantity_to_add
+                )
+                job.save(update_fields=["quantity_fulfilled"])
+                job.refresh_from_db(fields=["quantity_fulfilled"])
+
+        bonus = 0
+        if job and quantity_to_add > 0:
+            # Correct multiplier logic: (multiplier - 1) * portion_of_payment
+            # portion_of_payment = (quantity_to_add / delivery_data['quantity']) * delivery_data['payment']
+            # but usually quantity_to_add == delivery_data['quantity']
+
+            multiplier = max(0, job.bonus_multiplier - 1)
+            bonus = int(
+                delivery_data["payment"]
+                * (quantity_to_add / delivery_data["quantity"])
+                * multiplier
+                + 0.5
+            )
+            if bonus > delivery_data["subsidy"]:
+                delivery_data["subsidy"] = bonus
+
+        Delivery.objects.create(job=job, **delivery_data)
+        return job
 
 
+async def process_event(
+    event,
+    player,
+    character,
+    is_rp_mode=False,
+    used_shortcut=False,
+    treasury_balance=None,
+    http_client=None,
+    http_client_mod=None,
+    discord_client=None,
+    active_term=None,
+):
+    print(event)
+    total_payment = 0
+    subsidy = 0
+    current_tz = timezone.get_current_timezone()
+    timestamp = timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
 
-async def process_event(event, player, character, is_rp_mode=False, used_shortcut=False, treasury_balance=None, http_client=None, http_client_mod=None, discord_client=None, active_term=None):
-  print(event)
-  total_payment = 0
-  subsidy = 0
-  current_tz = timezone.get_current_timezone()
-  timestamp = timezone.datetime.fromtimestamp(event['timestamp'], tz=current_tz)
+    if character:
+        try:
+            latest_loc = await CharacterLocation.objects.filter(
+                character=character
+            ).afirst()
+            if latest_loc:
+                latest_loc.get_vehicle_key_display()
+        except CharacterLocation.DoesNotExist:
+            pass
 
-  if character:
-    try:
-      latest_loc = await CharacterLocation.objects.filter(character=character).afirst()
-      if latest_loc:
-        latest_loc.get_vehicle_key_display()
-    except CharacterLocation.DoesNotExist:
-      pass
+    match event["hook"]:
+        case "ServerCargoArrived":
+            payment, subsidy = await handle_cargo_arrived(
+                event,
+                player,
+                character,
+                timestamp,
+                treasury_balance,
+                is_rp_mode,
+                used_shortcut,
+                http_client,
+                discord_client,
+                active_term=active_term,
+            )
+            total_payment += payment
 
-  match event['hook']:
-    case "ServerCargoArrived":
-      payment, subsidy = await handle_cargo_arrived(
-        event,
-        player,
-        character,
-        timestamp,
-        treasury_balance,
-        is_rp_mode,
-        used_shortcut,
-        http_client,
-        discord_client,
-        active_term=active_term
-      )
-      total_payment += payment
+        case "ServerCargoDumped":
+            payment, subsidy = await handle_cargo_dumped(event, player, timestamp)
+            total_payment += payment
 
+        case "ServerSignContract":
+            await handle_contract_signed(event, player, timestamp)
 
-    case "ServerCargoDumped":
-      payment, subsidy = await handle_cargo_dumped(event, player, timestamp)
-      total_payment += payment
+        case "ServerContractCargoDelivered":
+            payment, _ = await handle_contract_delivered(event, player, timestamp)
+            total_payment += payment
 
+        case "ServerPassengerArrived":
+            payment, subsidy = await handle_passenger_arrived(event, player, timestamp)
+            total_payment += payment + subsidy
 
-    case "ServerSignContract":
-      await handle_contract_signed(event, player, timestamp)
+        case "ServerTowRequestArrived":
+            payment, subsidy = await handle_tow_request(event, player, timestamp)
+            total_payment += payment + subsidy
 
-    case "ServerContractCargoDelivered":
-      payment, _ = await handle_contract_delivered(event, player, timestamp)
-      total_payment += payment
+        case "ServerResetVehicleAt":
+            await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
 
-
-    case "ServerPassengerArrived":
-      payment, subsidy = await handle_passenger_arrived(event, player, timestamp)
-      total_payment += payment + subsidy
-
-    case "ServerTowRequestArrived":
-      payment, subsidy = await handle_tow_request(event, player, timestamp)
-      total_payment += payment + subsidy
-
-    case "ServerResetVehicleAt":
-      await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
-
-  return total_payment, subsidy
-
-
+    return total_payment, subsidy

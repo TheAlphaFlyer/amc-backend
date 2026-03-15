@@ -2,22 +2,23 @@
 
 from django.db import migrations
 
+
 def migrate_templates(apps, schema_editor):
-    DeliveryJob = apps.get_model('amc', 'DeliveryJob')
-    DeliveryJobTemplate = apps.get_model('amc', 'DeliveryJobTemplate')
+    DeliveryJob = apps.get_model("amc", "DeliveryJob")
+    DeliveryJobTemplate = apps.get_model("amc", "DeliveryJobTemplate")
 
     # 1. Migrate existing templates
     # We iterate over DeliveryJob where template=True
-    
+
     # Map old ID to new Template Object for easy lookup later if needed (though we can just store the mapping on the object itself if we want, but here we just process)
-    
+
     # We first process base templates, but base_template on DeliveryJob is self-referential.
-    # If a template used another template as base, we might need to be careful with ordering, 
+    # If a template used another template as base, we might need to be careful with ordering,
     # but DeliveryJobTemplate doesn't have a recursive structure in our new design (or at least we didn't add one explicitly in the plan, strictu sensu).
-    # Wait, the plan said: "Remove: ... base_template (FK)". 
+    # Wait, the plan said: "Remove: ... base_template (FK)".
     # And "Add: created_from (ForeignKey to DeliveryJobTemplate)".
     # So if a Job was created from a Template, we link it.
-    
+
     # Let's first create all Templates from DeliveryJobs that are marked as templates.
     for job in DeliveryJob.objects.filter(template=True):
         # Create corresponding template
@@ -35,18 +36,18 @@ def migrate_templates(apps, schema_editor):
         tmpl.cargos.set(job.cargos.all())
         tmpl.source_points.set(job.source_points.all())
         tmpl.destination_points.set(job.destination_points.all())
-        
+
         # We also need to link any job that was created from THIS job (which was acting as a template)
         # to the new template.
         # The field on DeliveryJob is `base_template`.
         DeliveryJob.objects.filter(base_template=job).update(created_from=tmpl)
-        
+
         # Since we are migrating, we can now delete the old "Job that was a template".
-        # BUT, wait. If we delete it, `base_template` on children might cascade delete? 
+        # BUT, wait. If we delete it, `base_template` on children might cascade delete?
         # Let's check `base_template` definition in previous models.py view:
         # base_template = models.ForeignKey('self', models.SET_NULL, null=True, ...
         # So it sets to NULL. That's fine.
-        
+
         # However, to be safe and rigorous, we should probably not delete in a data migration unless necessary.
         # The plan said: "Delete the old template DeliveryJobs."
         # Okay, I will delete them.
@@ -54,9 +55,8 @@ def migrate_templates(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0138_delivery_job_template'),
+        ("amc", "0138_delivery_job_template"),
     ]
 
     operations = [

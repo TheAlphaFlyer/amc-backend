@@ -4,11 +4,7 @@ from django.db.models import Prefetch
 from discord import app_commands
 from discord.ext import commands, tasks
 from django.conf import settings
-from amc.models import (
-  ServerCargoArrivedLog,
-  DeliveryJob,
-  Delivery
-)
+from amc.models import ServerCargoArrivedLog, DeliveryJob, Delivery
 from amc.webhook import on_delivery_job_fulfilled
 from typing import TYPE_CHECKING, Optional
 
@@ -18,272 +14,300 @@ if TYPE_CHECKING:
 if TYPE_CHECKING:
     from amc.discord_client import AMCDiscordBot
 
+
 class JobsCog(commands.Cog):
-  def __init__(self, bot: "AMCDiscordBot"):
-    self.bot = bot
-    self.channel_id = settings.DISCORD_JOBS_CHANNEL_ID
-    self.deliveries_channel_id = settings.DISCORD_DELIVERIES_CHANNEL_ID
-    self.message_id = None
+    def __init__(self, bot: "AMCDiscordBot"):
+        self.bot = bot
+        self.channel_id = settings.DISCORD_JOBS_CHANNEL_ID
+        self.deliveries_channel_id = settings.DISCORD_DELIVERIES_CHANNEL_ID
+        self.message_id = None
 
-  async def cog_load(self):
-    self.update_loop.start()
+    async def cog_load(self):
+        self.update_loop.start()
 
-  async def cog_unload(self):
-    self.update_loop.cancel()
+    async def cog_unload(self):
+        self.update_loop.cancel()
 
-  def _build_job_embed(self, job, stale=False) -> discord.Embed:
-    """Builds a Discord Embed for a single DeliveryJob object."""
+    def _build_job_embed(self, job, stale=False) -> discord.Embed:
+        """Builds a Discord Embed for a single DeliveryJob object."""
 
-    # --- Create the title and description (value part of the field) ---
-    description = ''
-    if job.cargo_key:
-      cargo_key = job.get_cargo_key_display()
-    else:
-      cargo_key = ', '.join([
-        cargo.label
-        for cargo in job.cargos.all()
-      ])
+        # --- Create the title and description (value part of the field) ---
+        description = ""
+        if job.cargo_key:
+            cargo_key = job.get_cargo_key_display()
+        else:
+            cargo_key = ", ".join([cargo.label for cargo in job.cargos.all()])
 
-    description += f'\n**Cargo:**: {cargo_key}'
+        description += f"\n**Cargo:**: {cargo_key}"
 
-    if job.completion_bonus:
-        description += '\n**Completion Reward**: '
-        description += f"{job.completion_bonus:,}"
-    description += f"\n**Bonus multiplier**: {job.bonus_multiplier*100:.0f}%"
+        if job.completion_bonus:
+            description += "\n**Completion Reward**: "
+            description += f"{job.completion_bonus:,}"
+        description += f"\n**Bonus multiplier**: {job.bonus_multiplier * 100:.0f}%"
 
-    if not stale:
-      description += f"\n**Expires in**: <t:{int(job.expired_at.timestamp())}:R>"
+        if not stale:
+            description += f"\n**Expires in**: <t:{int(job.expired_at.timestamp())}:R>"
 
-    source_points = list(job.source_points.all())
-    if source_points:
-        description += '\n**ONLY from**: '
-        description += ', '.join([point.name for point in source_points])
-        
-    destination_points = list(job.destination_points.all())
-    if destination_points:
-        description += '\n**ONLY to**: '
-        description += ', '.join([point.name for point in destination_points])
+        source_points = list(job.source_points.all())
+        if source_points:
+            description += "\n**ONLY from**: "
+            description += ", ".join([point.name for point in source_points])
 
-    if job.description:
-        description += f'\n**Description**: {job.description}'
+        destination_points = list(job.destination_points.all())
+        if destination_points:
+            description += "\n**ONLY to**: "
+            description += ", ".join([point.name for point in destination_points])
 
-    if deliveries := list(job.deliveries.all()):
-      contributors = {}
-      for delivery in deliveries:
-        if delivery.character: 
-          name = delivery.character.name
-          contributors[name] = contributors.get(name, 0) + delivery.quantity
+        if job.description:
+            description += f"\n**Description**: {job.description}"
 
-      if contributors:
-        description += '\n\n**Contributors**:'
-        sorted_contributors = sorted(
-          contributors.items(), 
-          key=lambda item: item[1], 
-          reverse=True
+        if deliveries := list(job.deliveries.all()):
+            contributors = {}
+            for delivery in deliveries:
+                if delivery.character:
+                    name = delivery.character.name
+                    contributors[name] = contributors.get(name, 0) + delivery.quantity
+
+            if contributors:
+                description += "\n\n**Contributors**:"
+                sorted_contributors = sorted(
+                    contributors.items(), key=lambda item: item[1], reverse=True
+                )
+
+                for name, quantity in sorted_contributors:
+                    bonus = int(
+                        job.completion_bonus * quantity / job.quantity_requested
+                    )
+                    description += (
+                        f"\n**{name}**: {quantity} ({bonus:,} bonus upon completion)"
+                    )
+
+        color = discord.Color.blue()
+        if stale:
+            if job.quantity_fulfilled == job.quantity_requested:
+                color = discord.Color.green()
+            else:
+                color = discord.Color.red()
+
+        # --- Assemble the embed ---
+        embed = discord.Embed(
+            title=f"{job.name} ({job.quantity_fulfilled}/{job.quantity_requested})",
+            description=description.strip(),
+            color=color,
+            timestamp=job.requested_at,  # Use job creation time for consistency
         )
 
-        for name, quantity in sorted_contributors:
-          bonus = int(job.completion_bonus * quantity / job.quantity_requested)
-          description += f'\n**{name}**: {quantity} ({bonus:,} bonus upon completion)'
+        # --- Add the prominent RP Mode field if applicable ---
+        if job.rp_mode:
+            embed.add_field(
+                name="🚨 Requirement 🚨",
+                value="**This job requires RP mode to be enabled for bonuses.**",
+                inline=False,  # Ensures the field spans the full width of the embed
+            )
 
-    color = discord.Color.blue()
-    if stale:
-      if job.quantity_fulfilled == job.quantity_requested:
-        color = discord.Color.green()
-      else:
-        color = discord.Color.red()
+        embed.set_footer(text=f"Job ID: {job.id}")
+        return embed
 
-    # --- Assemble the embed ---
-    embed = discord.Embed(
-        title=f"{job.name} ({job.quantity_fulfilled}/{job.quantity_requested})",
-        description=description.strip(),
-        color=color,
-        timestamp=job.requested_at # Use job creation time for consistency
-    )
+    async def get_channel_messageable(
+        self, channel_id: int
+    ) -> Optional[discord.abc.Messageable]:
+        channel = self.bot.get_channel(channel_id)
+        if isinstance(channel, discord.abc.Messageable):
+            return channel
+        return None
 
-    # --- Add the prominent RP Mode field if applicable ---
-    if job.rp_mode:
-        embed.add_field(
-            name="🚨 Requirement 🚨",
-            value="**This job requires RP mode to be enabled for bonuses.**",
-            inline=False # Ensures the field spans the full width of the embed
+    def _build_delivery_embed(
+        self,
+        character_name,
+        cargo_key,
+        quantity,
+        source_name,
+        destination_name,
+        payment,
+        subsidy,
+        vehicle_key,
+        job=None,
+    ) -> discord.Embed:
+        description = ""
+        description += "\n**Payment**: "
+        description += f"{payment + subsidy:,}"
+        if subsidy:
+            description += f" ({payment:,} + Subsidy {subsidy:,})"
+
+        if source_name:
+            description += "\n**From**: "
+            description += source_name
+
+        if destination_name:
+            description += "\n**To**: "
+            description += destination_name
+
+        if vehicle_key:
+            description += "\n**Vehicle**: "
+            description += vehicle_key
+
+        # --- Assemble the embed ---
+        embed = discord.Embed(
+            title=f"{character_name} delivered {quantity} {cargo_key}",
+            description=description.strip(),
+            color=discord.Color.green(),
+            timestamp=timezone.now(),
+        )
+        if job:
+            embed.set_footer(text=f"Job: {job.name} (#{job.id})")
+
+        return embed
+
+    async def post_delivery_embed(self, *args, **kwargs):
+        deliveries_channel = await self.get_channel_messageable(
+            self.deliveries_channel_id
+        )
+        if not deliveries_channel:
+            print(
+                f"Error: Could not find deliveries channel with ID {self.deliveries_channel_id}"
+            )
+            return
+        await deliveries_channel.send(embed=self._build_delivery_embed(*args, **kwargs))
+
+    async def update_jobs(self):
+        """
+        Synchronizes Discord messages with the jobs in the database.
+        Handles creating, updating, and deleting job messages.
+        """
+        channel = await self.get_channel_messageable(self.channel_id)
+        if not channel:
+            print(
+                f"Error: Could not find messageable channel with ID {self.channel_id}"
+            )
+            return
+
+        active_jobs = (
+            DeliveryJob.objects.prefetch_related(
+                "source_points",
+                "destination_points",
+                "cargos",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "deliveries", queryset=Delivery.objects.select_related("character")
+                )
+            )
+            .filter_active()
         )
 
-    embed.set_footer(text=f"Job ID: {job.id}")
-    return embed
+        active_job_ids = set()
 
-  async def get_channel_messageable(self, channel_id: int) -> Optional[discord.abc.Messageable]:
-    channel = self.bot.get_channel(channel_id)
-    if isinstance(channel, discord.abc.Messageable):
-        return channel
-    return None
+        async for job in active_jobs:
+            active_job_ids.add(job.id)
+            embed = self._build_job_embed(job)
+            print("Embed CREATED")
 
-  def _build_delivery_embed(
-    self,
-    character_name,
-    cargo_key,
-    quantity,
-    source_name,
-    destination_name,
-    payment,
-    subsidy,
-    vehicle_key,
-    job=None,
-  ) -> discord.Embed:
-    description = ''
-    description += '\n**Payment**: '
-    description += f"{payment+subsidy:,}"
-    if subsidy:
-      description += f" ({payment:,} + Subsidy {subsidy:,})"
+            # UPDATE path
+            if job.discord_message_id:
+                try:
+                    message = await channel.fetch_message(job.discord_message_id)
+                    await message.edit(embed=embed)
+                except discord.NotFound:
+                    # Message was deleted in Discord. Clear the invalid ID.
+                    # It will be recreated in the CREATE path below.
+                    job.discord_message_id = None
+                except Exception as e:
+                    print(f"Error updating message for job {job.id}: {e}")
 
-    if source_name:
-        description += '\n**From**: '
-        description += source_name
-        
-    if destination_name:
-        description += '\n**To**: '
-        description += destination_name
+            # CREATE path
+            if not job.discord_message_id:
+                try:
+                    new_message = await channel.send(embed=embed)
+                    job.discord_message_id = new_message.id
+                    await job.asave(update_fields=["discord_message_id"])
+                except Exception as e:
+                    print(f"Error creating message for job {job.id}: {e}")
+            print("Embed CREATED done")
 
-    if vehicle_key:
-        description += '\n**Vehicle**: '
-        description += vehicle_key
+        # --- 2. CLEAN UP STALE MESSAGES (DELETE) ---
+        # Find jobs that have a message ID but are no longer active
+        stale_jobs = (
+            DeliveryJob.objects.filter(discord_message_id__isnull=False)
+            .exclude(id__in=active_job_ids)
+            .prefetch_related(
+                "source_points",
+                "destination_points",
+                "cargos",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "deliveries", queryset=Delivery.objects.select_related("character")
+                )
+            )
+        )
 
-    # --- Assemble the embed ---
-    embed = discord.Embed(
-        title=f"{character_name} delivered {quantity} {cargo_key}",
-        description=description.strip(),
-        color=discord.Color.green(),
-        timestamp=timezone.now()
-    )
-    if job:
-      embed.set_footer(text=f"Job: {job.name} (#{job.id})")
-
-    return embed
-
-  async def post_delivery_embed(self, *args, **kwargs):
-    deliveries_channel = await self.get_channel_messageable(self.deliveries_channel_id)
-    if not deliveries_channel:
-      print(f"Error: Could not find deliveries channel with ID {self.deliveries_channel_id}")
-      return
-    await deliveries_channel.send(embed=self._build_delivery_embed(*args, **kwargs))
-
-  async def update_jobs(self):
-    """
-    Synchronizes Discord messages with the jobs in the database.
-    Handles creating, updating, and deleting job messages.
-    """
-    channel = await self.get_channel_messageable(self.channel_id)
-    if not channel:
-        print(f"Error: Could not find messageable channel with ID {self.channel_id}")
-        return
-
-    active_jobs = DeliveryJob.objects.prefetch_related(
-        'source_points', 'destination_points', 'cargos',
-    ).prefetch_related(
-      Prefetch('deliveries', queryset=Delivery.objects.select_related('character'))
-    ).filter_active()
-    
-    active_job_ids = set()
-
-    async for job in active_jobs:
-        active_job_ids.add(job.id)
-        embed = self._build_job_embed(job)
-        print('Embed CREATED')
-        
-        # UPDATE path
-        if job.discord_message_id:
+        async for job in stale_jobs:
+            embed = self._build_job_embed(job, stale=True)
             try:
+                if not channel:
+                    continue
                 message = await channel.fetch_message(job.discord_message_id)
                 await message.edit(embed=embed)
+                print(f"Updated message for stale job {job.id}")
             except discord.NotFound:
-                # Message was deleted in Discord. Clear the invalid ID.
-                # It will be recreated in the CREATE path below.
+                # Message already gone, which is fine.
+                pass
+            except Exception as e:
+                print(f"Error deleting message for job {job.id}: {e}")
+            finally:
+                # Clear the ID from the database regardless
                 job.discord_message_id = None
-            except Exception as e:
-                print(f"Error updating message for job {job.id}: {e}")
+                await job.asave(update_fields=["discord_message_id"])
 
-        # CREATE path
-        if not job.discord_message_id:
-            try:
-                new_message = await channel.send(embed=embed)
-                job.discord_message_id = new_message.id
-                await job.asave(update_fields=['discord_message_id'])
-            except Exception as e:
-                print(f"Error creating message for job {job.id}: {e}")
-        print('Embed CREATED done')
+        return active_job_ids, stale_jobs
 
-    # --- 2. CLEAN UP STALE MESSAGES (DELETE) ---
-    # Find jobs that have a message ID but are no longer active
-    stale_jobs = DeliveryJob.objects.filter(
-      discord_message_id__isnull=False
-    ).exclude(
-      id__in=active_job_ids
-    ).prefetch_related(
-        'source_points', 'destination_points', 'cargos',
-    ).prefetch_related(
-      Prefetch('deliveries', queryset=Delivery.objects.select_related('character'))
+    @tasks.loop(minutes=1)  # Reduced loop time for better responsiveness
+    async def update_loop(self):
+        """Periodically runs the synchronization logic."""
+        try:
+            print("Running job synchronization...")
+            await self.update_jobs()
+            print("Job synchronization finished.")
+        except Exception as e:
+            print(f"Error in job synchronization loop: {e}")
+
+    @update_loop.before_loop
+    async def before_update_loop(self):
+        """Wait until the bot is ready before starting the loop."""
+        await self.bot.wait_until_ready()
+
+    async def cargo_autocomplete(self, interaction, current):
+        unique_cargo_keys = ServerCargoArrivedLog.objects.values_list(
+            "cargo_key", flat=True
+        ).distinct()
+        return [
+            app_commands.Choice(name=f"{cargo_key}", value=cargo_key)
+            async for cargo_key in unique_cargo_keys
+            if current.lower() in cargo_key.lower()
+        ][:25]  # Discord max choices: 25
+
+    @app_commands.command(name="sync_jobs_channel", description="Sync the jobs channel")
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    async def sync_jobs_channel(self, interaction):
+        await interaction.response.defer()
+        await self.update_jobs()
+        await interaction.followup.send("Synced", ephemeral=True)
+
+    @app_commands.command(
+        name="update_jobs_embeds", description="Manually update jobs embeds"
     )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    async def update_jobs_embeds(self, interaction):
+        active_job_ids = await self.update_jobs()
+        await interaction.response.send_message(
+            f"Updated {str(active_job_ids)}", ephemeral=True
+        )
 
-    async for job in stale_jobs:
-      embed = self._build_job_embed(job, stale=True)
-      try:
-        if not channel:
-            continue
-        message = await channel.fetch_message(job.discord_message_id)
-        await message.edit(embed=embed)
-        print(f"Updated message for stale job {job.id}")
-      except discord.NotFound:
-        # Message already gone, which is fine.
-        pass
-      except Exception as e:
-        print(f"Error deleting message for job {job.id}: {e}")
-      finally:
-        # Clear the ID from the database regardless
-        job.discord_message_id = None
-        await job.asave(update_fields=['discord_message_id'])
-
-    return active_job_ids, stale_jobs
-
-  @tasks.loop(minutes=1) # Reduced loop time for better responsiveness
-  async def update_loop(self):
-    """Periodically runs the synchronization logic."""
-    try:
-      print("Running job synchronization...")
-      await self.update_jobs()
-      print("Job synchronization finished.")
-    except Exception as e:
-      print(f"Error in job synchronization loop: {e}")
-
-  @update_loop.before_loop
-  async def before_update_loop(self):
-    """Wait until the bot is ready before starting the loop."""
-    await self.bot.wait_until_ready()
-
-  async def cargo_autocomplete(self, interaction, current):
-    unique_cargo_keys = ServerCargoArrivedLog.objects.values_list('cargo_key', flat=True).distinct()
-    return [
-      app_commands.Choice(name=f"{cargo_key}", value=cargo_key)
-      async for cargo_key in unique_cargo_keys
-      if current.lower() in cargo_key.lower()
-    ][:25]  # Discord max choices: 25
-
-  @app_commands.command(name='sync_jobs_channel', description='Sync the jobs channel')
-  @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
-  async def sync_jobs_channel(self, interaction):
-    await interaction.response.defer()
-    await self.update_jobs()
-    await interaction.followup.send('Synced', ephemeral=True)
-
-  @app_commands.command(name='update_jobs_embeds', description='Manually update jobs embeds')
-  @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
-  async def update_jobs_embeds(self, interaction):
-    active_job_ids = await self.update_jobs()
-    await interaction.response.send_message(f"Updated {str(active_job_ids)}", ephemeral=True)
-
-  @app_commands.command(name='finish_job', description='Manually finish a job')
-  @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
-  async def finish_job(self, interaction, job_id: int):
-    job = await DeliveryJob.objects.aget(pk=job_id)
-    await on_delivery_job_fulfilled(job, self.bot.http_client_game)
-    await interaction.response.send_message(f"Finished {str(job_id)}", ephemeral=True)
-
+    @app_commands.command(name="finish_job", description="Manually finish a job")
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    async def finish_job(self, interaction, job_id: int):
+        job = await DeliveryJob.objects.aget(pk=job_id)
+        await on_delivery_job_fulfilled(job, self.bot.http_client_game)
+        await interaction.response.send_message(
+            f"Finished {str(job_id)}", ephemeral=True
+        )

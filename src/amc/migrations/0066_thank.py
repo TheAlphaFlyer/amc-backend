@@ -5,19 +5,40 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0065_serverpassengerarrivedlog_comfort_and_more'),
+        ("amc", "0065_serverpassengerarrivedlog_comfort_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Thank',
+            name="Thank",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('recipient_character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='thanks_received', to='amc.character')),
-                ('sender_character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='thanks_given', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                (
+                    "recipient_character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="thanks_received",
+                        to="amc.character",
+                    ),
+                ),
+                (
+                    "sender_character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="thanks_given",
+                        to="amc.character",
+                    ),
+                ),
             ],
         ),
     ]

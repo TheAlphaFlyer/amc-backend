@@ -5,15 +5,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0102_alter_serverstatus_used_memory'),
+        ("amc", "0102_alter_serverstatus_used_memory"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='base_template',
-            field=models.ForeignKey(blank=True, help_text='The template this job was created from', null=True, on_delete=django.db.models.deletion.SET_NULL, to='amc.deliveryjob'),
+            model_name="deliveryjob",
+            name="base_template",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="The template this job was created from",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                to="amc.deliveryjob",
+            ),
         ),
     ]

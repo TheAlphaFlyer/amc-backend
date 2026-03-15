@@ -4,20 +4,21 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0114_delivery_rp_mode'),
+        ("amc", "0114_delivery_rp_mode"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='rescuerequest',
-            name='discord_message_id',
+            model_name="rescuerequest",
+            name="discord_message_id",
             field=models.CharField(blank=True, max_length=32, null=True, unique=True),
         ),
         migrations.AddField(
-            model_name='rescuerequest',
-            name='responders',
-            field=models.ManyToManyField(related_name='rescue_responses', to='amc.player'),
+            model_name="rescuerequest",
+            name="responders",
+            field=models.ManyToManyField(
+                related_name="rescue_responses", to="amc.player"
+            ),
         ),
     ]

@@ -5,22 +5,43 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0119_remove_vehicle_actor_class_name'),
+        ("amc", "0119_remove_vehicle_actor_class_name"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CharacterVehicle',
+            name="CharacterVehicle",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('vehicle_id', models.PositiveIntegerField(db_index=True)),
-                ('config', models.JSONField()),
-                ('character', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='owned_vehicles', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("vehicle_id", models.PositiveIntegerField(db_index=True)),
+                ("config", models.JSONField()),
+                (
+                    "character",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="owned_vehicles",
+                        to="amc.character",
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('character', 'vehicle_id'), name='unique_character_vehicle_id')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("character", "vehicle_id"),
+                        name="unique_character_vehicle_id",
+                    )
+                ],
             },
         ),
     ]

@@ -5,15 +5,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0038_player_adminstrator'),
+        ("amc", "0038_player_adminstrator"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='gameevent',
-            name='owner',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='amc.character'),
+            model_name="gameevent",
+            name="owner",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                to="amc.character",
+            ),
         ),
     ]

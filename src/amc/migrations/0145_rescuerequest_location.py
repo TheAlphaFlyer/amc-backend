@@ -5,15 +5,16 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0144_ministrydashboard_alter_playervehiclelog_options'),
+        ("amc", "0144_ministrydashboard_alter_playervehiclelog_options"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='rescuerequest',
-            name='location',
-            field=django.contrib.gis.db.models.fields.PointField(blank=True, dim=3, null=True, srid=0),
+            model_name="rescuerequest",
+            name="location",
+            field=django.contrib.gis.db.models.fields.PointField(
+                blank=True, dim=3, null=True, srid=0
+            ),
         ),
     ]

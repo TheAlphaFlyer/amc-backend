@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0035_deliverypoint'),
+        ("amc", "0035_deliverypoint"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliverypoint',
-            name='data',
+            model_name="deliverypoint",
+            name="data",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='deliverypoint',
-            name='last_updated',
+            model_name="deliverypoint",
+            name="last_updated",
             field=models.DateTimeField(auto_now=True),
         ),
     ]

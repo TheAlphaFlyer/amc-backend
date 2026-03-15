@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0103_deliveryjob_base_template'),
+        ("amc", "0103_deliveryjob_base_template"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='suspect',
+            model_name="player",
+            name="suspect",
             field=models.BooleanField(default=False),
         ),
     ]

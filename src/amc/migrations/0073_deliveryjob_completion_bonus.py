@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0072_deliveryjob_description_and_more'),
+        ("amc", "0072_deliveryjob_description_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='completion_bonus',
+            model_name="deliveryjob",
+            name="completion_bonus",
             field=models.PositiveIntegerField(default=0),
         ),
     ]

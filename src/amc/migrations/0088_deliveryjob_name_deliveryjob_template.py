@@ -4,20 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0087_deliverypointstorage_cargo'),
+        ("amc", "0087_deliverypointstorage_cargo"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='name',
-            field=models.CharField(help_text='Give the job a name so it can be identified', max_length=200, null=True),
+            model_name="deliveryjob",
+            name="name",
+            field=models.CharField(
+                help_text="Give the job a name so it can be identified",
+                max_length=200,
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='deliveryjob',
-            name='template',
-            field=models.BooleanField(default=False, help_text='If true this will be used to create future jobs'),
+            model_name="deliveryjob",
+            name="template",
+            field=models.BooleanField(
+                default=False,
+                help_text="If true this will be used to create future jobs",
+            ),
         ),
     ]

@@ -5,15 +5,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0090_deliverypointstorage_capacity'),
+        ("amc", "0090_deliverypointstorage_capacity"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='fulfilled',
-            field=models.GeneratedField(db_persist=True, expression=django.db.models.lookups.GreaterThanOrEqual(models.F('quantity_fulfilled'), models.F('quantity_requested')), output_field=models.BooleanField()),
+            model_name="deliveryjob",
+            name="fulfilled",
+            field=models.GeneratedField(
+                db_persist=True,
+                expression=django.db.models.lookups.GreaterThanOrEqual(
+                    models.F("quantity_fulfilled"), models.F("quantity_requested")
+                ),
+                output_field=models.BooleanField(),
+            ),
         ),
     ]

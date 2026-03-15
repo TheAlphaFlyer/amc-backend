@@ -5,22 +5,37 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0045_alter_gameeventcharacter_options'),
+        ("amc", "0045_alter_gameeventcharacter_options"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerCargoArrivedLog',
+            name="ServerCargoArrivedLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('cargo_key', models.CharField(db_index=True, max_length=200)),
-                ('payment', models.PositiveBigIntegerField()),
-                ('weight', models.FloatField(blank=True, null=True)),
-                ('damage', models.FloatField(blank=True, null=True)),
-                ('player', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='delivered_cargos', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("cargo_key", models.CharField(db_index=True, max_length=200)),
+                ("payment", models.PositiveBigIntegerField()),
+                ("weight", models.FloatField(blank=True, null=True)),
+                ("damage", models.FloatField(blank=True, null=True)),
+                (
+                    "player",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="delivered_cargos",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
     ]

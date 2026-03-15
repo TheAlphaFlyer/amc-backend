@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0101_serverstatus_used_memory'),
+        ("amc", "0101_serverstatus_used_memory"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='serverstatus',
-            name='used_memory',
+            model_name="serverstatus",
+            name="used_memory",
             field=models.PositiveBigIntegerField(),
         ),
     ]

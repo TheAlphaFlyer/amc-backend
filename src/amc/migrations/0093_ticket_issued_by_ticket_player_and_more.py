@@ -5,25 +5,42 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0092_deliveryjob_fulfilled_at'),
+        ("amc", "0092_deliveryjob_fulfilled_at"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='ticket',
-            name='issued_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='tickets_issued', to='amc.player'),
+            model_name="ticket",
+            name="issued_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="tickets_issued",
+                to="amc.player",
+            ),
         ),
         migrations.AddField(
-            model_name='ticket',
-            name='player',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='tickets', to='amc.player'),
+            model_name="ticket",
+            name="player",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="tickets",
+                to="amc.player",
+            ),
         ),
         migrations.AlterField(
-            model_name='ticket',
-            name='character',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='tickets', to='amc.character'),
+            model_name="ticket",
+            name="character",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="tickets",
+                to="amc.character",
+            ),
         ),
     ]

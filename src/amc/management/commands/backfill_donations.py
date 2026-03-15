@@ -14,13 +14,17 @@ class Command(BaseCommand):
 
         for character in characters.iterator():
             total = (
-                LedgerEntry.objects.filter_character_donations(character)
-                .aggregate(total=Sum('credit'))['total']
-            ) or 0
+                (
+                    LedgerEntry.objects.filter_character_donations(character).aggregate(
+                        total=Sum("credit")
+                    )["total"]
+                )
+                or 0
+            )
 
             if total > 0:
                 character.total_donations = total
-                character.save(update_fields=['total_donations'])
+                character.save(update_fields=["total_donations"])
                 self.stdout.write(f"  {character.name}: {total:,}")
                 updated += 1
 

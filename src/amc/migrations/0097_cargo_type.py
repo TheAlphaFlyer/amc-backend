@@ -5,15 +5,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0096_deliveryjob_template_job_period_hours_and_more'),
+        ("amc", "0096_deliveryjob_template_job_period_hours_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='cargo',
-            name='type',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='subtypes', to='amc.cargo'),
+            model_name="cargo",
+            name="type",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="subtypes",
+                to="amc.cargo",
+            ),
         ),
     ]

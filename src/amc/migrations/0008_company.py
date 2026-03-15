@@ -5,20 +5,32 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0007_serverlog_log_path'),
+        ("amc", "0007_serverlog_log_path"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Company',
+            name="Company",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=200)),
-                ('is_corp', models.BooleanField()),
-                ('first_seen_at', models.DateTimeField()),
-                ('owner', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=200)),
+                ("is_corp", models.BooleanField()),
+                ("first_seen_at", models.DateTimeField()),
+                (
+                    "owner",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.character"
+                    ),
+                ),
             ],
         ),
     ]

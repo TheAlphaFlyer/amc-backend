@@ -7,7 +7,7 @@ class Migration(migrations.Migration):
     atomic = False  # Required for CREATE INDEX CONCURRENTLY
 
     dependencies = [
-        ('amc', '0147_character_last_location_character_last_vehicle_key_and_more'),
+        ("amc", "0147_character_last_location_character_last_vehicle_key_and_more"),
     ]
 
     operations = [
@@ -31,17 +31,17 @@ class Migration(migrations.Migration):
             reverse_sql='DROP INDEX CONCURRENTLY IF EXISTS "unique_delivery_point_storage"',
             state_operations=[
                 migrations.AddConstraint(
-                    model_name='deliverypointstorage',
+                    model_name="deliverypointstorage",
                     constraint=models.UniqueConstraint(
-                        fields=['delivery_point', 'kind', 'cargo_key'],
-                        name='unique_delivery_point_storage',
+                        fields=["delivery_point", "kind", "cargo_key"],
+                        name="unique_delivery_point_storage",
                     ),
                 ),
             ],
         ),
         # Column drop is metadata-only in PostgreSQL (no table rewrite)
         migrations.RemoveField(
-            model_name='deliverypoint',
-            name='type',
+            model_name="deliverypoint",
+            name="type",
         ),
     ]

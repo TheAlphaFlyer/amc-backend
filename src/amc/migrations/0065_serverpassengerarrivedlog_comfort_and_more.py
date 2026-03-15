@@ -4,40 +4,39 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0064_vehicledealership'),
+        ("amc", "0064_vehicledealership"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='comfort',
+            model_name="serverpassengerarrivedlog",
+            name="comfort",
             field=models.BooleanField(null=True),
         ),
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='comfort_rating',
+            model_name="serverpassengerarrivedlog",
+            name="comfort_rating",
             field=models.IntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='limo',
+            model_name="serverpassengerarrivedlog",
+            name="limo",
             field=models.BooleanField(null=True),
         ),
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='offroad',
+            model_name="serverpassengerarrivedlog",
+            name="offroad",
             field=models.BooleanField(null=True),
         ),
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='urgent',
+            model_name="serverpassengerarrivedlog",
+            name="urgent",
             field=models.BooleanField(null=True),
         ),
         migrations.AddField(
-            model_name='serverpassengerarrivedlog',
-            name='urgent_rating',
+            model_name="serverpassengerarrivedlog",
+            name="urgent_rating",
             field=models.IntegerField(null=True),
         ),
     ]

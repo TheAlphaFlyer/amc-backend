@@ -4,20 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0095_alter_ticket_infringement'),
+        ("amc", "0095_alter_ticket_infringement"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='template_job_period_hours',
-            field=models.FloatField(default=5.0, help_text='(For job templates only) The number of hours to complete the job'),
+            model_name="deliveryjob",
+            name="template_job_period_hours",
+            field=models.FloatField(
+                default=5.0,
+                help_text="(For job templates only) The number of hours to complete the job",
+            ),
         ),
         migrations.AlterField(
-            model_name='deliveryjob',
-            name='expired_at',
-            field=models.DateTimeField(blank=True, help_text='Required for non-template jobs', null=True),
+            model_name="deliveryjob",
+            name="expired_at",
+            field=models.DateTimeField(
+                blank=True, help_text="Required for non-template jobs", null=True
+            ),
         ),
     ]

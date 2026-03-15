@@ -3,16 +3,17 @@ from unittest.mock import MagicMock, AsyncMock
 from amc.command_framework import CommandRegistry, CommandContext
 import asyncio
 
+
 class TestCommandFramework(SimpleTestCase):
     def setUp(self):
         self.registry = CommandRegistry()
         self.ctx = MagicMock(spec=CommandContext)
         self.ctx.reply = AsyncMock()
         self.ctx.player = MagicMock()
-        self.ctx.player.language = 'en-gb'
+        self.ctx.player.language = "en-gb"
 
     async def _execute_command(self, command_str):
-        # Helper to execute command since SimpleTestCase doesn't support async methods directly efficiently 
+        # Helper to execute command since SimpleTestCase doesn't support async methods directly efficiently
         # normally, but let's try calling the async method and running it.
         # However, SimpleTestCase methods are synchronous.
         # We can use asyncio.run() if the code is purely standalone, but within Django/Amc context usually we want async test support.
@@ -26,9 +27,9 @@ class TestCommandFramework(SimpleTestCase):
         @self.registry.register("/hello")
         async def cmd_hello(ctx):
             await ctx.reply("Hello world")
-        
+
         self.run_async(self._execute_command("/hello"))
-        
+
         self.ctx.reply.assert_called_with("Hello world")
 
     def test_optional_params(self):
@@ -67,7 +68,7 @@ class TestCommandFramework(SimpleTestCase):
         # Valid float
         self.run_async(self._execute_command("/scale 2.5"))
         self.ctx.reply.assert_called_with("5.0")
-        
+
         # Valid int as float
         self.ctx.reply.reset_mock()
         self.run_async(self._execute_command("/scale 3"))

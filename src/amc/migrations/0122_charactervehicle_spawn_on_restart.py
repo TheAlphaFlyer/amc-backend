@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0121_remove_charactervehicle_unique_character_vehicle_id_and_more'),
+        ("amc", "0121_remove_charactervehicle_unique_character_vehicle_id_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='charactervehicle',
-            name='spawn_on_restart',
+            model_name="charactervehicle",
+            name="spawn_on_restart",
             field=models.BooleanField(default=False),
         ),
     ]

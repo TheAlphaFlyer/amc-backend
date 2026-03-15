@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0037_alter_gameeventcharacter_lap_times'),
+        ("amc", "0037_alter_gameeventcharacter_lap_times"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='adminstrator',
+            model_name="player",
+            name="adminstrator",
             field=models.BooleanField(default=False),
         ),
     ]

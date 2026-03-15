@@ -6,22 +6,44 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0018_gameevent_racesetup_gameeventcharacter_and_more'),
+        ("amc", "0018_gameevent_racesetup_gameeventcharacter_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CharacterLocation',
+            name="CharacterLocation",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('location', django.contrib.gis.db.models.fields.PointField(dim=3, srid=0)),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='locations', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField(auto_now_add=True, db_index=True)),
+                (
+                    "location",
+                    django.contrib.gis.db.models.fields.PointField(dim=3, srid=0),
+                ),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="locations",
+                        to="amc.character",
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('timestamp', 'character'), name='unique_character_location')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("timestamp", "character"),
+                        name="unique_character_location",
+                    )
+                ],
             },
         ),
     ]

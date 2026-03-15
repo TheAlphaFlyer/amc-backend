@@ -6,22 +6,46 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0056_servertowrequestarrivedlog'),
+        ("amc", "0056_servertowrequestarrivedlog"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='TeleportPoint',
+            name="TeleportPoint",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=20)),
-                ('location', django.contrib.gis.db.models.fields.PointField(dim=3, srid=0)),
-                ('character', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='teleport_points', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=20)),
+                (
+                    "location",
+                    django.contrib.gis.db.models.fields.PointField(dim=3, srid=0),
+                ),
+                (
+                    "character",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="teleport_points",
+                        to="amc.character",
+                    ),
+                ),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('name', 'character'), name='unique_character_teleport_point')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("name", "character"),
+                        name="unique_character_teleport_point",
+                    )
+                ],
             },
         ),
     ]

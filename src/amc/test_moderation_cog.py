@@ -4,9 +4,19 @@ from datetime import timedelta
 from django.utils import timezone
 from typing import Any, cast
 from amc_cogs.moderation import ModerationCog
-from amc.models import Player, Character, Delivery, PlayerChatLog, PlayerStatusLog, Ticket, Team, TeamMembership
+from amc.models import (
+    Player,
+    Character,
+    Delivery,
+    PlayerChatLog,
+    PlayerStatusLog,
+    Ticket,
+    Team,
+    TeamMembership,
+)
 from amc_finance.models import Account
 from psycopg.types.range import Range
+
 
 class ModerationCogTestCase(TestCase):
     def setUp(self):
@@ -16,10 +26,10 @@ class ModerationCogTestCase(TestCase):
         self.bot.http_client_mod = MagicMock()
         self.bot.event_http_client_mod = MagicMock()
         self.bot.event_http_client_game = MagicMock()
-        
+
         # Create cog
         self.cog = ModerationCog(self.bot)
-        
+
         # Mock interaction context
         self.ctx = MagicMock()
         self.ctx.response = AsyncMock()
@@ -31,7 +41,7 @@ class ModerationCogTestCase(TestCase):
     async def test_profile_player_comprehensive(self):
         """Test /admin profile command with all sections and metrics"""
         now = timezone.now()
-        
+
         # 1. Create Player with flags and notes
         player = await Player.objects.acreate(
             unique_id=76561198000000001,
@@ -41,9 +51,9 @@ class ModerationCogTestCase(TestCase):
             adminstrator=True,
             suspect=True,
             displayer=True,
-            notes="Always brings pizza."
+            notes="Always brings pizza.",
         )
-        
+
         # 2. Create Character with levels and RP mode
         char = await Character.objects.acreate(
             player=player,
@@ -52,69 +62,65 @@ class ModerationCogTestCase(TestCase):
             money=1337,
             driver_level=10,
             truck_level=5,
-            rp_mode=True
+            rp_mode=True,
         )
-        
+
         # 3. Create Bank Account for character
         await Account.objects.acreate(
             character=char,
             book=Account.Book.BANK,
             account_type=Account.AccountType.ASSET,
             name="Main Savings",
-            balance=50000.00
+            balance=50000.00,
         )
-        
+
         # 4. Activity Logs (First seen, Last online, Session time)
         await PlayerStatusLog.objects.acreate(
             character=char,
-            timespan=Range(now - timedelta(days=10, hours=4), now - timedelta(days=10))
+            timespan=Range(now - timedelta(days=10, hours=4), now - timedelta(days=10)),
         )
         await PlayerStatusLog.objects.acreate(
             character=char,
-            timespan=Range(now - timedelta(hours=2), now - timedelta(hours=1)) # Recent session
+            timespan=Range(
+                now - timedelta(hours=2), now - timedelta(hours=1)
+            ),  # Recent session
         )
-        
+
         # 5. Economy (Deliveries, Revenue)
         await Delivery.objects.acreate(
             character=char,
             payment=1000,
             subsidy=500,
             quantity=1,
-            timestamp=now - timedelta(days=1)
+            timestamp=now - timedelta(days=1),
         )
-        
+
         # 6. Infractions (Tickets)
         await Ticket.objects.acreate(
             player=player,
             infringement=Ticket.Infringement.NUISANCE,
-            created_at=now - timedelta(days=2)
+            created_at=now - timedelta(days=2),
         )
-        
+
         # 7. Teams
         team = await Team.objects.acreate(
-            name="TestTeam",
-            tag="TT",
-            discord_thread_id=123
+            name="TestTeam", tag="TT", discord_thread_id=123
         )
-        await TeamMembership.objects.acreate(
-            player=player,
-            character=char,
-            team=team
-        )
-        
+        await TeamMembership.objects.acreate(player=player, character=char, team=team)
+
         # 8. Chat Logs
         await PlayerChatLog.objects.acreate(
-            character=char,
-            text="Howdy partner",
-            timestamp=now - timedelta(minutes=10)
+            character=char, text="Howdy partner", timestamp=now - timedelta(minutes=10)
         )
 
         # Run command
-        await cast(Any, self.cog.profile_player.callback)(self.cog, self.ctx, str(player.unique_id))
-        
+        await cast(Any, self.cog.profile_player.callback)(
+            self.cog, self.ctx, str(player.unique_id)
+        )
+
         # Verify response was sent      self.ctx.followup.send.assert_called_once()
-        embed = self.ctx.followup.send.call_args.kwargs['embed']
-        
+        embed = self.ctx.followup.send.call_args.kwargs["embed"]
+
         # Identity Checks
         self.assertIn("Verified", embed.fields[0].value)
         self.assertIn("Admin", embed.fields[0].value)
@@ -123,19 +129,19 @@ class ModerationCogTestCase(TestCase):
         self.assertIn("Always brings pizza", embed.fields[0].value)
         self.assertIn("42", embed.fields[0].value)
         self.assertIn("<@88888888>", embed.fields[0].value)
-        
+
         # Characters Checks
         self.assertIn("MainChar", embed.fields[1].value)
         self.assertIn("Wallet: `$1,337`", embed.fields[1].value)
         self.assertIn("Bank: `$50,000`", embed.fields[1].value)
         self.assertIn("D:10 | T:5", embed.fields[1].value)
         self.assertIn("(RP)", embed.fields[1].value)
-        
+
         # Activity Checks
         self.assertIn("Total online:", embed.fields[2].value)
         self.assertIn("5h", embed.fields[2].value)
-        self.assertIn("1h", embed.fields[2].value) # Recent (7d) session time
-        
+        self.assertIn("1h", embed.fields[2].value)  # Recent (7d) session time
+
         # Economy Checks
         self.assertIn("**Deliveries:** `1`", embed.fields[3].value)
         self.assertIn("**Revenue:** `$1,500`", embed.fields[3].value)
@@ -152,8 +158,10 @@ class ModerationCogTestCase(TestCase):
     async def test_profile_player_not_found(self):
         """Test /admin profile with non-existent player"""
         # Run command with non-existent ID
-        await cast(Any, self.cog.profile_player.callback)(self.cog, self.ctx, "99999999999")
-        
+        await cast(Any, self.cog.profile_player.callback)(
+            self.cog, self.ctx, "99999999999"
+        )
+
         # Verify error response
         args = self.ctx.followup.send.call_args[0]
         self.assertIn("Player not found", args[0])

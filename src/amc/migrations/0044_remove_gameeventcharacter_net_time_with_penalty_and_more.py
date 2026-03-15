@@ -4,19 +4,18 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0043_gameeventcharacter_net_time_with_penalty'),
+        ("amc", "0043_gameeventcharacter_net_time_with_penalty"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='gameeventcharacter',
-            name='net_time',
+            model_name="gameeventcharacter",
+            name="net_time",
         ),
         migrations.RenameField(
-            model_name='gameeventcharacter',
-            old_name='net_time_with_penalty',
-            new_name='net_time',
+            model_name="gameeventcharacter",
+            old_name="net_time_with_penalty",
+            new_name="net_time",
         ),
     ]

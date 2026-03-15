@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0031_alter_championshippoint_participant_and_more'),
+        ("amc", "0031_alter_championshippoint_participant_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serverlog',
-            name='hostname',
-            field=models.CharField(default='asean-mt-server', max_length=100),
+            model_name="serverlog",
+            name="hostname",
+            field=models.CharField(default="asean-mt-server", max_length=100),
         ),
         migrations.AddField(
-            model_name='serverlog',
-            name='tag',
-            field=models.CharField(default='mt-server', max_length=100),
+            model_name="serverlog",
+            name="tag",
+            field=models.CharField(default="mt-server", max_length=100),
         ),
     ]

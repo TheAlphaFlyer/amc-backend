@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0116_scheduledevent_description_in_game'),
+        ("amc", "0116_scheduledevent_description_in_game"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='rp_mode',
+            model_name="character",
+            name="rp_mode",
             field=models.BooleanField(default=False),
         ),
     ]

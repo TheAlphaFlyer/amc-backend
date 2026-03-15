@@ -4,24 +4,31 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0143_ministryelection_is_processed_subsidyrule_allocation_and_more'),
+        ("amc", "0143_ministryelection_is_processed_subsidyrule_allocation_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='MinistryDashboard',
+            name="MinistryDashboard",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
             ],
             options={
-                'verbose_name_plural': 'Ministry Dashboard',
-                'managed': False,
+                "verbose_name_plural": "Ministry Dashboard",
+                "managed": False,
             },
         ),
         migrations.AlterModelOptions(
-            name='playervehiclelog',
-            options={'ordering': ['-timestamp']},
+            name="playervehiclelog",
+            options={"ordering": ["-timestamp"]},
         ),
     ]

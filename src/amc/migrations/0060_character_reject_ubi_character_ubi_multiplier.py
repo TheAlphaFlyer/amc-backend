@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0059_championshippoint_prize'),
+        ("amc", "0059_championshippoint_prize"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='reject_ubi',
+            model_name="character",
+            name="reject_ubi",
             field=models.BooleanField(default=False),
         ),
         migrations.AddField(
-            model_name='character',
-            name='ubi_multiplier',
+            model_name="character",
+            name="ubi_multiplier",
             field=models.FloatField(default=1.0),
         ),
     ]

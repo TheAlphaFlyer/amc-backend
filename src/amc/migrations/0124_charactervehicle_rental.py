@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0123_company_guid_company_has_tp_permission'),
+        ("amc", "0123_company_guid_company_has_tp_permission"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='charactervehicle',
-            name='rental',
+            model_name="charactervehicle",
+            name="rental",
             field=models.BooleanField(default=False),
         ),
     ]

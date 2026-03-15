@@ -5,28 +5,53 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0013_character_bus_level_character_driver_level_and_more'),
+        ("amc", "0013_character_bus_level_character_driver_level_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BotInvocationLog',
+            name="BotInvocationLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('prompt', models.TextField()),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("prompt", models.TextField()),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.character"
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='SongRequestLog',
+            name="SongRequestLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('song', models.TextField()),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("song", models.TextField()),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.character"
+                    ),
+                ),
             ],
         ),
     ]

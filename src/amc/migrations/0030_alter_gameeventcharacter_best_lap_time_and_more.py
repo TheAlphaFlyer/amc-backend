@@ -6,55 +6,64 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0029_scheduledevent_description_alter_team_logo'),
+        ("amc", "0029_scheduledevent_description_alter_team_logo"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='best_lap_time',
+            model_name="gameeventcharacter",
+            name="best_lap_time",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='disqualified',
+            model_name="gameeventcharacter",
+            name="disqualified",
             field=models.BooleanField(default=False),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='finished',
+            model_name="gameeventcharacter",
+            name="finished",
             field=models.BooleanField(default=False),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='first_section_total_time_seconds',
+            model_name="gameeventcharacter",
+            name="first_section_total_time_seconds",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='lap_times',
-            field=django.contrib.postgres.fields.ArrayField(base_field=models.FloatField(), default=list, null=True, size=None),
+            model_name="gameeventcharacter",
+            name="lap_times",
+            field=django.contrib.postgres.fields.ArrayField(
+                base_field=models.FloatField(), default=list, null=True, size=None
+            ),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='last_section_total_time_seconds',
+            model_name="gameeventcharacter",
+            name="last_section_total_time_seconds",
             field=models.FloatField(blank=True, null=True),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='net_time',
-            field=models.GeneratedField(db_persist=True, expression=django.db.models.expressions.CombinedExpression(models.F('last_section_total_time_seconds'), '-', models.F('first_section_total_time_seconds')), output_field=models.FloatField(null=True)),
+            model_name="gameeventcharacter",
+            name="net_time",
+            field=models.GeneratedField(
+                db_persist=True,
+                expression=django.db.models.expressions.CombinedExpression(
+                    models.F("last_section_total_time_seconds"),
+                    "-",
+                    models.F("first_section_total_time_seconds"),
+                ),
+                output_field=models.FloatField(null=True),
+            ),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='wrong_engine',
+            model_name="gameeventcharacter",
+            name="wrong_engine",
             field=models.BooleanField(default=False),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='wrong_vehicle',
+            model_name="gameeventcharacter",
+            name="wrong_vehicle",
             field=models.BooleanField(default=False),
         ),
     ]

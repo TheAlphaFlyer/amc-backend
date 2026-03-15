@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0016_playervehiclelog_vehicle_game_id_and_more'),
+        ("amc", "0016_playervehiclelog_vehicle_game_id_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='playervehiclelog',
-            name='vehicle_game_id',
+            model_name="playervehiclelog",
+            name="vehicle_game_id",
             field=models.PositiveBigIntegerField(db_index=True, null=True),
         ),
     ]

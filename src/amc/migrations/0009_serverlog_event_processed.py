@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0008_company'),
+        ("amc", "0008_company"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serverlog',
-            name='event_processed',
+            model_name="serverlog",
+            name="event_processed",
             field=models.BooleanField(default=False),
         ),
     ]

@@ -6,39 +6,86 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0025_alter_gameeventcharacter_options_and_more'),
+        ("amc", "0025_alter_gameeventcharacter_options_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Championship',
+            name="Championship",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=200)),
-                ('discord_thread_id', models.CharField(blank=True, max_length=32, null=True, unique=True)),
-                ('description', models.TextField(blank=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=200)),
+                (
+                    "discord_thread_id",
+                    models.CharField(blank=True, max_length=32, null=True, unique=True),
+                ),
+                ("description", models.TextField(blank=True)),
             ],
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='lap_times',
-            field=django.contrib.postgres.fields.ArrayField(base_field=models.FloatField(), blank=True, size=None),
+            model_name="gameeventcharacter",
+            name="lap_times",
+            field=django.contrib.postgres.fields.ArrayField(
+                base_field=models.FloatField(), blank=True, size=None
+            ),
         ),
         migrations.AddField(
-            model_name='scheduledevent',
-            name='championship',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='scheduled_events', to='amc.championship'),
+            model_name="scheduledevent",
+            name="championship",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="scheduled_events",
+                to="amc.championship",
+            ),
         ),
         migrations.CreateModel(
-            name='ChampionshipPoint',
+            name="ChampionshipPoint",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('points', models.PositiveIntegerField(blank=True, default=0)),
-                ('championship', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to='amc.championship')),
-                ('participant', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to='amc.gameeventcharacter')),
-                ('team', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='amc.team')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("points", models.PositiveIntegerField(blank=True, default=0)),
+                (
+                    "championship",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to="amc.championship",
+                    ),
+                ),
+                (
+                    "participant",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="amc.gameeventcharacter",
+                    ),
+                ),
+                (
+                    "team",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to="amc.team",
+                    ),
+                ),
             ],
         ),
     ]

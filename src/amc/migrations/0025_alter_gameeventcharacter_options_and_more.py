@@ -6,34 +6,53 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0024_player_user'),
+        ("amc", "0024_player_user"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='gameeventcharacter',
-            options={'ordering': ['disqualified', '-finished', 'laps', 'section_index', 'net_time']},
+            name="gameeventcharacter",
+            options={
+                "ordering": [
+                    "disqualified",
+                    "-finished",
+                    "laps",
+                    "section_index",
+                    "net_time",
+                ]
+            },
         ),
         migrations.AddField(
-            model_name='gameevent',
-            name='discord_message_id',
+            model_name="gameevent",
+            name="discord_message_id",
             field=models.PositiveBigIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='gameeventcharacter',
-            name='first_section_total_time_seconds',
+            model_name="gameeventcharacter",
+            name="first_section_total_time_seconds",
             field=models.FloatField(null=True),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='game_event',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='participants', to='amc.gameevent'),
+            model_name="gameeventcharacter",
+            name="game_event",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="participants",
+                to="amc.gameevent",
+            ),
         ),
         migrations.AddField(
-            model_name='gameeventcharacter',
-            name='net_time',
-            field=models.GeneratedField(db_persist=True, expression=django.db.models.expressions.CombinedExpression(models.F('last_section_total_time_seconds'), '-', models.F('first_section_total_time_seconds')), output_field=models.FloatField()),
+            model_name="gameeventcharacter",
+            name="net_time",
+            field=models.GeneratedField(
+                db_persist=True,
+                expression=django.db.models.expressions.CombinedExpression(
+                    models.F("last_section_total_time_seconds"),
+                    "-",
+                    models.F("first_section_total_time_seconds"),
+                ),
+                output_field=models.FloatField(),
+            ),
         ),
     ]

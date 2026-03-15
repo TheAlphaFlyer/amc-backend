@@ -4,45 +4,44 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0012_alter_company_options_playerstatuslog_duration'),
+        ("amc", "0012_alter_company_options_playerstatuslog_duration"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='bus_level',
+            model_name="character",
+            name="bus_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='driver_level',
+            model_name="character",
+            name="driver_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='police_level',
+            model_name="character",
+            name="police_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='racer_level',
+            model_name="character",
+            name="racer_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='taxi_level',
+            model_name="character",
+            name="taxi_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='truck_level',
+            model_name="character",
+            name="truck_level",
             field=models.PositiveIntegerField(null=True),
         ),
         migrations.AddField(
-            model_name='character',
-            name='wrecker_level',
+            model_name="character",
+            name="wrecker_level",
             field=models.PositiveIntegerField(null=True),
         ),
     ]

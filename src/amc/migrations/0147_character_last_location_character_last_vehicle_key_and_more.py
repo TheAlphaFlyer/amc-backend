@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
     atomic = False  # Required for CREATE INDEX CONCURRENTLY
 
     dependencies = [
-        ('amc', '0146_deliverypoint_sync'),
+        ("amc", "0146_deliverypoint_sync"),
     ]
 
     operations = [
@@ -23,13 +23,15 @@ class Migration(migrations.Migration):
             """,
             state_operations=[
                 migrations.AddField(
-                    model_name='character',
-                    name='last_location',
-                    field=django.contrib.gis.db.models.fields.PointField(blank=True, dim=3, null=True, srid=0),
+                    model_name="character",
+                    name="last_location",
+                    field=django.contrib.gis.db.models.fields.PointField(
+                        blank=True, dim=3, null=True, srid=0
+                    ),
                 ),
                 migrations.AddField(
-                    model_name='character',
-                    name='last_vehicle_key',
+                    model_name="character",
+                    name="last_vehicle_key",
                     field=models.CharField(blank=True, max_length=100, null=True),
                 ),
             ],
@@ -39,8 +41,10 @@ class Migration(migrations.Migration):
             reverse_sql='DROP INDEX CONCURRENTLY IF EXISTS "charloc_char_ts_idx"',
             state_operations=[
                 migrations.AddIndex(
-                    model_name='characterlocation',
-                    index=models.Index(fields=['character', '-timestamp'], name='charloc_char_ts_idx'),
+                    model_name="characterlocation",
+                    index=models.Index(
+                        fields=["character", "-timestamp"], name="charloc_char_ts_idx"
+                    ),
                 ),
             ],
         ),

@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0026_championship_alter_gameeventcharacter_lap_times_and_more'),
+        ("amc", "0026_championship_alter_gameeventcharacter_lap_times_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='team',
-            name='description',
+            model_name="team",
+            name="description",
             field=models.TextField(blank=True),
         ),
     ]

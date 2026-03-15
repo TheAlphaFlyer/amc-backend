@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Path to the least-privilege wrapper script on the host.
 # This script ONLY triggers motortown-server-restart.service.
-RESTART_SCRIPT = getattr(settings, 'RESTART_MOTORTOWN_SCRIPT', '/usr/local/bin/restart-motortown')
+RESTART_SCRIPT = getattr(
+    settings, "RESTART_MOTORTOWN_SCRIPT", "/usr/local/bin/restart-motortown"
+)
 
 # Cooldown period in seconds between restarts
 RESTART_COOLDOWN_SECONDS = 300  # 5 minutes
@@ -64,25 +66,31 @@ class RestartConfirmView(discord.ui.View):
         except discord.NotFound:
             pass
 
-    @discord.ui.button(label="Confirm Restart", style=discord.ButtonStyle.danger, emoji="🔄")
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Confirm Restart", style=discord.ButtonStyle.danger, emoji="🔄"
+    )
+    async def confirm_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.defer(ephemeral=True)
         await self.disable_buttons()
         self.stop()
 
         # Start the countdown in a background task
-        self._countdown_task = asyncio.create_task(
-            self._run_countdown(interaction)
-        )
+        self._countdown_task = asyncio.create_task(self._run_countdown(interaction))
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def cancel_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         self.cancelled = True
         await self.disable_buttons()
         self.stop()
         if self._countdown_task and not self._countdown_task.done():
             self._countdown_task.cancel()
-        await interaction.response.send_message("❌ Server restart cancelled.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Server restart cancelled.", ephemeral=True
+        )
 
     async def _run_countdown(self, interaction: discord.Interaction):
         """Run countdown with periodic in-game announcements, then trigger restart."""
@@ -144,7 +152,9 @@ class RestartConfirmView(discord.ui.View):
                         color="FF4444",
                     )
                 except Exception:
-                    logger.exception(f"Failed to send countdown announcement at {countdown}s")
+                    logger.exception(
+                        f"Failed to send countdown announcement at {countdown}s"
+                    )
 
         if self.cancelled:
             return
@@ -164,7 +174,9 @@ class RestartConfirmView(discord.ui.View):
 
             if process.returncode == 0:
                 self.cog._last_restart_time = time.monotonic()
-                await interaction.followup.send("✅ Server restart triggered successfully.")
+                await interaction.followup.send(
+                    "✅ Server restart triggered successfully."
+                )
                 await self._send_audit_log(success=True)
             else:
                 error_msg = stderr.decode().strip() if stderr else "Unknown error"
@@ -174,7 +186,9 @@ class RestartConfirmView(discord.ui.View):
                 await self._send_audit_log(success=False, error=error_msg)
 
         except asyncio.TimeoutError:
-            await interaction.followup.send("❌ Server restart timed out after 30 seconds.")
+            await interaction.followup.send(
+                "❌ Server restart timed out after 30 seconds."
+            )
             await self._send_audit_log(success=False, error="Subprocess timed out")
         except Exception as e:
             logger.exception("Failed to execute restart script")
@@ -198,7 +212,9 @@ class RestartConfirmView(discord.ui.View):
             value=f"{self.original_interaction.user.mention} ({self.original_interaction.user.display_name})",
             inline=True,
         )
-        embed.add_field(name="Countdown", value=f"{self.countdown_seconds}s", inline=True)
+        embed.add_field(
+            name="Countdown", value=f"{self.countdown_seconds}s", inline=True
+        )
         embed.add_field(
             name="Players online at trigger",
             value=str(self.player_count),
@@ -239,9 +255,7 @@ class ServerCog(commands.Cog):
         self.bot = bot
         self.logger = logging.getLogger(__name__)
         self._last_restart_time: float = 0
-        self.audit_channel_id = getattr(
-            settings, "DISCORD_AUDIT_CHANNEL_ID", 0
-        )
+        self.audit_channel_id = getattr(settings, "DISCORD_AUDIT_CHANNEL_ID", 0)
 
     @admin.command(name="restart", description="Restart the Motor Town game server")
     @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)

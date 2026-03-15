@@ -5,27 +5,30 @@ from amc.models import SubsidyRule, SubsidyArea, Cargo, DeliveryPoint
 from amc.subsidies import get_subsidy_for_cargo, get_subsidies_text
 from unittest.mock import MagicMock
 
+
 class SubsidyLogicTest(TestCase):
     def setUp(self):
         # Create Cargos
-        self.cargo_coal, _ = Cargo.objects.get_or_create(key="Coal", defaults={"label": "Coal"})
-        self.cargo_burger, _ = Cargo.objects.get_or_create(key="Burger_01_Signature", defaults={"label": "Burger"})
-        
+        self.cargo_coal, _ = Cargo.objects.get_or_create(
+            key="Coal", defaults={"label": "Coal"}
+        )
+        self.cargo_burger, _ = Cargo.objects.get_or_create(
+            key="Burger_01_Signature", defaults={"label": "Burger"}
+        )
+
         # Create Areas
         # Polygon around (0,0) to (10,10)
         self.area_gwangjin = SubsidyArea.objects.create(
             name="Gwangjin Area",
-            polygon=Polygon(((0,0), (0,10), (10,10), (10,0), (0,0)), srid=3857)
+            polygon=Polygon(((0, 0), (0, 10), (10, 10), (10, 0), (0, 0)), srid=3857),
         )
-        
+
         # Create Points (srid=3857)
         self.point_in = DeliveryPoint.objects.create(
-            guid="p_in", name="In Point", type="T", 
-            coord=Point(5, 5, 0, srid=3857)
+            guid="p_in", name="In Point", type="T", coord=Point(5, 5, 0, srid=3857)
         )
         self.point_out = DeliveryPoint.objects.create(
-            guid="p_out", name="Out Point", type="T", 
-            coord=Point(20, 20, 0, srid=3857)
+            guid="p_out", name="Out Point", type="T", coord=Point(20, 20, 0, srid=3857)
         )
 
     async def test_basic_cargo_rule(self):
@@ -35,10 +38,10 @@ class SubsidyLogicTest(TestCase):
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("1.50"),
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await rule.cargos.aadd(self.cargo_coal)
-        
+
         # Test Coal
         mock_cargo = MagicMock()
         mock_cargo.cargo_key = "Coal"
@@ -56,7 +59,7 @@ class SubsidyLogicTest(TestCase):
         mock_cargo.cargo_key = "Burger_01_Signature"
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(amount, 0)
-    
+
     async def test_source_area_restriction(self):
         # Rule: Any cargo from Gwangjin gets 2.0
         rule = await SubsidyRule.objects.acreate(
@@ -64,10 +67,10 @@ class SubsidyLogicTest(TestCase):
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("2.00"),
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await rule.source_areas.aadd(self.area_gwangjin)
-        
+
         # Test from IN point
         mock_cargo = MagicMock()
         mock_cargo.cargo_key = "Coal"
@@ -83,7 +86,7 @@ class SubsidyLogicTest(TestCase):
         # Test from OUT point
         mock_cargo.sender_point = self.point_out
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
-        self.assertEqual(amount, 0) # No match
+        self.assertEqual(amount, 0)  # No match
 
     async def test_priority(self):
         # Low priority global rule: 1.1
@@ -92,19 +95,19 @@ class SubsidyLogicTest(TestCase):
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("1.10"),
             priority=1,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
-        
+
         # High priority specific rule: 2.0
         r2 = await SubsidyRule.objects.acreate(
             name="Specific High",
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("2.00"),
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await r2.cargos.aadd(self.cargo_coal)
-        
+
         mock_cargo = MagicMock()
         mock_cargo.cargo_key = "Coal"
         mock_cargo.payment = 1000
@@ -114,7 +117,7 @@ class SubsidyLogicTest(TestCase):
         mock_cargo.damage = 0.0
 
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
-        self.assertEqual(factor, 2.0) # High priority wins
+        self.assertEqual(factor, 2.0)  # High priority wins
 
     async def test_damage_scaling(self):
         # Rule with damage scaling
@@ -124,16 +127,16 @@ class SubsidyLogicTest(TestCase):
             reward_value=Decimal("2.00"),
             priority=10,
             scales_with_damage=True,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
-        
+
         mock_cargo = MagicMock()
         mock_cargo.cargo_key = "Glass"
         mock_cargo.payment = 1000
         mock_cargo.sender_point = None
         mock_cargo.destination_point = None
         mock_cargo.data = {}
-        mock_cargo.damage = 0.1 # 10% damage
+        mock_cargo.damage = 0.1  # 10% damage
 
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         # Expected: 2.0 * (1.0 - 0.1) = 1.8
@@ -142,7 +145,7 @@ class SubsidyLogicTest(TestCase):
 
     async def test_get_subsidies_text(self):
         from amc.subsidies import get_subsidies_text
-        
+
         # Create active rule
         r1 = await SubsidyRule.objects.acreate(
             name="Active Rule",
@@ -150,19 +153,19 @@ class SubsidyLogicTest(TestCase):
             reward_value=Decimal("3.00"),
             active=True,
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await r1.cargos.aadd(self.cargo_burger)
-        
+
         # Create inactive rule
         await SubsidyRule.objects.acreate(
             name="Inactive Rule",
             reward_type=SubsidyRule.RewardType.FLAT,
             reward_value=Decimal("5000"),
             active=False,
-            priority=10
+            priority=10,
         )
-        
+
         # Create rule with areas
         r3 = await SubsidyRule.objects.acreate(
             name="Area Rule",
@@ -170,24 +173,26 @@ class SubsidyLogicTest(TestCase):
             reward_value=Decimal("1000"),
             active=True,
             priority=5,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await r3.source_areas.aadd(self.area_gwangjin)
         await r3.source_delivery_points.aadd(self.point_in)
-        
+
         text = await get_subsidies_text()
-        
+
         # Note: Name isn't in text, but Cargo is.
-        self.assertIn("Burger", text) 
+        self.assertIn("Burger", text)
         self.assertIn("300%", text)
-        
+
         self.assertNotIn("Inactive Rule", text)
         self.assertNotIn("5000 coins", text)
-        
-        self.assertIn("Any Cargo", text) # From r3
+
+        self.assertIn("Any Cargo", text)  # From r3
         self.assertIn("1000 coins", text)
-        self.assertIn("From: Gwangjin Area, In Point", text) # Note: order depends on query results but logically both should be there
-                                                             # Since we concat areas then points, Gwangjin Area is first.
+        self.assertIn(
+            "From: Gwangjin Area, In Point", text
+        )  # Note: order depends on query results but logically both should be there
+        # Since we concat areas then points, Gwangjin Area is first.
 
     async def test_get_subsidies_text_points_only(self):
         # Create rule with ONLY points, no areas
@@ -197,15 +202,15 @@ class SubsidyLogicTest(TestCase):
             reward_value=Decimal("500"),
             active=True,
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await r_points.source_delivery_points.aadd(self.point_in)
         await r_points.destination_delivery_points.aadd(self.point_out)
-        
+
         text = await get_subsidies_text()
-        
+
         self.assertIn("500 coins", text)
-        
+
         # Verify that our specific points are listed
         self.assertIn("From: In Point", text)
         self.assertIn("To: Out Point", text)
@@ -217,7 +222,7 @@ class SubsidyLogicTest(TestCase):
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("2.50"),
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await rule.source_delivery_points.aadd(self.point_in)
 
@@ -229,7 +234,7 @@ class SubsidyLogicTest(TestCase):
         # Create a mock sender point that has coord
         # We need to simulate the sender_point object having a coord attribute
         # self.point_in is a global object, so it works.
-        
+
         mock_cargo.destination_point = None
         mock_cargo.data = {}
         mock_cargo.damage = 0.0
@@ -239,17 +244,21 @@ class SubsidyLogicTest(TestCase):
 
         # Test nearby match (<1m)
         # Create a point slightly offset
-        nearby_point = Point(self.point_in.coord.x + 0.5, self.point_in.coord.y, 0, srid=3857)
+        nearby_point = Point(
+            self.point_in.coord.x + 0.5, self.point_in.coord.y, 0, srid=3857
+        )
         # We can't easily modify self.point_in, but we can mock the cargo's sender_point
         mock_sender = MagicMock()
         mock_sender.coord = nearby_point
         mock_cargo.sender_point = mock_sender
-        
+
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 2.5)
-        
+
         # Test far match (>1m)
-        far_point = Point(self.point_in.coord.x + 2.0, self.point_in.coord.y, 0, srid=3857)
+        far_point = Point(
+            self.point_in.coord.x + 2.0, self.point_in.coord.y, 0, srid=3857
+        )
         mock_sender.coord = far_point
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 0.0)
@@ -261,7 +270,7 @@ class SubsidyLogicTest(TestCase):
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
             reward_value=Decimal("3.00"),
             priority=10,
-            allocation=Decimal("1000000")
+            allocation=Decimal("1000000"),
         )
         await rule.source_delivery_points.aadd(self.point_in)
         await rule.source_areas.aadd(self.area_gwangjin)
@@ -274,7 +283,7 @@ class SubsidyLogicTest(TestCase):
         mock_cargo.destination_point = None
         mock_cargo.data = {}
         mock_cargo.damage = 0.0
-        
+
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 3.0)
 
@@ -285,15 +294,14 @@ class SubsidyLogicTest(TestCase):
         mock_sender = MagicMock()
         mock_sender.coord = point_in_area
         mock_cargo.sender_point = mock_sender
-        
+
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 3.0)
-        
+
         # Case 3: No Match
         point_outside = Point(20, 20, 0, srid=3857)
         mock_sender.coord = point_outside
         mock_cargo.sender_point = mock_sender
-        
+
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 0.0)
-

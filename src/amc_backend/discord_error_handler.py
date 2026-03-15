@@ -16,35 +16,39 @@ class DiscordExceptionHandler(logging.Handler):
 
     def __init__(self, **kwargs):
         self.error_report_dir = Path(
-            getattr(settings, 'ERROR_REPORT_DIR', '/var/lib/amc/error-reports')
+            getattr(settings, "ERROR_REPORT_DIR", "/var/lib/amc/error-reports")
         )
-        self.admin_domain = getattr(settings, 'SITE_DOMAIN', 'https://www.aseanmotorclub.com')
+        self.admin_domain = getattr(
+            settings, "SITE_DOMAIN", "https://www.aseanmotorclub.com"
+        )
         logging.Handler.__init__(self)
 
     def emit(self, record):
         try:
-            webhook_url = getattr(settings, 'DISCORD_ERRORS_WEBHOOK', None)
+            webhook_url = getattr(settings, "DISCORD_ERRORS_WEBHOOK", None)
             if not webhook_url:
                 return
 
-            request = getattr(record, 'request', None)
-            
+            request = getattr(record, "request", None)
+
             # Build subject
             try:
                 if request:
-                    internal_ips = getattr(settings, 'INTERNAL_IPS', ())
+                    internal_ips = getattr(settings, "INTERNAL_IPS", ())
                     internal = (
-                        'internal'
-                        if request.META.get('REMOTE_ADDR') in internal_ips
-                        else 'EXTERNAL'
+                        "internal"
+                        if request.META.get("REMOTE_ADDR") in internal_ips
+                        else "EXTERNAL"
                     )
-                    subject = '{} ({} IP): {}'.format(
-                        record.levelname, internal, record.getMessage(),
+                    subject = "{} ({} IP): {}".format(
+                        record.levelname,
+                        internal,
+                        record.getMessage(),
                     )
                 else:
-                    subject = '{}: {}'.format(record.levelname, record.getMessage())
+                    subject = "{}: {}".format(record.levelname, record.getMessage())
             except Exception:
-                subject = '{}: {}'.format(record.levelname, record.getMessage())
+                subject = "{}: {}".format(record.levelname, record.getMessage())
 
             subject = self._format_subject(subject)
 
@@ -71,13 +75,15 @@ class DiscordExceptionHandler(logging.Handler):
 
             # Generate HTML report
             # pyrefly: ignore [not-callable]
-            reporter = get_exception_reporter_class(request)(request, is_email=False, *exc_info)
+            reporter = get_exception_reporter_class(request)(
+                request, is_email=False, *exc_info
+            )
             html_content = reporter.get_traceback_html()
 
             # Save to file
             file_id = str(uuid.uuid4())
             file_path = self.error_report_dir / f"{file_id}.html"
-            file_path.write_text(html_content, encoding='utf-8')
+            file_path.write_text(html_content, encoding="utf-8")
 
             return f"{self.admin_domain}/errors/{file_id}.html"
 
@@ -86,47 +92,41 @@ class DiscordExceptionHandler(logging.Handler):
 
     def _send_discord_embed(self, record, subject, request, report_url):
         """Send error notification to Discord via webhook."""
-        webhook_url = getattr(settings, 'DISCORD_ERRORS_WEBHOOK', None)
+        webhook_url = getattr(settings, "DISCORD_ERRORS_WEBHOOK", None)
         if not webhook_url:
             return
 
         # Color based on level
         colors = {
-            'CRITICAL': 0x8B0000,  # Dark red
-            'ERROR': 0xE74C3C,     # Red
-            'WARNING': 0xF39C12,   # Orange
+            "CRITICAL": 0x8B0000,  # Dark red
+            "ERROR": 0xE74C3C,  # Red
+            "WARNING": 0xF39C12,  # Orange
         }
         color = colors.get(record.levelname, 0xE74C3C)
 
         # Build fields
         fields = []
-        
+
         if request:
             try:
-                fields.append({
-                    "name": "🌐 Path",
-                    "value": request.path[:100],
-                    "inline": True
-                })
-                fields.append({
-                    "name": "🔌 Method",
-                    "value": request.method,
-                    "inline": True
-                })
-                ip = request.META.get('REMOTE_ADDR', 'Unknown')
-                fields.append({
-                    "name": "📍 IP",
-                    "value": ip,
-                    "inline": True
-                })
+                fields.append(
+                    {"name": "🌐 Path", "value": request.path[:100], "inline": True}
+                )
+                fields.append(
+                    {"name": "🔌 Method", "value": request.method, "inline": True}
+                )
+                ip = request.META.get("REMOTE_ADDR", "Unknown")
+                fields.append({"name": "📍 IP", "value": ip, "inline": True})
             except Exception:
                 pass
 
-        fields.append({
-            "name": "📁 Location",
-            "value": f"`{record.pathname}:{record.lineno}`"[:100],
-            "inline": False
-        })
+        fields.append(
+            {
+                "name": "📁 Location",
+                "value": f"`{record.pathname}:{record.lineno}`"[:100],
+                "inline": False,
+            }
+        )
 
         # Build embed
         embed = {
@@ -142,12 +142,12 @@ class DiscordExceptionHandler(logging.Handler):
             embed["description"] = f"[📄 View Full Debug Report]({report_url})"
 
         try:
-            data = json.dumps({"embeds": [embed]}).encode('utf-8')
+            data = json.dumps({"embeds": [embed]}).encode("utf-8")
             req = urllib.request.Request(
                 webhook_url,
                 data=data,
                 headers={"Content-Type": "application/json"},
-                method='POST'
+                method="POST",
             )
             urllib.request.urlopen(req, timeout=10)
         except Exception:
@@ -155,5 +155,5 @@ class DiscordExceptionHandler(logging.Handler):
 
     def _format_subject(self, subject):
         """Escape CR and LF characters, and limit length."""
-        formatted = subject.replace('\n', '\\n').replace('\r', '\\r')
+        formatted = subject.replace("\n", "\\n").replace("\r", "\\r")
         return formatted[:250]

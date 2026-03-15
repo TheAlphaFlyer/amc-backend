@@ -6,18 +6,33 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0005_vehicle_alter_playerchatlog_timestamp_and_more'),
+        ("amc", "0005_vehicle_alter_playerchatlog_timestamp_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='PlayerStatusLog',
+            name="PlayerStatusLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timespan', django.contrib.postgres.fields.ranges.DateTimeRangeField()),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "timespan",
+                    django.contrib.postgres.fields.ranges.DateTimeRangeField(),
+                ),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE, to="amc.character"
+                    ),
+                ),
             ],
         ),
     ]

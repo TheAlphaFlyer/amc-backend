@@ -6,20 +6,31 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0030_alter_gameeventcharacter_best_lap_time_and_more'),
+        ("amc", "0030_alter_gameeventcharacter_best_lap_time_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='championshippoint',
-            name='participant',
-            field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='championship_point', to='amc.gameeventcharacter'),
+            model_name="championshippoint",
+            name="participant",
+            field=models.OneToOneField(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="championship_point",
+                to="amc.gameeventcharacter",
+            ),
         ),
         migrations.AlterField(
-            model_name='gameeventcharacter',
-            name='net_time',
-            field=models.GeneratedField(db_persist=True, expression=django.db.models.expressions.CombinedExpression(models.F('last_section_total_time_seconds'), '-', models.F('first_section_total_time_seconds')), output_field=models.FloatField(blank=True, null=True)),
+            model_name="gameeventcharacter",
+            name="net_time",
+            field=models.GeneratedField(
+                db_persist=True,
+                expression=django.db.models.expressions.CombinedExpression(
+                    models.F("last_section_total_time_seconds"),
+                    "-",
+                    models.F("first_section_total_time_seconds"),
+                ),
+                output_field=models.FloatField(blank=True, null=True),
+            ),
         ),
     ]

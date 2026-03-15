@@ -5,15 +5,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0104_player_suspect'),
+        ("amc", "0104_player_suspect"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='teammembership',
-            name='player',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='members', to='amc.player'),
+            model_name="teammembership",
+            name="player",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="members",
+                to="amc.player",
+            ),
         ),
     ]

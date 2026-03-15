@@ -4,15 +4,17 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0115_rescuerequest_discord_message_id_and_more'),
+        ("amc", "0115_rescuerequest_discord_message_id_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduledevent',
-            name='description_in_game',
-            field=models.TextField(blank=True, help_text='This will be shown when players use /events. Defaults to description'),
+            model_name="scheduledevent",
+            name="description_in_game",
+            field=models.TextField(
+                blank=True,
+                help_text="This will be shown when players use /events. Defaults to description",
+            ),
         ),
     ]

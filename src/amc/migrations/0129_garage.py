@@ -4,20 +4,27 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0128_player_displayer'),
+        ("amc", "0128_player_displayer"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Garage',
+            name="Garage",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('config', models.JSONField(blank=True, null=True)),
-                ('hostname', models.CharField(max_length=128)),
-                ('spawn_on_restart', models.BooleanField(default=True)),
-                ('notes', models.TextField(blank=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("config", models.JSONField(blank=True, null=True)),
+                ("hostname", models.CharField(max_length=128)),
+                ("spawn_on_restart", models.BooleanField(default=True)),
+                ("notes", models.TextField(blank=True)),
             ],
         ),
     ]

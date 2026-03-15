@@ -5,20 +5,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0110_playershift_rescuerequest'),
+        ("amc", "0110_playershift_rescuerequest"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduledevent',
-            name='discord_message_id',
+            model_name="scheduledevent",
+            name="discord_message_id",
             field=models.CharField(blank=True, max_length=32, null=True, unique=True),
         ),
         migrations.AlterField(
-            model_name='deliveryjob',
-            name='base_template',
-            field=models.ForeignKey(blank=True, help_text='The template this job was created from', null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='job_postings', to='amc.deliveryjob'),
+            model_name="deliveryjob",
+            name="base_template",
+            field=models.ForeignKey(
+                blank=True,
+                help_text="The template this job was created from",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="job_postings",
+                to="amc.deliveryjob",
+            ),
         ),
     ]

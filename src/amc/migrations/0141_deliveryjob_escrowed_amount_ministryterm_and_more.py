@@ -5,39 +5,73 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0140_remove_old_template_fields'),
+        ("amc", "0140_remove_old_template_fields"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='escrowed_amount',
-            field=models.PositiveIntegerField(default=0, help_text='Amount sequestered from Ministry budget'),
+            model_name="deliveryjob",
+            name="escrowed_amount",
+            field=models.PositiveIntegerField(
+                default=0, help_text="Amount sequestered from Ministry budget"
+            ),
         ),
         migrations.CreateModel(
-            name='MinistryTerm',
+            name="MinistryTerm",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('start_date', models.DateTimeField()),
-                ('end_date', models.DateTimeField()),
-                ('initial_budget', models.DecimalField(decimal_places=2, max_digits=16)),
-                ('current_budget', models.DecimalField(decimal_places=2, max_digits=16)),
-                ('total_spent', models.DecimalField(decimal_places=2, default=0, max_digits=16)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_jobs_count', models.IntegerField(default=0)),
-                ('expired_jobs_count', models.IntegerField(default=0)),
-                ('minister', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='ministry_terms', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("start_date", models.DateTimeField()),
+                ("end_date", models.DateTimeField()),
+                (
+                    "initial_budget",
+                    models.DecimalField(decimal_places=2, max_digits=16),
+                ),
+                (
+                    "current_budget",
+                    models.DecimalField(decimal_places=2, max_digits=16),
+                ),
+                (
+                    "total_spent",
+                    models.DecimalField(decimal_places=2, default=0, max_digits=16),
+                ),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_jobs_count", models.IntegerField(default=0)),
+                ("expired_jobs_count", models.IntegerField(default=0)),
+                (
+                    "minister",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="ministry_terms",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
         migrations.AddField(
-            model_name='deliveryjob',
-            name='funding_term',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='funded_jobs', to='amc.ministryterm'),
+            model_name="deliveryjob",
+            name="funding_term",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="funded_jobs",
+                to="amc.ministryterm",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='ministryterm',
-            constraint=models.CheckConstraint(condition=models.Q(('start_date__lt', models.F('end_date'))), name='ministry_term_start_before_end'),
+            model_name="ministryterm",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("start_date__lt", models.F("end_date"))),
+                name="ministry_term_start_before_end",
+            ),
         ),
     ]

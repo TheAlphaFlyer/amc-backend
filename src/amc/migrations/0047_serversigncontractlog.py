@@ -5,22 +5,37 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0046_servercargoarrivedlog'),
+        ("amc", "0046_servercargoarrivedlog"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerSignContractLog',
+            name="ServerSignContractLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('cargo_key', models.CharField(db_index=True, max_length=200)),
-                ('amount', models.FloatField()),
-                ('cost', models.PositiveIntegerField()),
-                ('payment', models.PositiveIntegerField()),
-                ('player', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='contracts_signed', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("cargo_key", models.CharField(db_index=True, max_length=200)),
+                ("amount", models.FloatField()),
+                ("cost", models.PositiveIntegerField()),
+                ("payment", models.PositiveIntegerField()),
+                (
+                    "player",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="contracts_signed",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
     ]

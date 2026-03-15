@@ -6,24 +6,41 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0041_alter_character_guid'),
+        ("amc", "0041_alter_character_guid"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='gameeventcharacter',
-            name='penalty_seconds',
+            model_name="gameeventcharacter",
+            name="penalty_seconds",
             field=models.FloatField(default=0),
         ),
         migrations.CreateModel(
-            name='CharacterAFKReminder',
+            name="CharacterAFKReminder",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('destination', django.contrib.gis.db.models.fields.PointField(dim=3, srid=0)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('character', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='afk_reminders', to='amc.character')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "destination",
+                    django.contrib.gis.db.models.fields.PointField(dim=3, srid=0),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "character",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="afk_reminders",
+                        to="amc.character",
+                    ),
+                ),
             ],
         ),
     ]

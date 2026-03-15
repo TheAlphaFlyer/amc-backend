@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0033_scheduledevent_time_trial'),
+        ("amc", "0033_scheduledevent_time_trial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='racesetup',
-            name='name',
+            model_name="racesetup",
+            name="name",
             field=models.CharField(max_length=200, null=True),
         ),
     ]

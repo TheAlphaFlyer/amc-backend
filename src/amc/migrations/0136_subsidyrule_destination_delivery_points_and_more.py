@@ -4,20 +4,25 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0135_subsidyarea_alter_deliverypoint_coord_subsidyrule'),
+        ("amc", "0135_subsidyarea_alter_deliverypoint_coord_subsidyrule"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='subsidyrule',
-            name='destination_delivery_points',
-            field=models.ManyToManyField(blank=True, related_name='destination_subsidy_rules', to='amc.deliverypoint'),
+            model_name="subsidyrule",
+            name="destination_delivery_points",
+            field=models.ManyToManyField(
+                blank=True,
+                related_name="destination_subsidy_rules",
+                to="amc.deliverypoint",
+            ),
         ),
         migrations.AddField(
-            model_name='subsidyrule',
-            name='source_delivery_points',
-            field=models.ManyToManyField(blank=True, related_name='source_subsidy_rules', to='amc.deliverypoint'),
+            model_name="subsidyrule",
+            name="source_delivery_points",
+            field=models.ManyToManyField(
+                blank=True, related_name="source_subsidy_rules", to="amc.deliverypoint"
+            ),
         ),
     ]

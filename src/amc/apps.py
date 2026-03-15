@@ -6,11 +6,13 @@ from .context import (
     aiohttp_lifespan_manager,
 )
 
+
 class AMCConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'amc'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "amc"
 
     def ready(self):
         from amc.command_framework import registry
-        registry.autodiscover('amc.commands')
+
+        registry.autodiscover("amc.commands")
         register_lifespan_manager(context_manager=aiohttp_lifespan_manager)

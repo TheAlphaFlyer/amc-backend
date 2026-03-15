@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0100_alter_character_guid'),
+        ("amc", "0100_alter_character_guid"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serverstatus',
-            name='used_memory',
+            model_name="serverstatus",
+            name="used_memory",
             field=models.PositiveIntegerField(default=0),
             preserve_default=False,
         ),

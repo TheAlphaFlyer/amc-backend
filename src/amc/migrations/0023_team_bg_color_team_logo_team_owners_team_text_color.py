@@ -4,30 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0022_playerchatlog_chat_text_search_idx'),
+        ("amc", "0022_playerchatlog_chat_text_search_idx"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='team',
-            name='bg_color',
-            field=models.CharField(default='FFFFFF', max_length=6),
+            model_name="team",
+            name="bg_color",
+            field=models.CharField(default="FFFFFF", max_length=6),
         ),
         migrations.AddField(
-            model_name='team',
-            name='logo',
-            field=models.FileField(null=True, upload_to='team_logos'),
+            model_name="team",
+            name="logo",
+            field=models.FileField(null=True, upload_to="team_logos"),
         ),
         migrations.AddField(
-            model_name='team',
-            name='owners',
-            field=models.ManyToManyField(related_name='teams_owned', to='amc.player'),
+            model_name="team",
+            name="owners",
+            field=models.ManyToManyField(related_name="teams_owned", to="amc.player"),
         ),
         migrations.AddField(
-            model_name='team',
-            name='text_color',
-            field=models.CharField(default='000000', max_length=6),
+            model_name="team",
+            name="text_color",
+            field=models.CharField(default="000000", max_length=6),
         ),
     ]

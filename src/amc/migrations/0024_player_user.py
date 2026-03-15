@@ -6,16 +6,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0023_team_bg_color_team_logo_team_owners_team_text_color'),
+        ("amc", "0023_team_bg_color_team_logo_team_owners_team_text_color"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='player',
-            name='user',
-            field=models.OneToOneField(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='player', to=settings.AUTH_USER_MODEL),
+            model_name="player",
+            name="user",
+            field=models.OneToOneField(
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="player",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

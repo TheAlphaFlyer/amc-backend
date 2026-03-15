@@ -6,31 +6,36 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0079_player_notes_player_social_score'),
+        ("amc", "0079_player_notes_player_social_score"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='player',
-            name='discord_name',
+            model_name="player",
+            name="discord_name",
             field=models.CharField(blank=True, max_length=200, null=True),
         ),
         migrations.AlterField(
-            model_name='player',
-            name='discord_user_id',
+            model_name="player",
+            name="discord_user_id",
             field=models.PositiveBigIntegerField(blank=True, null=True, unique=True),
         ),
         migrations.AlterField(
-            model_name='player',
-            name='notes',
+            model_name="player",
+            name="notes",
             field=models.TextField(blank=True),
         ),
         migrations.AlterField(
-            model_name='player',
-            name='user',
-            field=models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='player', to=settings.AUTH_USER_MODEL),
+            model_name="player",
+            name="user",
+            field=models.OneToOneField(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="player",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
     ]

@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0106_serverstatus_num_players'),
+        ("amc", "0106_serverstatus_num_players"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjob',
-            name='expected_player_count_for_quantity',
-            field=models.PositiveIntegerField(blank=True, help_text='When player count is lower than this, quantity will be scaled down', null=True),
+            model_name="deliveryjob",
+            name="expected_player_count_for_quantity",
+            field=models.PositiveIntegerField(
+                blank=True,
+                help_text="When player count is lower than this, quantity will be scaled down",
+                null=True,
+            ),
         ),
     ]

@@ -5,199 +5,239 @@ from django.contrib.gis.geos import Point
 from datetime import timedelta
 import factory
 from factory import (
-  SubFactory,
-  Faker,
-  LazyAttribute,
-  RelatedFactoryList,
+    SubFactory,
+    Faker,
+    LazyAttribute,
+    RelatedFactoryList,
 )
 from factory.django import DjangoModelFactory
 from typing import Any, cast
 from .models import (
-  Player,
-  Character,
-  Team,
-  ScheduledEvent,
-  GameEvent,
-  GameEventCharacter,
-  Championship,
-  ChampionshipPoint,
-  DeliveryPoint,
-  Cargo,
-  DeliveryJobTemplate,
-  DeliveryJob,
-  # Phase 1
-  SubsidyRule,
-  MinistryTerm,
-  Delivery,
+    Player,
+    Character,
+    Team,
+    ScheduledEvent,
+    GameEvent,
+    GameEventCharacter,
+    Championship,
+    ChampionshipPoint,
+    DeliveryPoint,
+    Cargo,
+    DeliveryJobTemplate,
+    DeliveryJob,
+    # Phase 1
+    SubsidyRule,
+    MinistryTerm,
+    Delivery,
 )
 
 
 class CharacterFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Character
+    class Meta:  # type: ignore[misc]
+        model = Character
 
-  player = SubFactory('amc.factories.PlayerFactory', characters=None)
-  name = Faker('user_name')
+    player = SubFactory("amc.factories.PlayerFactory", characters=None)
+    name = Faker("user_name")
+
 
 class PlayerFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Player
+    class Meta:  # type: ignore[misc]
+        model = Player
 
-  characters = RelatedFactoryList(
-    CharacterFactory,
-    size=lambda: random.randint(1, 5),
-    factory_related_name='player'
-  )
-  unique_id = LazyAttribute(lambda _: random.randint(10000000000000000, 99999999999999999))
-  discord_user_id = LazyAttribute(lambda _: random.randint(100000000000000000, 999999999999999999))
+    characters = RelatedFactoryList(
+        CharacterFactory,
+        size=lambda: random.randint(1, 5),
+        factory_related_name="player",
+    )
+    unique_id = LazyAttribute(
+        lambda _: random.randint(10000000000000000, 99999999999999999)
+    )
+    discord_user_id = LazyAttribute(
+        lambda _: random.randint(100000000000000000, 999999999999999999)
+    )
+
 
 class TeamFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Team
+    class Meta:  # type: ignore[misc]
+        model = Team
 
-  name = Faker('company')
-  tag = Faker('country_code')
-  description = Faker('catch_phrase')
-  discord_thread_id = LazyAttribute(lambda _: str(random.randint(100000000000000000, 999999999999999999)))
+    name = Faker("company")
+    tag = Faker("country_code")
+    description = Faker("catch_phrase")
+    discord_thread_id = LazyAttribute(
+        lambda _: str(random.randint(100000000000000000, 999999999999999999))
+    )
+
 
 class ScheduledEventFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = ScheduledEvent
+    class Meta:  # type: ignore[misc]
+        model = ScheduledEvent
 
-  name = Faker('company')
-  description = Faker('catch_phrase')
-  discord_event_id = LazyAttribute(lambda _: str(random.randint(100000000000000000, 999999999999999999)))
-  discord_thread_id = LazyAttribute(lambda _: str(random.randint(100000000000000000, 999999999999999999)))
-  start_time = Faker('date_time')
-  end_time = LazyAttribute(lambda e: e.start_time + timedelta(days=3))
+    name = Faker("company")
+    description = Faker("catch_phrase")
+    discord_event_id = LazyAttribute(
+        lambda _: str(random.randint(100000000000000000, 999999999999999999))
+    )
+    discord_thread_id = LazyAttribute(
+        lambda _: str(random.randint(100000000000000000, 999999999999999999))
+    )
+    start_time = Faker("date_time")
+    end_time = LazyAttribute(lambda e: e.start_time + timedelta(days=3))
+
 
 class GameEventFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = GameEvent
+    class Meta:  # type: ignore[misc]
+        model = GameEvent
 
-  name = Faker('company')
-  guid = Faker('company')
-  state = LazyAttribute(lambda _: random.randint(1, 3))
-  discord_message_id = LazyAttribute(lambda _: str(random.randint(100000000000000000, 999999999999999999)))
-  scheduled_event = SubFactory('amc.factories.ScheduledEventFactory')
-  start_time = LazyAttribute(lambda e: e.scheduled_event.start_time + timedelta(hours=1))
+    name = Faker("company")
+    guid = Faker("company")
+    state = LazyAttribute(lambda _: random.randint(1, 3))
+    discord_message_id = LazyAttribute(
+        lambda _: str(random.randint(100000000000000000, 999999999999999999))
+    )
+    scheduled_event = SubFactory("amc.factories.ScheduledEventFactory")
+    start_time = LazyAttribute(
+        lambda e: e.scheduled_event.start_time + timedelta(hours=1)
+    )
+
 
 class ChampionshipFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Championship
+    class Meta:  # type: ignore[misc]
+        model = Championship
 
-  name = Faker('company')
-  discord_thread_id = LazyAttribute(lambda _: str(random.randint(100000000000000000, 999999999999999999)))
-  description = Faker('catch_phrase')
+    name = Faker("company")
+    discord_thread_id = LazyAttribute(
+        lambda _: str(random.randint(100000000000000000, 999999999999999999))
+    )
+    description = Faker("catch_phrase")
+
 
 class ChampionshipPointFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = ChampionshipPoint
+    class Meta:  # type: ignore[misc]
+        model = ChampionshipPoint
 
-  championship = SubFactory('amc.factories.ChampionshipFactory')
-  participant = SubFactory('amc.factories.GameEventCharacterFactory')
-  team = SubFactory('amc.factories.TeamFactory')
-  points = LazyAttribute(lambda _: str(random.randint(0, 25)))
+    championship = SubFactory("amc.factories.ChampionshipFactory")
+    participant = SubFactory("amc.factories.GameEventCharacterFactory")
+    team = SubFactory("amc.factories.TeamFactory")
+    points = LazyAttribute(lambda _: str(random.randint(0, 25)))
+
 
 class GameEventCharacterFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = GameEventCharacter
+    class Meta:  # type: ignore[misc]
+        model = GameEventCharacter
 
-  character = SubFactory('amc.factories.CharacterFactory')
-  game_event = SubFactory('amc.factories.GameEventFactory')
-  rank = LazyAttribute(lambda _: random.randint(1, 20))
-  best_lap_time = LazyAttribute(lambda _: random.randint(100, 1000))
-  finished = True
-  last_section_total_time_seconds = LazyAttribute(lambda p: random.randint(100, 1000) if p.finished else None)
-  first_section_total_time_seconds = LazyAttribute(lambda p: random.randint(0, 99) if p.finished else None)
+    character = SubFactory("amc.factories.CharacterFactory")
+    game_event = SubFactory("amc.factories.GameEventFactory")
+    rank = LazyAttribute(lambda _: random.randint(1, 20))
+    best_lap_time = LazyAttribute(lambda _: random.randint(100, 1000))
+    finished = True
+    last_section_total_time_seconds = LazyAttribute(
+        lambda p: random.randint(100, 1000) if p.finished else None
+    )
+    first_section_total_time_seconds = LazyAttribute(
+        lambda p: random.randint(0, 99) if p.finished else None
+    )
+
 
 class CargoFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Cargo
+    class Meta:  # type: ignore[misc]
+        model = Cargo
+
 
 class DeliveryPointFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = DeliveryPoint
+    class Meta:  # type: ignore[misc]
+        model = DeliveryPoint
 
-  guid = LazyAttribute(lambda _: uuid.uuid4())
-  coord = LazyAttribute(lambda _: Point(random.randint(100, 1000), random.randint(100, 1000), random.randint(100, 1000)))
+    guid = LazyAttribute(lambda _: uuid.uuid4())
+    coord = LazyAttribute(
+        lambda _: Point(
+            random.randint(100, 1000),
+            random.randint(100, 1000),
+            random.randint(100, 1000),
+        )
+    )
+
 
 class DeliveryJobFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = DeliveryJob
+    class Meta:  # type: ignore[misc]
+        model = DeliveryJob
 
-  quantity_requested = LazyAttribute(lambda _: random.randint(1, 1000))
-  bonus_multiplier = LazyAttribute(lambda _: random.random())
-  expired_at = LazyAttribute(lambda _: timezone.now() + timedelta(hours=random.randint(2, 8)))
+    quantity_requested = LazyAttribute(lambda _: random.randint(1, 1000))
+    bonus_multiplier = LazyAttribute(lambda _: random.random())
+    expired_at = LazyAttribute(
+        lambda _: timezone.now() + timedelta(hours=random.randint(2, 8))
+    )
+
 
 class DeliveryJobTemplateFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = DeliveryJobTemplate
+    class Meta:  # type: ignore[misc]
+        model = DeliveryJobTemplate
 
-  name = Faker('bs')
-  default_quantity = LazyAttribute(lambda _: random.randint(1, 1000))
-  bonus_multiplier = LazyAttribute(lambda _: random.random())
-  duration_hours = LazyAttribute(lambda _: random.randint(2, 8))
+    name = Faker("bs")
+    default_quantity = LazyAttribute(lambda _: random.randint(1, 1000))
+    bonus_multiplier = LazyAttribute(lambda _: random.random())
+    duration_hours = LazyAttribute(lambda _: random.randint(2, 8))
 
-  @factory.post_generation
-  def cargos(self, create, extracted, **kwargs):
-    if not create:
-        return
-    if extracted:
-        cast(Any, self).cargos.add(*extracted)
+    @factory.post_generation
+    def cargos(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).cargos.add(*extracted)
 
-  @factory.post_generation
-  def source_points(self, create, extracted, **kwargs):
-    if not create:
-        return
-    if extracted:
-        cast(Any, self).source_points.add(*extracted)
+    @factory.post_generation
+    def source_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).source_points.add(*extracted)
 
-  @factory.post_generation
-  def destination_points(self, create, extracted, **kwargs):
-    if not create:
-        return
-    if extracted:
-        cast(Any, self).destination_points.add(*extracted)
+    @factory.post_generation
+    def destination_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).destination_points.add(*extracted)
 
 
 # Phase 1 Factories
 
-class SubsidyRuleFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = SubsidyRule
 
-  name = Faker('bs')
-  active = True
-  priority = LazyAttribute(lambda _: random.randint(0, 10))
-  reward_type = 'PERCENTAGE'
-  reward_value = LazyAttribute(lambda _: random.randint(1, 5))
-  requires_on_time = False
+class SubsidyRuleFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SubsidyRule
+
+    name = Faker("bs")
+    active = True
+    priority = LazyAttribute(lambda _: random.randint(0, 10))
+    reward_type = "PERCENTAGE"
+    reward_value = LazyAttribute(lambda _: random.randint(1, 5))
+    requires_on_time = False
 
 
 class MinistryTermFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = MinistryTerm
+    class Meta:  # type: ignore[misc]
+        model = MinistryTerm
 
-  minister = SubFactory('amc.factories.PlayerFactory')
-  start_date = LazyAttribute(lambda _: timezone.now() - timedelta(days=7))
-  end_date = LazyAttribute(lambda o: o.start_date + timedelta(days=30))
-  initial_budget = LazyAttribute(lambda _: random.randint(10000000, 50000000))
-  current_budget = LazyAttribute(lambda o: o.initial_budget * 0.5)
-  total_spent = LazyAttribute(lambda o: o.initial_budget - o.current_budget)
-  is_active = True
-  created_jobs_count = LazyAttribute(lambda _: random.randint(5, 20))
-  expired_jobs_count = LazyAttribute(lambda _: random.randint(0, 5))
+    minister = SubFactory("amc.factories.PlayerFactory")
+    start_date = LazyAttribute(lambda _: timezone.now() - timedelta(days=7))
+    end_date = LazyAttribute(lambda o: o.start_date + timedelta(days=30))
+    initial_budget = LazyAttribute(lambda _: random.randint(10000000, 50000000))
+    current_budget = LazyAttribute(lambda o: o.initial_budget * 0.5)
+    total_spent = LazyAttribute(lambda o: o.initial_budget - o.current_budget)
+    is_active = True
+    created_jobs_count = LazyAttribute(lambda _: random.randint(5, 20))
+    expired_jobs_count = LazyAttribute(lambda _: random.randint(0, 5))
 
 
 class DeliveryFactory(DjangoModelFactory):
-  class Meta:  # type: ignore[misc]
-    model = Delivery
+    class Meta:  # type: ignore[misc]
+        model = Delivery
 
-  timestamp = Faker('date_time')
-  character = SubFactory('amc.factories.CharacterFactory')
-  cargo_key = 'C::Stone'
-  quantity = LazyAttribute(lambda _: random.randint(1, 100))
-  payment = LazyAttribute(lambda _: random.randint(1000, 50000))
-  subsidy = LazyAttribute(lambda _: random.randint(0, 10000))
-  rp_mode = False
+    timestamp = Faker("date_time")
+    character = SubFactory("amc.factories.CharacterFactory")
+    cargo_key = "C::Stone"
+    quantity = LazyAttribute(lambda _: random.randint(1, 100))
+    payment = LazyAttribute(lambda _: random.randint(1000, 50000))
+    subsidy = LazyAttribute(lambda _: random.randint(0, 10000))
+    rp_mode = False

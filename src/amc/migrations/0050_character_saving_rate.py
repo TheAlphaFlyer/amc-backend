@@ -6,15 +6,23 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0049_servercargoarrivedlog_data'),
+        ("amc", "0049_servercargoarrivedlog_data"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='saving_rate',
-            field=models.DecimalField(blank=True, decimal_places=2, max_digits=3, null=True, validators=[django.core.validators.MinValueValidator(Decimal('0.00')), django.core.validators.MaxValueValidator(Decimal('1.00'))]),
+            model_name="character",
+            name="saving_rate",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=2,
+                max_digits=3,
+                null=True,
+                validators=[
+                    django.core.validators.MinValueValidator(Decimal("0.00")),
+                    django.core.validators.MaxValueValidator(Decimal("1.00")),
+                ],
+            ),
         ),
     ]

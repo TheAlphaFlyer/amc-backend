@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0122_charactervehicle_spawn_on_restart'),
+        ("amc", "0122_charactervehicle_spawn_on_restart"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='company',
-            name='guid',
+            model_name="company",
+            name="guid",
             field=models.CharField(blank=True, max_length=32, null=True),
         ),
         migrations.AddField(
-            model_name='company',
-            name='has_tp_permission',
+            model_name="company",
+            name="has_tp_permission",
             field=models.BooleanField(default=False),
         ),
     ]

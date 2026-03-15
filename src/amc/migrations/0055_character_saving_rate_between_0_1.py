@@ -4,14 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0054_character_money'),
+        ("amc", "0054_character_money"),
     ]
 
     operations = [
         migrations.AddConstraint(
-            model_name='character',
-            constraint=models.CheckConstraint(condition=models.Q(('saving_rate__gte', 0), ('saving_rate__lte', 1)), name='saving_rate_between_0_1'),
+            model_name="character",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("saving_rate__gte", 0), ("saving_rate__lte", 1)),
+                name="saving_rate_between_0_1",
+            ),
         ),
     ]

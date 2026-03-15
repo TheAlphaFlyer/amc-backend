@@ -4,18 +4,25 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0088_deliveryjob_name_deliveryjob_template'),
+        ("amc", "0088_deliveryjob_name_deliveryjob_template"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerStatus',
+            name="ServerStatus",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField(auto_now_add=True)),
-                ('fps', models.PositiveIntegerField()),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField(auto_now_add=True)),
+                ("fps", models.PositiveIntegerField()),
             ],
         ),
     ]

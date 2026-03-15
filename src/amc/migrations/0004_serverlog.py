@@ -4,21 +4,32 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0003_alter_player_discord_user_id'),
+        ("amc", "0003_alter_player_discord_user_id"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerLog',
+            name="ServerLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('text', models.TextField()),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("text", models.TextField()),
             ],
             options={
-                'constraints': [models.UniqueConstraint(fields=('timestamp', 'text'), name='unique_event_log_entry')],
+                "constraints": [
+                    models.UniqueConstraint(
+                        fields=("timestamp", "text"), name="unique_event_log_entry"
+                    )
+                ],
             },
         ),
     ]

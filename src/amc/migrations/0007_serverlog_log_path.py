@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0006_playerstatuslog'),
+        ("amc", "0006_playerstatuslog"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serverlog',
-            name='log_path',
+            model_name="serverlog",
+            name="log_path",
             field=models.CharField(max_length=500, null=True),
         ),
     ]

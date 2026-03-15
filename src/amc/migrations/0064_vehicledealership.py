@@ -5,21 +5,31 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0063_remove_scheduledevent_initial_offset_and_more'),
+        ("amc", "0063_remove_scheduledevent_initial_offset_and_more"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='VehicleDealership',
+            name="VehicleDealership",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('vehicle_key', models.CharField(max_length=100, null=True)),
-                ('location', django.contrib.gis.db.models.fields.PointField(dim=3, srid=0)),
-                ('yaw', models.FloatField()),
-                ('spawn_on_restart', models.BooleanField(default=True)),
-                ('notes', models.TextField(blank=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("vehicle_key", models.CharField(max_length=100, null=True)),
+                (
+                    "location",
+                    django.contrib.gis.db.models.fields.PointField(dim=3, srid=0),
+                ),
+                ("yaw", models.FloatField()),
+                ("spawn_on_restart", models.BooleanField(default=True)),
+                ("notes", models.TextField(blank=True)),
             ],
         ),
     ]

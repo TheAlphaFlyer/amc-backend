@@ -10,63 +10,66 @@ from django.core.signing import Signer
 from django.conf import settings
 from amc.game_server import announce
 
+
 def skip_if_running(func):
-  """Decorator that skips a cron invocation if the previous one is still running.
-  Each decorated function gets its own asyncio.Lock automatically."""
-  lock = asyncio.Lock()
+    """Decorator that skips a cron invocation if the previous one is still running.
+    Each decorated function gets its own asyncio.Lock automatically."""
+    lock = asyncio.Lock()
 
-  @wraps(func)
-  async def wrapper(*args, **kwargs):
-    if lock.locked():
-      return
-    async with lock:
-      return await func(*args, **kwargs)
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if lock.locked():
+            return
+        async with lock:
+            return await func(*args, **kwargs)
 
-  return wrapper
+    return wrapper
 
-def fuzzy_find_player(players: List[Tuple[str, dict]], name_query: str) -> Optional[str]:
+
+def fuzzy_find_player(
+    players: List[Tuple[str, dict]], name_query: str
+) -> Optional[str]:
     """
     Finds a player ID by name using fuzzy search.
     Prioritizes exact matches (case-insensitive), then best matches based on similarity.
-    
+
     Args:
         players: List of tuples (unique_id, player_data_dict)
         name_query: The name to search for
-        
+
     Returns:
         The player's unique_id if found, else None
     """
     if not name_query:
         return None
-        
+
     name_query_lower = name_query.lower()
-    
+
     # 1. Exact match (case-insensitive)
     for pid, p_data in players:
-        p_name = p_data.get('name', '')
+        p_name = p_data.get("name", "")
         if p_name.lower() == name_query_lower:
             return pid
-            
+
     # 2. Fuzzy match
     best_pid = None
     best_ratio = 0.0
-    
+
     for pid, p_data in players:
-        p_name = p_data.get('name', '')
-        # Basic check to avoid matching wildly different lengths excessively if needed, 
+        p_name = p_data.get("name", "")
+        # Basic check to avoid matching wildly different lengths excessively if needed,
         # but SequenceMatcher handles it well usually.
         ratio = difflib.SequenceMatcher(None, name_query_lower, p_name.lower()).ratio()
-        
+
         if ratio > best_ratio:
             best_ratio = ratio
             best_pid = pid
-            
+
     # Use a threshold to avoid completely irrelevant matches
     if best_ratio > 0.6:
         return best_pid
-        
-    return None
 
+    return None
 
 
 def lowercase_first_char_in_keys(obj):
@@ -85,7 +88,7 @@ def lowercase_first_char_in_keys(obj):
         # Create a new dictionary by iterating through the original's items
         return {
             # Transform the key: make the first character lowercase
-            key[0].lower() + key[1:] if key else '':
+            key[0].lower() + key[1:] if key else "":
             # Recursively call the function on the value
             lowercase_first_char_in_keys(value)
             for key, value in obj.items()
@@ -97,6 +100,7 @@ def lowercase_first_char_in_keys(obj):
     # If the object is not a dict or list, return it as is (base case)
     else:
         return obj
+
 
 def format_in_local_tz(dt_aware: datetime, zone_info="Asia/Bangkok") -> str:
     """
@@ -129,7 +133,6 @@ def format_in_local_tz(dt_aware: datetime, zone_info="Asia/Bangkok") -> str:
     return f"{formatted_dt_str} {tz_str}"
 
 
-
 def format_timedelta(td):
     """
     Converts a timedelta object into a formatted string like "1 Day, 2 hours and 30 minutes".
@@ -137,11 +140,11 @@ def format_timedelta(td):
     # Extract days, and the remaining seconds
     days = td.days
     total_seconds = td.seconds
-    
+
     # Calculate hours, minutes, and seconds
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    
+
     # Build a list of parts of the string
     parts = []
     if days > 0:
@@ -158,7 +161,8 @@ def format_timedelta(td):
         return parts[0]
     else:
         # Join all but the last part with ", " and add " and " before the last part
-        return ', '.join(parts[:-1]) + ' and ' + parts[-1]
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+
 
 def get_timespan(days_ago: int = 0, num_days: int = 1) -> tuple[datetime, datetime]:
     """
@@ -169,12 +173,12 @@ def get_timespan(days_ago: int = 0, num_days: int = 1) -> tuple[datetime, dateti
     This creates a half-open interval [start_time, end_time).
 
     Args:
-        days_ago (int): How many days in the past to start from. 
+        days_ago (int): How many days in the past to start from.
                         0 means today, 1 means yesterday. Defaults to 0.
         num_days (int): The duration of the timespan in days. Defaults to 1.
 
     Returns:
-        tuple[datetime, datetime]: A tuple containing the timezone-aware 
+        tuple[datetime, datetime]: A tuple containing the timezone-aware
                                    start and end datetimes.
     """
     # Get the current time in the project's timezone (e.g., using ZoneInfo)
@@ -182,7 +186,9 @@ def get_timespan(days_ago: int = 0, num_days: int = 1) -> tuple[datetime, dateti
 
     # Calculate the start time by finding midnight of the target day
     # .replace() preserves the timezone information from `now`
-    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
+        days=1
+    )
     start_time = start_of_today - timedelta(days=days_ago)
 
     # Calculate the end time by adding the duration
@@ -190,9 +196,11 @@ def get_timespan(days_ago: int = 0, num_days: int = 1) -> tuple[datetime, dateti
 
     return start_time, end_time
 
+
 async def delay(coro, seconds):
-  await asyncio.sleep(seconds)
-  await coro
+    await asyncio.sleep(seconds)
+    await coro
+
 
 def get_time_difference_string(start_time: datetime, end_time: datetime) -> str:
     """
@@ -215,70 +223,75 @@ def get_time_difference_string(start_time: datetime, end_time: datetime) -> str:
     # Calculate hours and minutes from the total seconds
     # There are 3600 seconds in an hour
     hours = total_seconds // 3600
-    
+
     # The remaining seconds are used to calculate minutes
     remaining_seconds = total_seconds % 3600
     minutes = remaining_seconds // 60
 
     return f"{hours} hours, {minutes} minutes"
 
+
 def generate_verification_code(input_data) -> str:
     signer = Signer()
     # Sign the input to ensure it's tied to our secret key and the input data
     signed_obj = signer.sign(input_data)
-    
+
     # Use SHA256 to get a good distribution
     import hashlib
+
     hash_object = hashlib.sha256(signed_obj.encode())
     num = int(hash_object.hexdigest(), 16)
-    
+
     # Safe alphabet excluding 0, O, 1, I, l
     safe_alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     code = ""
     for _ in range(4):
         code += safe_alphabet[num % len(safe_alphabet)]
         num //= len(safe_alphabet)
-        
+
     return code
 
+
 def with_verification_code(input, input_verification_code):
-  code = generate_verification_code(input)
-  return code, input_verification_code.lower() == code.lower()
+    code = generate_verification_code(input)
+    return code, input_verification_code.lower() == code.lower()
 
 
+async def forward_to_discord(
+    client, channel_id, content, escape_mentions=True, **kwargs
+):
+    if not client.is_ready():
+        await client.wait_until_ready()
 
+    allowed_mentions = discord.AllowedMentions.all()
+    if escape_mentions:
+        content = discord.utils.escape_mentions(content)
+        allowed_mentions = discord.AllowedMentions.none()
 
-async def forward_to_discord(client, channel_id, content, escape_mentions=True, **kwargs):
-  if not client.is_ready():
-    await client.wait_until_ready()
+    channel = client.get_channel(int(channel_id))
+    if channel:
+        return await channel.send(content, allowed_mentions=allowed_mentions, **kwargs)
 
-  allowed_mentions = discord.AllowedMentions.all()
-  if escape_mentions:
-    content = discord.utils.escape_mentions(content)
-    allowed_mentions = discord.AllowedMentions.none()
-
-  channel = client.get_channel(int(channel_id))
-  if channel:
-    return await channel.send(content, allowed_mentions=allowed_mentions, **kwargs)
 
 async def add_discord_verified_role(client, discord_user_id, player_id):
-  guild = client.get_guild(settings.DISCORD_GUILD_ID)
-  if not guild:
-    raise Exception("Could not find a guild with that ID.")
+    guild = client.get_guild(settings.DISCORD_GUILD_ID)
+    if not guild:
+        raise Exception("Could not find a guild with that ID.")
 
-  member = guild.get_member(discord_user_id)
-  if not member:
-    raise Exception("Could not find a member with that ID.")
+    member = guild.get_member(discord_user_id)
+    if not member:
+        raise Exception("Could not find a member with that ID.")
 
-  # Get the role object from the role ID
-  role = guild.get_role(settings.DISCORD_VERIFIED_ROLE_ID)
-  if not role:
-    raise Exception("Could not find a role with that ID.")
+    # Get the role object from the role ID
+    role = guild.get_role(settings.DISCORD_VERIFIED_ROLE_ID)
+    if not role:
+        raise Exception("Could not find a role with that ID.")
 
-  await member.add_roles(role, reason=f"Action performed by {player_id}")
+    await member.add_roles(role, reason=f"Action performed by {player_id}")
+
 
 async def countdown(http_client, start=3, delay=2.0):
-  await announce('Get ready!', http_client)
-  for i in range(start, -1, -1):
-    await asyncio.sleep(delay)
-    await announce(str(i) if i > 0 else 'GO!!', http_client, clear_banner=False)
+    await announce("Get ready!", http_client)
+    for i in range(start, -1, -1):
+        await asyncio.sleep(delay)
+        await announce(str(i) if i > 0 else "GO!!", http_client, clear_banner=False)

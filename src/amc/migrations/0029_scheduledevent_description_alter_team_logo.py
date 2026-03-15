@@ -4,20 +4,19 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0028_team_racing'),
+        ("amc", "0028_team_racing"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='scheduledevent',
-            name='description',
+            model_name="scheduledevent",
+            name="description",
             field=models.TextField(blank=True),
         ),
         migrations.AlterField(
-            model_name='team',
-            name='logo',
-            field=models.FileField(blank=True, null=True, upload_to='team_logos'),
+            model_name="team",
+            name="logo",
+            field=models.FileField(blank=True, null=True, upload_to="team_logos"),
         ),
     ]

@@ -4,25 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0052_serverpassengerarrivedlog_data'),
+        ("amc", "0052_serverpassengerarrivedlog_data"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='serversigncontractlog',
-            name='data',
+            model_name="serversigncontractlog",
+            name="data",
             field=models.JSONField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='serversigncontractlog',
-            name='finished_amount',
+            model_name="serversigncontractlog",
+            name="finished_amount",
             field=models.FloatField(default=0),
         ),
         migrations.AddField(
-            model_name='serversigncontractlog',
-            name='guid',
-            field=models.CharField(db_index=True, editable=False, max_length=32, null=True),
+            model_name="serversigncontractlog",
+            name="guid",
+            field=models.CharField(
+                db_index=True, editable=False, max_length=32, null=True
+            ),
         ),
     ]

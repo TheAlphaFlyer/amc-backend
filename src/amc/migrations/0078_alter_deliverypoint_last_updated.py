@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0077_alter_deliveryjob_cargo_key_and_more'),
+        ("amc", "0077_alter_deliveryjob_cargo_key_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='deliverypoint',
-            name='last_updated',
+            model_name="deliverypoint",
+            name="last_updated",
             field=models.DateTimeField(auto_now=True, null=True),
         ),
     ]
