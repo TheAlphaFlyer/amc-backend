@@ -260,6 +260,11 @@ class Character(models.Model):
 
     total_donations = models.PositiveBigIntegerField(default=0)
 
+    # Government Employee
+    gov_employee_until = models.DateTimeField(null=True, blank=True)
+    gov_employee_level = models.PositiveIntegerField(default=0)
+    gov_employee_contributions = models.PositiveBigIntegerField(default=0)
+
     objects: ClassVar[CharacterManager] = CharacterManager()
 
     if TYPE_CHECKING:
@@ -275,6 +280,13 @@ class Character(models.Model):
         total_session_time: Optional[timedelta]
 
     INVALID_GUID = "00000000000000000000000000000000"
+
+    @property
+    def is_gov_employee(self):
+        return (
+            self.gov_employee_until is not None
+            and self.gov_employee_until > timezone.now()
+        )
 
     @override
     def __str__(self):

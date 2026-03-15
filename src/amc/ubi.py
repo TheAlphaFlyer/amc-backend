@@ -38,7 +38,7 @@ async def handout_ubi(ctx):
     }
 
     # Filter out characters with no driver_level (driver_level=0 is falsy)
-    eligible = {guid: c for guid, c in characters.items() if c.driver_level}
+    eligible = {guid: c for guid, c in characters.items() if c.driver_level and not c.is_gov_employee}
 
     if not eligible:
         return

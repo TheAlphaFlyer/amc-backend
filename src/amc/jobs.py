@@ -318,7 +318,14 @@ async def on_delivery_job_fulfilled(job, http_client):
         count = character_contribution["count"]
         reward = character_contribution["reward"]
         if reward > 0:
-            await send_fund_to_player(reward, character_obj, "Job Completion")
+            if character_obj.is_gov_employee:
+                from amc.gov_employee import redirect_income_to_treasury
+
+                await redirect_income_to_treasury(
+                    reward, character_obj, "Government Service – Job Bonus"
+                )
+            else:
+                await send_fund_to_player(reward, character_obj, "Job Completion")
             contributors_names.append(f"{character_obj.name} ({count})")
 
     contributors_str = ", ".join(contributors_names)

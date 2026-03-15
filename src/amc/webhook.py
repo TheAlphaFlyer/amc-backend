@@ -11,7 +11,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode
+from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -47,6 +47,33 @@ async def on_player_profits(player_profits, session):
 
 
 async def on_player_profit(character, total_subsidy, total_payment, session):
+    if character.is_gov_employee:
+        # Confiscate ALL income from wallet → treasury.
+        # total_payment includes subsidy for passenger/tow, but NOT for cargo.
+        # total_subsidy is the cargo subsidy (added separately via subsidise_player).
+        # We must NOT call subsidise_player, and must confiscate total_payment.
+        # The subsidy portion (cargo) was never paid out, so we only confiscate
+        # what the game server actually deposited: total_payment.
+        # But we redirect the full economic value (payment + subsidy) to treasury.
+        total_income = total_payment + total_subsidy
+        if total_income > 0:
+            from amc.gov_employee import redirect_income_to_treasury
+
+            # Confiscate what the game server deposited into the wallet
+            if total_payment > 0:
+                await transfer_money(
+                    session,
+                    int(-total_payment),
+                    "Government Service",
+                    str(character.player.unique_id),
+                )
+            # Record total economic value (base + subsidy) as treasury contribution
+            await redirect_income_to_treasury(
+                total_income, character, "Government Service – Earnings"
+            )
+        # Skip subsidy payment, loan repayment, and savings
+        return
+
     if total_subsidy != 0:
         await subsidise_player(total_subsidy, character, session)
     loan_repayment = await repay_loan_for_profit(character, total_payment, session)

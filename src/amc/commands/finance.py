@@ -373,3 +373,68 @@ async def cmd_repay_loan(ctx: CommandContext, amount: str = ""):
             player_id=str(ctx.player.unique_id),
         )
     )
+
+
+@registry.register(
+    "/workforgov",
+    description=gettext_lazy("Opt in as a Government Employee for 24 hours"),
+    category="Finance",
+)
+async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
+    from amc.gov_employee import activate_gov_role
+    from django.utils import timezone
+
+    character = ctx.character
+
+    # If already active, show status
+    if character.is_gov_employee:
+        remaining = character.gov_employee_until - timezone.now()
+        hours = int(remaining.total_seconds() // 3600)
+        minutes = int((remaining.total_seconds() % 3600) // 60)
+        await ctx.reply(
+            _(
+                "<Title>Government Employee Status</>\n\n"
+                "<Bold>Level:</> GOV{level}\n"
+                "<Bold>Time Remaining:</> {hours}h {minutes}m\n"
+                "<Bold>Total Contributions:</> <Money>{contributions:,}</>"
+            ).format(
+                level=character.gov_employee_level,
+                hours=hours,
+                minutes=minutes,
+                contributions=character.gov_employee_contributions,
+            )
+        )
+        return
+
+    code_expected, verified = with_verification_code(
+        ("workforgov", ctx.character.id), verification_code
+    )
+
+    if not verified:
+        await ctx.reply(
+            _(
+                "<Title>Work for Government</>\n"
+                "You are about to become a <Highlight>Government Employee</> for 24 hours.\n\n"
+                "<Warning>During this time:</>\n"
+                "- ALL your income will go to the treasury\n"
+                "- You will receive no subsidies or job bonuses\n"
+                "- Your contributions will count towards your GOV level\n\n"
+                "Your current GOV level: <Highlight>GOV{level}</>\n"
+                "To confirm, type: <Highlight>/workforgov {code}</>"
+            ).format(
+                level=character.gov_employee_level or 1,
+                code=code_expected.upper(),
+            )
+        )
+        return
+
+    await activate_gov_role(character, ctx.http_client_mod)
+    await ctx.reply(
+        _("You are now a Government Employee (GOV{level}) for 24 hours!").format(
+            level=character.gov_employee_level
+        )
+    )
+    await ctx.announce(
+        f"{character.name} is now working as a Government Employee (GOV{character.gov_employee_level})!"
+    )
+

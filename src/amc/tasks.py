@@ -417,6 +417,47 @@ Not everyone likes to be roughed up!
                             delay(kick_player(http_client, str(player_id)), 10)
                         )
 
+                # Government Employee: handle login
+                if character.gov_employee_until is not None:
+                    if character.is_gov_employee:
+                        # Role still active — set [GOV#] name
+                        from amc.gov_employee import make_gov_name
+                        from amc.mod_server import set_character_name
+
+                        gov_name = make_gov_name(
+                            character.name, character.gov_employee_level
+                        )
+                        asyncio.create_task(
+                            set_character_name(
+                                http_client_mod, character.guid, gov_name
+                            )
+                        )
+                    else:
+                        # Role expired while offline — restore name
+                        from amc.gov_employee import deactivate_gov_role
+
+                        await deactivate_gov_role(character, http_client_mod)
+
+                # Block [GOV] tag for non-government-employees
+                if player_info:
+                    import re
+
+                    player_display_name = player_info.get("PlayerName", "")
+                    if re.search(
+                        r"\[GOV\d*\]", player_display_name, re.IGNORECASE
+                    ) and not character.is_gov_employee:
+                        asyncio.create_task(
+                            show_popup(
+                                http_client_mod,
+                                "The [GOV] tag is reserved for government employees. Please remove it and rejoin.",
+                                character_guid=character.guid,
+                                player_id=str(player.unique_id),
+                            )
+                        )
+                        asyncio.create_task(
+                            delay(kick_player(http_client, str(player_id)), 10)
+                        )
+
                 try:
                     last_login = None
                     if not character_created:
