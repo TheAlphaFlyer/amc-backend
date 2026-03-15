@@ -40,27 +40,38 @@ async def monitor_deliverypoints(ctx):
         cargo.key: cargo async for cargo in Cargo.objects.select_related("type").all()
     }
 
+    # Prefetch all existing delivery points in one query
+    api_guids = {dp_info["guid"].lower() for dp_info in dps_data.values()}
+    existing_dps = {
+        dp.guid: dp
+        async for dp in DeliveryPoint.objects.filter(guid__in=api_guids)
+    }
+
     seen_guids = set()
     # Collect storage objects for batch upsert
     storage_upserts = []
+    # Collect delivery points that need their data field updated
+    dps_to_update_data = []
+    # Collect delivery points that need name/removed synced
+    dps_to_sync = []
 
     for dp_info in dps_data.values():
         guid = dp_info["guid"].lower()
         seen_guids.add(guid)
 
-        try:
-            dp = await DeliveryPoint.objects.aget(guid=guid)
+        dp = existing_dps.get(guid)
+        if dp:
             # Sync name if changed
-            updated_fields = []
+            updated = False
             if dp.name != dp_info["name"]:
                 dp.name = dp_info["name"]
-                updated_fields.append("name")
+                updated = True
             if dp.removed:
                 dp.removed = False
-                updated_fields.append("removed")
-            if updated_fields:
-                await dp.asave(update_fields=updated_fields + ["last_updated"])
-        except DeliveryPoint.DoesNotExist:
+                updated = True
+            if updated:
+                dps_to_sync.append(dp)
+        else:
             # Auto-create new delivery point
             coord = parse_location(dp_info.get("location", ""))
             if not coord:
@@ -74,33 +85,40 @@ async def monitor_deliverypoints(ctx):
                 coord=coord,
             )
             # Create storages from API inventory
+            new_storages = []
             for inventory in dp_info.get("InputInventory", {}).values():
                 cargo_key = cargo_key_by_label.get(
                     inventory["cargo"]["name"], inventory["cargo"]["cargo_key"]
                 )
                 cargo = cargo_by_key.get(cargo_key)
-                await DeliveryPointStorage.objects.acreate(
-                    delivery_point=dp,
-                    kind=DeliveryPointStorage.Kind.INPUT,
-                    cargo_key=cargo_key,
-                    cargo=cargo,
-                    amount=inventory["amount"],
+                new_storages.append(
+                    DeliveryPointStorage(
+                        delivery_point=dp,
+                        kind=DeliveryPointStorage.Kind.INPUT,
+                        cargo_key=cargo_key,
+                        cargo=cargo,
+                        amount=inventory["amount"],
+                    )
                 )
             for inventory in dp_info.get("OutputInventory", {}).values():
                 cargo_key = cargo_key_by_label.get(
                     inventory["cargo"]["name"], inventory["cargo"]["cargo_key"]
                 )
                 cargo = cargo_by_key.get(cargo_key)
-                await DeliveryPointStorage.objects.acreate(
-                    delivery_point=dp,
-                    kind=DeliveryPointStorage.Kind.OUTPUT,
-                    cargo_key=cargo_key,
-                    cargo=cargo,
-                    amount=inventory["amount"],
+                new_storages.append(
+                    DeliveryPointStorage(
+                        delivery_point=dp,
+                        kind=DeliveryPointStorage.Kind.OUTPUT,
+                        cargo_key=cargo_key,
+                        cargo=cargo,
+                        amount=inventory["amount"],
+                    )
                 )
+            if new_storages:
+                await DeliveryPointStorage.objects.abulk_create(new_storages)
             print(f"Created delivery point: {dp_info['name']} ({guid})")
 
-        # Update live data (existing logic)
+        # Update live data
         dp.data = {
             "inputInventory": list(
                 map(normalise_inventory, dp_info.get("InputInventory", {}).values())
@@ -112,7 +130,7 @@ async def monitor_deliverypoints(ctx):
                 map(normalise_delivery, dp_info.get("Deliveries", {}).values())
             ),
         }
-        await dp.asave()
+        dps_to_update_data.append(dp)
 
         # Collect storage upserts for batch operation
         for inventory in dp.data["inputInventory"]:
@@ -138,6 +156,16 @@ async def monitor_deliverypoints(ctx):
                     amount=inventory["amount"],
                 )
             )
+
+    # Batch sync name/removed changes
+    if dps_to_sync:
+        await DeliveryPoint.objects.abulk_update(
+            dps_to_sync, ["name", "removed", "last_updated"]
+        )
+
+    # Batch save data field updates
+    if dps_to_update_data:
+        await DeliveryPoint.objects.abulk_update(dps_to_update_data, ["data"])
 
     # Batch upsert all storage records
     if storage_upserts:

@@ -1,4 +1,3 @@
-import asyncio
 from decimal import Decimal
 from datetime import timedelta
 from django.utils import timezone
@@ -78,7 +77,6 @@ async def handout_ubi(ctx):
             await transfer_money(
                 http_client_mod, int(amount), "Universal Basic Income", player_id
             )
-            await asyncio.sleep(1)
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
             continue

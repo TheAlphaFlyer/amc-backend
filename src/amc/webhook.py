@@ -34,7 +34,6 @@ from amc.models import (
     DeliveryPoint,
     DeliveryJob,
     Character,
-    CharacterLocation,
     MinistryTerm,
     SubsidyRule,
 )
@@ -337,13 +336,7 @@ async def handle_cargo_arrived(
 
     vehicle_key = ""
     if character:
-        try:
-            latest_loc = await CharacterLocation.objects.filter(
-                character=character
-            ).alatest("timestamp")
-            vehicle_key = latest_loc.get_vehicle_key_display()
-        except CharacterLocation.DoesNotExist:
-            pass
+        vehicle_key = character.last_vehicle_key or ""
 
     key_by_cargo = attrgetter("cargo_key")
     logs.sort(key=key_by_cargo)
@@ -531,11 +524,10 @@ async def process_events(
         total_subsidy = 0
 
         is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
-        used_shortcut = await CharacterLocation.objects.filter(
-            character=character,
-            location__coveredby=gwangjin_shortcut,
-            timestamp__gte=timezone.now() - timedelta(hours=1),
-        ).aexists()
+        used_shortcut = (
+            character.last_location is not None
+            and gwangjin_shortcut.covers(character.last_location)
+        )
 
         for event in es:
             try:
@@ -663,15 +655,7 @@ async def process_event(
     current_tz = timezone.get_current_timezone()
     timestamp = timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
 
-    if character:
-        try:
-            latest_loc = await CharacterLocation.objects.filter(
-                character=character
-            ).afirst()
-            if latest_loc:
-                latest_loc.get_vehicle_key_display()
-        except CharacterLocation.DoesNotExist:
-            pass
+
 
     match event["hook"]:
         case "ServerCargoArrived":
