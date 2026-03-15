@@ -311,3 +311,109 @@ class JobsCog(commands.Cog):
         await interaction.response.send_message(
             f"Finished {str(job_id)}", ephemeral=True
         )
+
+    @app_commands.command(
+        name="job_config", description="View current job posting configuration"
+    )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    async def job_config(self, interaction):
+        from amc.models import JobPostingConfig
+
+        config = await JobPostingConfig.aget_config()
+        embed = discord.Embed(
+            title="⚙️ Job Posting Configuration",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(
+            name="Target Success Rate",
+            value=f"{config.target_success_rate:.0%}",
+            inline=True,
+        )
+        embed.add_field(
+            name="Min Multiplier",
+            value=str(config.min_multiplier),
+            inline=True,
+        )
+        embed.add_field(
+            name="Max Multiplier",
+            value=str(config.max_multiplier),
+            inline=True,
+        )
+        embed.add_field(
+            name="Players per Job",
+            value=str(config.players_per_job),
+            inline=True,
+        )
+        embed.add_field(
+            name="Min Base Jobs",
+            value=str(config.min_base_jobs),
+            inline=True,
+        )
+        embed.add_field(
+            name="Posting Rate Multiplier",
+            value=f"{config.posting_rate_multiplier}x",
+            inline=True,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(
+        name="set_job_config",
+        description="Update a job posting configuration parameter",
+    )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    @app_commands.describe(
+        param="Configuration parameter to update",
+        value="New value for the parameter",
+    )
+    @app_commands.choices(
+        param=[
+            app_commands.Choice(name="Target Success Rate – completion % to aim for (0.0-1.0)", value="target_success_rate"),
+            app_commands.Choice(name="Min Multiplier – lowest scaling when jobs expire too often", value="min_multiplier"),
+            app_commands.Choice(name="Max Multiplier – highest scaling when jobs are completed fast", value="max_multiplier"),
+            app_commands.Choice(name="Players per Job – base ratio, 1 job slot per N players", value="players_per_job"),
+            app_commands.Choice(name="Min Base Jobs – minimum job slots regardless of player count", value="min_base_jobs"),
+            app_commands.Choice(name="Posting Rate – global chance multiplier (0.5=half, 2.0=double)", value="posting_rate_multiplier"),
+        ]
+    )
+    async def set_job_config(
+        self,
+        interaction: discord.Interaction,
+        param: app_commands.Choice[str],
+        value: float,
+    ):
+        from amc.models import JobPostingConfig
+
+        config = await JobPostingConfig.aget_config()
+        field_name = param.value
+
+        # Validation
+        validations = {
+            "target_success_rate": (0.0, 1.0),
+            "min_multiplier": (0.1, 10.0),
+            "max_multiplier": (0.1, 10.0),
+            "players_per_job": (1, 100),
+            "min_base_jobs": (0, 50),
+            "posting_rate_multiplier": (0.0, 10.0),
+        }
+
+        min_val, max_val = validations[field_name]
+        if not (min_val <= value <= max_val):
+            await interaction.response.send_message(
+                f"❌ Value must be between {min_val} and {max_val}.",
+                ephemeral=True,
+            )
+            return
+
+        old_value = getattr(config, field_name)
+
+        # Integer fields
+        if field_name in ("players_per_job", "min_base_jobs"):
+            value = int(value)
+
+        setattr(config, field_name, value)
+        await config.asave()
+
+        await interaction.response.send_message(
+            f"✅ **{param.name}** updated: `{old_value}` → `{value}`",
+            ephemeral=True,
+        )

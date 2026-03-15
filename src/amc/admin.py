@@ -63,6 +63,7 @@ from .models import (
     MinistryVote,
     MinistryTerm,
     MinistryDashboard,
+    JobPostingConfig,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -803,6 +804,25 @@ class WorldTextAdmin(admin.ModelAdmin):
 @admin.register(WorldObject)
 class WorldObjectAdmin(admin.ModelAdmin):
     list_display = ["id", "asset_path"]
+
+
+@admin.register(JobPostingConfig)
+class JobPostingConfigAdmin(admin.ModelAdmin):
+    list_display = [
+        "target_success_rate",
+        "min_multiplier",
+        "max_multiplier",
+        "players_per_job",
+        "min_base_jobs",
+        "posting_rate_multiplier",
+    ]
+
+    def has_add_permission(self, request):
+        # Only allow add if no instance exists yet
+        return not JobPostingConfig.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(SubsidyArea)

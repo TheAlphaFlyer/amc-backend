@@ -2177,6 +2177,59 @@ class SubsidyRule(models.Model):
 
 
 @final
+class JobPostingConfig(models.Model):
+    """Server-wide job posting configuration. Singleton (pk=1 always)."""
+
+    # Adaptive multiplier params
+    target_success_rate = models.FloatField(
+        default=0.50,
+        help_text="Target job completion rate (0.0-1.0). Jobs scale up above this, down below.",
+    )
+    min_multiplier = models.FloatField(
+        default=0.5,
+        help_text="Minimum adaptive multiplier (scales down job count when success rate is low)",
+    )
+    max_multiplier = models.FloatField(
+        default=2.0,
+        help_text="Maximum adaptive multiplier (scales up job count when success rate is high)",
+    )
+    # Base job formula
+    players_per_job = models.IntegerField(
+        default=10,
+        help_text="Base formula: 1 job per N players",
+        validators=[MinValueValidator(1)],
+    )
+    min_base_jobs = models.IntegerField(
+        default=2,
+        help_text="Minimum number of base active jobs regardless of player count",
+    )
+    # Global posting probability multiplier
+    posting_rate_multiplier = models.FloatField(
+        default=1.0,
+        help_text="Global multiplier on posting chance (0.5 = half rate, 2.0 = double rate)",
+    )
+
+    class Meta:
+        verbose_name = "Job Posting Configuration"
+        verbose_name_plural = "Job Posting Configuration"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        pass  # Prevent deletion of singleton
+
+    @classmethod
+    async def aget_config(cls) -> "JobPostingConfig":
+        config, _ = await cls.objects.aget_or_create(pk=1)
+        return config
+
+    def __str__(self):
+        return "Job Posting Configuration"
+
+
+@final
 class MinistryDashboard(models.Model):
     """
     Dummy model to expose the Ministry Dashboard in the Django Admin.

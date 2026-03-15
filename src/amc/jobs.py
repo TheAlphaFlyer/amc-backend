@@ -15,6 +15,7 @@ from amc.models import (
     MinistryTerm,
     Delivery,
     Character,
+    JobPostingConfig,
 )
 from amc.game_server import get_players, announce
 from amc_finance.services import (
@@ -100,6 +101,7 @@ async def cleanup_expired_jobs():
 
 async def monitor_jobs(ctx):
     await cleanup_expired_jobs()
+    config = await JobPostingConfig.aget_config()
     num_active_jobs = await DeliveryJob.objects.filter_active().acount()
     players = await get_players(ctx["http_client"])
     num_players = len(players)
@@ -108,10 +110,17 @@ async def monitor_jobs(ctx):
 
     # Get adaptive multiplier from recent history
     success_rate, _, _ = await get_job_success_rate(hours_lookback=24)
-    adaptive_mult = calculate_adaptive_multiplier(success_rate)
+    adaptive_mult = calculate_adaptive_multiplier(
+        success_rate,
+        target_rate=config.target_success_rate,
+        min_mult=config.min_multiplier,
+        max_mult=config.max_multiplier,
+    )
 
-    # Base formula: 1 job per 10 players, floor of 2
-    base_max_jobs = max(2, 1 + math.ceil(num_players / 10))
+    # Base formula: 1 job per N players, floor of min_base_jobs
+    base_max_jobs = max(
+        config.min_base_jobs, 1 + math.ceil(num_players / config.players_per_job)
+    )
     max_active_jobs = max(1, int(base_max_jobs * adaptive_mult))
 
     if num_active_jobs >= max_active_jobs:
@@ -201,6 +210,7 @@ async def monitor_jobs(ctx):
             * max(10, num_players)
             / 2000
             / (5 + num_active_jobs * 2)
+            * config.posting_rate_multiplier
         )
         if not source_points and not destination_points:
             chance = chance / (24 * 3)
