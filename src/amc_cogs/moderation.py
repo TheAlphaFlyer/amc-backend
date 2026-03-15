@@ -111,7 +111,6 @@ class ModerationCog(commands.Cog):
     admin = app_commands.Group(
         name="admin",
         description="Admin-only commands",
-        default_permissions=discord.Permissions(administrator=True),
     )
 
     admin_teleport = app_commands.Group(
@@ -283,10 +282,14 @@ class ModerationCog(commands.Cog):
             player = await Player.objects.aget(discord_user_id=ctx.user.id)
             target_player = await Player.objects.aget(unique_id=int(player_id))
             target_character = await target_player.get_latest_character()
-            target_character_location = await CharacterLocation.objects.filter(
-                character=target_character,
-            ).alatest("timestamp")
-            location = target_character_location.location
+            if target_character.last_location:
+                location = target_character.last_location
+            else:
+                target_character_location = await CharacterLocation.objects.filter(
+                    character=target_character,
+                    timestamp__gte=timezone.now() - timedelta(hours=1),
+                ).alatest("timestamp")
+                location = target_character_location.location
             await teleport_player(
                 self.bot.event_http_client_mod,
                 player.unique_id,
