@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from django.test import TestCase
 from django.utils import timezone
 from django.contrib.gis.geos import Point
@@ -74,3 +75,51 @@ class InterestTestCase(TestCase):
         await apply_interest_to_bank_accounts({})
         await account.arefresh_from_db()
         self.assertGreater(account.balance, 100)
+
+    async def test_low_balance_full_interest(self):
+        """Balances well below threshold should receive full interest."""
+        character = await sync_to_async(CharacterFactory)()
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=1_000_000,
+        )
+        await apply_interest_to_bank_accounts({})
+        await account.arefresh_from_db()
+        interest = account.balance - 1_000_000
+        self.assertGreater(interest, 0)
+
+    async def test_threshold_balance_full_interest(self):
+        """Balance at exactly the threshold should receive full interest."""
+        character = await sync_to_async(CharacterFactory)()
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=10_000_000,
+        )
+        await apply_interest_to_bank_accounts({})
+        await account.arefresh_from_db()
+        interest = account.balance - 10_000_000
+        # At threshold, multiplier = e^0 = 1.0, so full interest
+        expected_full_interest = 10_000_000 * Decimal("0.022") / Decimal("192")
+        self.assertAlmostEqual(float(interest), float(expected_full_interest), places=0)
+
+    async def test_high_balance_reduced_interest(self):
+        """Balances well above threshold should receive much less interest."""
+        character = await sync_to_async(CharacterFactory)()
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=50_000_000,
+        )
+        await apply_interest_to_bank_accounts({})
+        await account.arefresh_from_db()
+        interest = account.balance - 50_000_000
+        # Flat rate would give: 50M * 0.022/192 ≈ 5729
+        flat_interest = 50_000_000 * Decimal("0.022") / Decimal("192")
+        # With fall-off, interest should be significantly less than flat rate
+        self.assertGreater(interest, 0)
+        self.assertLess(interest, flat_interest * Decimal("0.5"))
