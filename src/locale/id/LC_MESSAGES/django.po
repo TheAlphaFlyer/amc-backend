@@ -470,10 +470,7 @@ msgstr "Minta lagu untuk radio"
 msgid "List available server jobs"
 msgstr "Lihat pekerjaan server yang tersedia"
 
-#: amc/commands/jobs.py:22
-#, python-brace-format
-msgid "<Warning>Requires RP Mode</> (Yours: {status})"
-msgstr "<Warning>Membutuhkan Mode RP</> (Milik Anda: {status})"
+
 
 #: amc/commands/jobs.py:23
 #, python-brace-format
@@ -503,7 +500,6 @@ msgid ""
 "\n"
 "{jobs_str}\n"
 "\n"
-"<Title>RP Mode</>: {rp_status} (/rp_mode)\n"
 "<Title>Subsidies</>: Use /subsidies to view."
 msgstr ""
 "<Title>Pekerjaan Pengiriman</>\n"
@@ -511,7 +507,6 @@ msgstr ""
 "\n"
 "{jobs_str}\n"
 "\n"
-"<Title>Mode RP</>: {rp_status} (/rp_mode)\n"
 "<Title>Subsidi</>: Gunakan /subsidies untuk melihat."
 
 #: amc/commands/jobs.py:46

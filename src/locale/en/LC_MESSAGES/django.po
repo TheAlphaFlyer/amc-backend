@@ -394,10 +394,7 @@ msgstr ""
 msgid "List available server jobs"
 msgstr ""
 
-#: src/amc/commands/jobs.py:22
-#, python-brace-format
-msgid "<Warning>Requires RP Mode</> (Yours: {status})"
-msgstr ""
+
 
 #: src/amc/commands/jobs.py:23
 #, python-brace-format
@@ -417,7 +414,6 @@ msgid ""
 "\n"
 "{jobs_str}\n"
 "\n"
-"<Title>RP Mode</>: {rp_status} (/rp_mode)\n"
 "<Title>Subsidies</>: Use /subsidies to view."
 msgstr ""
 

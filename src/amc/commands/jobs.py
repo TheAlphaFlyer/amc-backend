@@ -52,9 +52,8 @@ async def cmd_jobs(ctx: CommandContext):
 
 {jobs_str}
 
-<Title>RP Mode</>: {rp_status} (/rp_mode)
 <Title>Subsidies</>: Use /subsidies to view.""").format(
-            jobs_str=jobs_str, rp_status="<Warning>OFF</>"
+            jobs_str=jobs_str
         )
     )
 
