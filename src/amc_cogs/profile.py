@@ -195,9 +195,12 @@ class PlayerProfileCog(commands.Cog):
             ("Truck", character.truck_level),
             ("Wrecker", character.wrecker_level),
             ("Racer", character.racer_level),
+            ("Government", character.gov_employee_level),
         ]
         for name, level in level_fields:
             # pyrefly: ignore [bad-argument-type]
+            if name == "Government" and not character.is_gov_employee:
+                continue
             levels.append(f"**{name}:** {level or 0}")
 
         embed.add_field(
