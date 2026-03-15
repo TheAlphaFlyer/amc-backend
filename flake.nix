@@ -303,17 +303,39 @@
                   ensureDBOwnership = true;
                   ensureClauses.superuser = true;
                 }
+                {
+                  name = "amc_bot_reader";
+                  ensureClauses.login = true;
+                }
               ];
+              # Grant SELECT to bot reader + RLS on finance tables
+              # Runs on first DB init only; for existing DBs run sql/setup_bot_reader.sql
+              initialScript = pkgs.writeText "init-bot-reader.sql" ''
+                GRANT USAGE ON SCHEMA public TO amc_bot_reader;
+                GRANT SELECT ON ALL TABLES IN SCHEMA public TO amc_bot_reader;
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO amc_bot_reader;
+
+                ALTER TABLE amc_finance_account ENABLE ROW LEVEL SECURITY;
+                ALTER TABLE amc_finance_ledgerentry ENABLE ROW LEVEL SECURITY;
+                ALTER TABLE amc_finance_journalentry ENABLE ROW LEVEL SECURITY;
+
+                CREATE POLICY bot_deny_account ON amc_finance_account
+                  FOR SELECT TO amc_bot_reader USING (false);
+                CREATE POLICY bot_deny_ledger ON amc_finance_ledgerentry
+                  FOR SELECT TO amc_bot_reader USING (false);
+                CREATE POLICY bot_deny_journal ON amc_finance_journalentry
+                  FOR SELECT TO amc_bot_reader USING (false);
+              '';
               settings = {
                 client_encoding = "UTF8";
                 timezone = "UTC";
-                listen_addresses = pkgs.lib.mkForce "'*'";  # Container-internal; host firewall limits exposure
+                listen_addresses = pkgs.lib.mkForce "*";  # Container-internal; host firewall limits exposure
               };
               authentication = pkgs.lib.mkOverride 10 ''
                 local all all trust
                 host all all ::1/128 trust
                 # Bot read-only access from Tailscale subnet only
-                host amc amc_bot_login 100.64.0.0/10 md5
+                host amc amc_bot_reader 100.64.0.0/10 md5
               '';
             };
             services.redis.servers."amc-backend".enable = true;
