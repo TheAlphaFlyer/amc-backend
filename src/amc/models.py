@@ -2212,6 +2212,15 @@ class JobPostingConfig(models.Model):
         default=1.0,
         help_text="Global multiplier on posting chance (0.5 = half rate, 2.0 = double rate)",
     )
+    # Treasury-driven equilibrium params
+    treasury_equilibrium = models.PositiveBigIntegerField(
+        default=50_000_000,
+        help_text="Treasury balance at which spending is 'normal' (multiplier = 1.0)",
+    )
+    treasury_sensitivity = models.FloatField(
+        default=0.5,
+        help_text="How aggressively spending changes with treasury balance (higher = steeper curve)",
+    )
 
     class Meta:
         verbose_name = "Job Posting Configuration"

@@ -99,6 +99,22 @@ async def cleanup_expired_jobs():
         await process_treasury_expiration_penalty(job)
 
 
+def calculate_treasury_multiplier(
+    balance: float,
+    equilibrium: float = 50_000_000,
+    sensitivity: float = 0.5,
+) -> float:
+    """
+    Sigmoid-based treasury multiplier for self-correcting spending.
+    Returns 0.0–2.0:
+    - At equilibrium balance: ~1.0 (normal spending)
+    - Below equilibrium: < 1.0 (tightens spending)
+    - Above equilibrium: > 1.0 (increases spending)
+    """
+    ratio = balance / max(equilibrium, 1)
+    return 2.0 / (1.0 + math.exp(-sensitivity * (ratio - 1.0)))
+
+
 async def monitor_jobs(ctx):
     await cleanup_expired_jobs()
     config = await JobPostingConfig.aget_config()
@@ -106,7 +122,11 @@ async def monitor_jobs(ctx):
     players = await get_players(ctx["http_client"])
     num_players = len(players)
     treasury_balance = await get_treasury_fund_balance()
-    treasury_health = min(1.0, float(treasury_balance) / 50_000_000)
+    treasury_mult = calculate_treasury_multiplier(
+        float(treasury_balance),
+        equilibrium=float(config.treasury_equilibrium),
+        sensitivity=config.treasury_sensitivity,
+    )
 
     # Get adaptive multiplier from recent history
     success_rate, _, _ = await get_job_success_rate(hours_lookback=24)
@@ -118,10 +138,11 @@ async def monitor_jobs(ctx):
     )
 
     # Base formula: 1 job per N players, floor of min_base_jobs
+    # Treasury multiplier influences how many jobs can be active
     base_max_jobs = max(
         config.min_base_jobs, 1 + math.ceil(num_players / config.players_per_job)
     )
-    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult))
+    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult * treasury_mult))
 
     if num_active_jobs >= max_active_jobs:
         return
@@ -205,12 +226,14 @@ async def monitor_jobs(ctx):
         if not is_destination_empty or not is_source_enough:
             continue
 
+        # Treasury multiplier influences posting probability
         chance = (
             template.job_posting_probability
             * max(10, num_players)
             / 2000
             / (5 + num_active_jobs * 2)
             * config.posting_rate_multiplier
+            * treasury_mult
         )
         if not source_points and not destination_points:
             chance = chance / (24 * 3)
@@ -218,17 +241,18 @@ async def monitor_jobs(ctx):
         if random.random() > chance:
             continue
 
+        # Treasury multiplier influences bonus amounts
         bonus_multiplier = round(
             template.bonus_multiplier * random.uniform(0.8, 1.2), 2
         )
-        bonus_multiplier = bonus_multiplier * treasury_health
+        bonus_multiplier = bonus_multiplier * treasury_mult
         completion_bonus = int(
             template.completion_bonus
             * quantity_requested
             / template.default_quantity
             * random.uniform(0.7, 1.3)
         )
-        completion_bonus = int(treasury_health * completion_bonus)
+        completion_bonus = int(treasury_mult * completion_bonus)
 
         active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
         if active_term:
@@ -237,10 +261,13 @@ async def monitor_jobs(ctx):
             if active_term.current_budget < completion_bonus:
                 continue  # Skip this job if budget is exhausted
 
+        # Treasury multiplier influences job duration
+        duration_hours = template.duration_hours * max(0.5, min(2.0, treasury_mult))
+
         new_job = await DeliveryJob.objects.acreate(
             name=template.name,
             quantity_requested=quantity_requested,
-            expired_at=timezone.now() + timedelta(hours=template.duration_hours),
+            expired_at=timezone.now() + timedelta(hours=duration_hours),
             bonus_multiplier=bonus_multiplier,
             completion_bonus=completion_bonus,
             description=template.description,
