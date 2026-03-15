@@ -70,9 +70,7 @@ class Command(BaseCommand):
         months_to_process = MONTHS
         if target_month:
             months_to_process = [
-                (start, end)
-                for start, end in MONTHS
-                if start.startswith(target_month)
+                (start, end) for start, end in MONTHS if start.startswith(target_month)
             ]
             if not months_to_process:
                 self.stderr.write(
@@ -91,7 +89,7 @@ class Command(BaseCommand):
             # Get the ID range for this month from old table
             with connection.cursor() as cursor:
                 cursor.execute(
-                    'SELECT MIN(id), MAX(id), COUNT(*) FROM amc_characterlocation '
+                    "SELECT MIN(id), MAX(id), COUNT(*) FROM amc_characterlocation "
                     'WHERE "timestamp" >= %s AND "timestamp" < %s',
                     [month_start, month_end],
                 )
@@ -104,7 +102,7 @@ class Command(BaseCommand):
             # Resume: find the max ID already backfilled for this month
             with connection.cursor() as cursor:
                 cursor.execute(
-                    'SELECT MAX(id) FROM amc_characterlocation_new '
+                    "SELECT MAX(id) FROM amc_characterlocation_new "
                     'WHERE "timestamp" >= %s AND "timestamp" < %s',
                     [month_start, month_end],
                 )
@@ -134,11 +132,11 @@ class Command(BaseCommand):
 
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        'INSERT INTO amc_characterlocation_new '
+                        "INSERT INTO amc_characterlocation_new "
                         '(id, "timestamp", character_id, location, vehicle_key) '
                         'SELECT id, "timestamp", character_id, location, vehicle_key '
-                        'FROM amc_characterlocation '
-                        'WHERE id >= %s AND id < %s '
+                        "FROM amc_characterlocation "
+                        "WHERE id >= %s AND id < %s "
                         'AND "timestamp" >= %s AND "timestamp" < %s '
                         'ON CONFLICT ("timestamp", character_id) DO NOTHING',
                         [current_id, batch_end, month_start, month_end],
@@ -163,9 +161,7 @@ class Command(BaseCommand):
                 if sleep_seconds > 0:
                     time.sleep(sleep_seconds)
 
-            self.stdout.write(
-                f"\n  Month complete: {month_copied:,} rows copied."
-            )
+            self.stdout.write(f"\n  Month complete: {month_copied:,} rows copied.")
 
         # Catch-all: copy any remaining rows outside the defined month ranges
         # (goes to the DEFAULT partition)
@@ -177,7 +173,7 @@ class Command(BaseCommand):
             )
             with connection.cursor() as cursor:
                 cursor.execute(
-                    'SELECT MIN(id), MAX(id), COUNT(*) FROM amc_characterlocation '
+                    "SELECT MIN(id), MAX(id), COUNT(*) FROM amc_characterlocation "
                     'WHERE "timestamp" < %s OR "timestamp" >= %s',
                     [MONTHS[0][0], MONTHS[-1][1]],
                 )
@@ -193,11 +189,11 @@ class Command(BaseCommand):
                     batch_end = current_id + batch_size
                     with connection.cursor() as cursor:
                         cursor.execute(
-                            'INSERT INTO amc_characterlocation_new '
+                            "INSERT INTO amc_characterlocation_new "
                             '(id, "timestamp", character_id, location, vehicle_key) '
                             'SELECT id, "timestamp", character_id, location, vehicle_key '
-                            'FROM amc_characterlocation '
-                            'WHERE id >= %s AND id < %s '
+                            "FROM amc_characterlocation "
+                            "WHERE id >= %s AND id < %s "
                             'AND ("timestamp" < %s OR "timestamp" >= %s) '
                             'ON CONFLICT ("timestamp", character_id) DO NOTHING',
                             [current_id, batch_end, MONTHS[0][0], MONTHS[-1][1]],
@@ -217,8 +213,7 @@ class Command(BaseCommand):
         elapsed = time.time() - start_time
         self.stdout.write(
             self.style.SUCCESS(
-                f"\nBackfill complete: {total_copied:,} rows copied "
-                f"in {elapsed:.0f}s."
+                f"\nBackfill complete: {total_copied:,} rows copied in {elapsed:.0f}s."
             )
         )
 

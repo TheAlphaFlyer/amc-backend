@@ -443,9 +443,10 @@ Not everyone likes to be roughed up!
                     import re
 
                     player_display_name = player_info.get("PlayerName", "")
-                    if re.search(
-                        r"\[GOV\d*\]", player_display_name, re.IGNORECASE
-                    ) and not character.is_gov_employee:
+                    if (
+                        re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE)
+                        and not character.is_gov_employee
+                    ):
                         asyncio.create_task(
                             show_popup(
                                 http_client_mod,

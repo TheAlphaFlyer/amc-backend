@@ -18,9 +18,7 @@ class JobPostingConfigTestCase(TestCase):
 
     async def test_aget_config_returns_existing(self):
         """aget_config should return the existing config, not create a new one."""
-        await JobPostingConfig.objects.acreate(
-            pk=1, posting_rate_multiplier=3.0
-        )
+        await JobPostingConfig.objects.acreate(pk=1, posting_rate_multiplier=3.0)
         config = await JobPostingConfig.aget_config()
         self.assertEqual(config.pk, 1)
         self.assertEqual(config.posting_rate_multiplier, 3.0)

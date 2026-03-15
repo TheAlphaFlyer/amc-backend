@@ -190,9 +190,7 @@ class WebhookPipelineTests(TestCase):
     @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
     @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    async def test_on_player_profit_normal(
-        self, mock_savings, mock_loan, mock_subsidy
-    ):
+    async def test_on_player_profit_normal(self, mock_savings, mock_loan, mock_subsidy):
         from amc.webhook import on_player_profit
 
         player = await sync_to_async(PlayerFactory)()
@@ -225,15 +223,17 @@ class JobBonusRedirectionTests(TestCase):
             gov_employee_contributions=0,
         )
 
-        job = await sync_to_async(lambda: DeliveryJob.objects.create(
-            name="Test Job",
-            cargo_key="test_cargo",
-            quantity_requested=10,
-            quantity_fulfilled=10,
-            bonus_multiplier=1.0,
-            completion_bonus=50000,
-            expired_at=timezone.now() + timedelta(hours=2),
-        ))()
+        job = await sync_to_async(
+            lambda: DeliveryJob.objects.create(
+                name="Test Job",
+                cargo_key="test_cargo",
+                quantity_requested=10,
+                quantity_fulfilled=10,
+                bonus_multiplier=1.0,
+                completion_bonus=50000,
+                expired_at=timezone.now() + timedelta(hours=2),
+            )
+        )()
 
         await Delivery.objects.acreate(
             timestamp=timezone.now(),
@@ -397,3 +397,60 @@ class IsGovEmployeePropertyTests(TestCase):
             gov_employee_until=None,
         )
         self.assertFalse(character.is_gov_employee)
+
+
+class DailyGovEmployeeSummaryTaskTests(TestCase):
+    async def test_build_daily_gov_employee_embed(self):
+        from amc_cogs.economy import EconomyCog
+        from amc.gov_employee import player_donation
+
+        # Create two gov employees and one normal character
+        player1 = await sync_to_async(PlayerFactory)()
+        char1 = await sync_to_async(CharacterFactory)(
+            player=player1,
+            name="Alice",
+            gov_employee_level=3,
+        )
+
+        player2 = await sync_to_async(PlayerFactory)()
+        char2 = await sync_to_async(CharacterFactory)(
+            player=player2,
+            name="Bob",
+            gov_employee_level=1,
+        )
+
+        player3 = await sync_to_async(PlayerFactory)()
+        char_normal = await sync_to_async(CharacterFactory)(
+            player=player3,
+            name="Charlie",
+        )
+
+        # Alice earns 15k and gets a 5k job bonus
+        await player_donation(15000, char1, description="Government Service - Earnings")
+        await player_donation(5000, char1, description="Government Service - Job Bonus")
+
+        # Bob earns 8k
+        await player_donation(8000, char2, description="Government Service - Earnings")
+
+        # Charlie donates 100k normally to treasury (should NOT be in the gov summary)
+        await player_donation(100000, char_normal, description="Player Donation")
+
+        # Build the embed
+        bot_mock = MagicMock()
+        cog = EconomyCog(bot=bot_mock)
+        embed = await cog.build_daily_gov_employee_embed()
+
+        # Assertions
+        self.assertEqual(embed.title, "🏛️ Daily Government Employee Report")
+
+        # Total amount treasury raised (15k + 5k + 8k = 28k) -> Charlie's 100k shouldn't be here
+        first_field = embed.fields[0]
+        self.assertIn("28,000", first_field.name)
+        self.assertIn("From **2** active civil servant", first_field.value)
+
+        # Top Contributors breakdown
+        second_field = embed.fields[1]
+        self.assertEqual(second_field.name, "Top Contributors")
+        self.assertIn("**[GOV3] Alice:** `20,000.00`", second_field.value)
+        self.assertIn("**[GOV1] Bob:** `8,000.00`", second_field.value)
+        self.assertNotIn("Charlie", second_field.value)

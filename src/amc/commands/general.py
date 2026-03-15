@@ -190,7 +190,10 @@ async def cmd_rename(ctx: CommandContext, name: str):
     # Block [GOV] tag for non-government-employees
     import re
 
-    if re.search(r"\[GOV\d*\]", name, re.IGNORECASE) and not ctx.character.is_gov_employee:
+    if (
+        re.search(r"\[GOV\d*\]", name, re.IGNORECASE)
+        and not ctx.character.is_gov_employee
+    ):
         await ctx.reply("The [GOV] tag is reserved for government employees")
         return
     # RP Logic

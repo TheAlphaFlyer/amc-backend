@@ -658,8 +658,6 @@ async def process_event(
     current_tz = timezone.get_current_timezone()
     timestamp = timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
 
-
-
     match event["hook"]:
         case "ServerCargoArrived":
             payment, subsidy = await handle_cargo_arrived(

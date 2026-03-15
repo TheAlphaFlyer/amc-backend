@@ -32,9 +32,7 @@ async def activate_gov_role(character, session):
     level = calculate_gov_level(character.gov_employee_contributions)
     character.gov_employee_until = timezone.now() + GOV_ROLE_DURATION
     character.gov_employee_level = level
-    await character.asave(
-        update_fields=["gov_employee_until", "gov_employee_level"]
-    )
+    await character.asave(update_fields=["gov_employee_until", "gov_employee_level"])
 
     gov_name = make_gov_name(character.name, level)
     character.custom_name = gov_name
@@ -67,18 +65,14 @@ async def redirect_income_to_treasury(amount, character, description):
     This reuses the player_donation accounting pattern (credits Treasury Revenue,
     debits Treasury Fund) and additionally tracks gov-specific contributions.
     """
-    await player_donation(int(amount), character)
+    await player_donation(int(amount), character, description=description)
 
     # Atomically increment contributions
-    character.gov_employee_contributions = (
-        F("gov_employee_contributions") + int(amount)
-    )
+    character.gov_employee_contributions = F("gov_employee_contributions") + int(amount)
     await character.asave(update_fields=["gov_employee_contributions"])
 
     # Refresh to get actual DB value, then recalculate level
-    await character.arefresh_from_db(
-        fields=["gov_employee_contributions"]
-    )
+    await character.arefresh_from_db(fields=["gov_employee_contributions"])
     new_level = calculate_gov_level(character.gov_employee_contributions)
     if new_level != character.gov_employee_level:
         character.gov_employee_level = new_level
@@ -103,4 +97,3 @@ async def expire_gov_employees(ctx):
             logging.getLogger(__name__).exception(
                 f"Error expiring gov role for {character}: {e}"
             )
-

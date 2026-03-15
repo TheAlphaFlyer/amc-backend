@@ -336,7 +336,7 @@ async def register_player_repay_loan(amount, character):
     )
 
 
-async def player_donation(amount, character):
+async def player_donation(amount, character, description="Player Donation"):
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
         book=Account.Book.GOVERNMENT,
@@ -352,7 +352,7 @@ async def player_donation(amount, character):
 
     await sync_to_async(create_journal_entry, thread_sensitive=True)(
         timezone.now(),
-        "Player Donation",
+        description,
         character,
         [
             {

@@ -367,12 +367,30 @@ class JobsCog(commands.Cog):
     )
     @app_commands.choices(
         param=[
-            app_commands.Choice(name="Target Success Rate – completion % to aim for (0.0-1.0)", value="target_success_rate"),
-            app_commands.Choice(name="Min Multiplier – lowest scaling when jobs expire too often", value="min_multiplier"),
-            app_commands.Choice(name="Max Multiplier – highest scaling when jobs are completed fast", value="max_multiplier"),
-            app_commands.Choice(name="Players per Job – base ratio, 1 job slot per N players", value="players_per_job"),
-            app_commands.Choice(name="Min Base Jobs – minimum job slots regardless of player count", value="min_base_jobs"),
-            app_commands.Choice(name="Posting Rate – global chance multiplier (0.5=half, 2.0=double)", value="posting_rate_multiplier"),
+            app_commands.Choice(
+                name="Target Success Rate – completion % to aim for (0.0-1.0)",
+                value="target_success_rate",
+            ),
+            app_commands.Choice(
+                name="Min Multiplier – lowest scaling when jobs expire too often",
+                value="min_multiplier",
+            ),
+            app_commands.Choice(
+                name="Max Multiplier – highest scaling when jobs are completed fast",
+                value="max_multiplier",
+            ),
+            app_commands.Choice(
+                name="Players per Job – base ratio, 1 job slot per N players",
+                value="players_per_job",
+            ),
+            app_commands.Choice(
+                name="Min Base Jobs – minimum job slots regardless of player count",
+                value="min_base_jobs",
+            ),
+            app_commands.Choice(
+                name="Posting Rate – global chance multiplier (0.5=half, 2.0=double)",
+                value="posting_rate_multiplier",
+            ),
         ]
     )
     async def set_job_config(

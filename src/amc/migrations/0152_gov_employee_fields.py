@@ -4,25 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0151_character_total_donations'),
+        ("amc", "0151_character_total_donations"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='gov_employee_contributions',
+            model_name="character",
+            name="gov_employee_contributions",
             field=models.PositiveBigIntegerField(default=0),
         ),
         migrations.AddField(
-            model_name='character',
-            name='gov_employee_level',
+            model_name="character",
+            name="gov_employee_level",
             field=models.PositiveIntegerField(default=0),
         ),
         migrations.AddField(
-            model_name='character',
-            name='gov_employee_until',
+            model_name="character",
+            name="gov_employee_until",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

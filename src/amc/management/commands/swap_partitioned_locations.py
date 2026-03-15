@@ -38,8 +38,7 @@ class Command(BaseCommand):
 
             # Check trigger is active (dual-write is working)
             cursor.execute(
-                "SELECT 1 FROM pg_trigger "
-                "WHERE tgname = 'charloc_dual_write_trigger'"
+                "SELECT 1 FROM pg_trigger WHERE tgname = 'charloc_dual_write_trigger'"
             )
             if not cursor.fetchone():
                 self.stderr.write(
@@ -72,9 +71,7 @@ class Command(BaseCommand):
 
         # Check newest row in new table is recent (trigger is working)
         with connection.cursor() as cursor:
-            cursor.execute(
-                'SELECT MAX("timestamp") FROM amc_characterlocation_new'
-            )
+            cursor.execute('SELECT MAX("timestamp") FROM amc_characterlocation_new')
             newest = cursor.fetchone()[0]
 
         if newest:
@@ -120,16 +117,14 @@ class Command(BaseCommand):
 
                 # Rename indexes to expected names
                 cursor.execute(
-                    "ALTER INDEX charloc_new_char_ts_idx "
-                    "RENAME TO charloc_char_ts_idx;"
+                    "ALTER INDEX charloc_new_char_ts_idx RENAME TO charloc_char_ts_idx;"
                 )
                 cursor.execute(
                     "ALTER INDEX unique_character_location_new "
                     "RENAME TO unique_character_location;"
                 )
                 cursor.execute(
-                    "ALTER INDEX pk_charloc_new "
-                    "RENAME TO amc_characterlocation_pkey;"
+                    "ALTER INDEX pk_charloc_new RENAME TO amc_characterlocation_pkey;"
                 )
 
                 # Rename FK constraint

@@ -35,7 +35,7 @@ CREATE TABLE amc_characterlocation_new (
     # 2. Create monthly partitions
     for suffix, start, end in MONTHS:
         parts.append(
-            f'CREATE TABLE amc_charloc_p{suffix} PARTITION OF amc_characterlocation_new '
+            f"CREATE TABLE amc_charloc_p{suffix} PARTITION OF amc_characterlocation_new "
             f"FOR VALUES FROM ('{start}') TO ('{end}');"
         )
 
@@ -47,7 +47,7 @@ CREATE TABLE amc_characterlocation_new (
 
     # 3. Create indexes (auto-inherited by partitions)
     parts.append(
-        'CREATE INDEX charloc_new_char_ts_idx '
+        "CREATE INDEX charloc_new_char_ts_idx "
         'ON amc_characterlocation_new (character_id, "timestamp" DESC);'
     )
 

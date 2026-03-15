@@ -43,8 +43,7 @@ async def monitor_deliverypoints(ctx):
     # Prefetch all existing delivery points in one query
     api_guids = {dp_info["guid"].lower() for dp_info in dps_data.values()}
     existing_dps = {
-        dp.guid: dp
-        async for dp in DeliveryPoint.objects.filter(guid__in=api_guids)
+        dp.guid: dp async for dp in DeliveryPoint.objects.filter(guid__in=api_guids)
     }
 
     seen_guids = set()

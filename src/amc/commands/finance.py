@@ -437,4 +437,3 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
     await ctx.announce(
         f"{character.name} is now working as a Government Employee (GOV{character.gov_employee_level})!"
     )
-

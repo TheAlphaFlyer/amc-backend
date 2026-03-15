@@ -101,6 +101,7 @@ class EconomyCog(commands.Cog):
     async def cog_load(self):
         self.daily_top_haulers_task.start()
         self.weekly_donations_task.start()
+        self.daily_gov_employee_summary_task.start()
 
     @tasks.loop(time=dt_time(hour=2, minute=0, tzinfo=dt_timezone.utc))
     async def daily_top_haulers_task(self):
@@ -108,6 +109,81 @@ class EconomyCog(commands.Cog):
         general_channel = self.bot.get_channel(self.general_channel_id)
         if general_channel:
             await general_channel.send(embed=embed)
+
+    @tasks.loop(time=dt_time(hour=2, minute=0, tzinfo=dt_timezone.utc))
+    async def daily_gov_employee_summary_task(self):
+        embed = await self.build_daily_gov_employee_embed()
+        treasury_channel_id = getattr(
+            settings, "DISCORD_TREASURY_CHANNEL_ID", 1402660537619320872
+        )
+        treasury_channel = self.bot.get_channel(treasury_channel_id)
+        if treasury_channel:
+            sent_message = await treasury_channel.send(embed=embed)
+            # Forward to #general
+            general_channel = self.bot.get_channel(self.general_channel_id)
+            if general_channel:
+                await sent_message.forward(general_channel)
+
+    async def build_daily_gov_employee_embed(self):
+        now = timezone.now()
+        yesterday = now - timedelta(days=1)
+
+        # Filter for Government Service transactions (income + job bonus)
+        gov_contributions = (
+            LedgerEntry.objects.filter_donations()
+            .filter(
+                journal_entry__created_at__gte=yesterday,
+                journal_entry__created_at__lte=now,
+                journal_entry__description__startswith="Government Service",
+            )
+            .select_related("journal_entry", "journal_entry__creator")
+            .values("journal_entry__creator")
+            .annotate(
+                total=Sum("credit"),
+                name=F("journal_entry__creator__name"),
+                level=F("journal_entry__creator__gov_employee_level"),
+            )
+            .order_by("-total")
+            .exclude(total=0)
+        )
+
+        contributors_list = []
+        total_raised = Decimal(0)
+        num_employees = 0
+
+        async for row in gov_contributions:
+            num_employees += 1
+            total_raised += row["total"]
+            level_str = (
+                f"[GOV{row['level']}] " if row["level"] and row["level"] > 0 else ""
+            )
+            contributors_list.append(
+                f"**{level_str}{row['name']}:** `{row['total']:,}`"
+            )
+
+        contributors_str = (
+            "\n".join(contributors_list)
+            if contributors_list
+            else "No government service income registered."
+        )
+
+        embed = discord.Embed(
+            title="🏛️ Daily Government Employee Report",
+            description=f"Generated for {yesterday.strftime('%A, %-d %B %Y')}",
+            color=discord.Color.blue(),
+            timestamp=now,
+        )
+        embed.add_field(
+            name=f"Total Amount Treasury Raised: `{total_raised:,}`",
+            value=f"From **{num_employees}** active civil servant{'s' if num_employees != 1 else ''} today.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Top Contributors",
+            value=contributors_str,
+            inline=False,
+        )
+        return embed
 
     @tasks.loop(time=dt_time(hour=8, minute=0, tzinfo=dt_timezone.utc))
     async def weekly_donations_task(self):

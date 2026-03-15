@@ -1220,7 +1220,9 @@ class DeliveryPointStorageQuerySet(models.QuerySet):
 
 @final
 class DeliveryPointStorageManager(
-    models.Manager.from_queryset(DeliveryPointStorageQuerySet)  # pyrefly: ignore [invalid-inheritance]
+    models.Manager.from_queryset(
+        DeliveryPointStorageQuerySet
+    )  # pyrefly: ignore [invalid-inheritance]
 ):  # type: ignore[misc]
     pass
 
@@ -1531,7 +1533,9 @@ class DeliveryJobTemplateQuerySet(models.QuerySet):
 
 @final
 class DeliveryJobTemplateManager(
-    models.Manager.from_queryset(DeliveryJobTemplateQuerySet)  # pyrefly: ignore [invalid-inheritance]
+    models.Manager.from_queryset(
+        DeliveryJobTemplateQuerySet
+    )  # pyrefly: ignore [invalid-inheritance]
 ):  # type: ignore[misc]
     pass
 
