@@ -25,8 +25,6 @@ async def get_subsidies_text():
         else:
             reward_str = f"{int(rule.reward_value)} coins"
 
-        if rule.scales_with_damage:
-            reward_str += " (Reduces with damage)"
         if rule.requires_on_time:
             reward_str += " (Must be on time)"
 
@@ -239,10 +237,7 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
         factor = float(best_rule.reward_value)
         if best_rule.reward_type == SubsidyRule.RewardType.PERCENTAGE:
             subsidy_factor = factor
-            # Scale with damage
-            if best_rule.scales_with_damage:
-                damage = cargo.damage if cargo.damage is not None else 0.0
-                subsidy_factor *= 1.0 - damage
+
 
             subsidy_amount = int(int(cargo.payment) * subsidy_factor)
         else:
