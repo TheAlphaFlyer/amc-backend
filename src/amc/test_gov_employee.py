@@ -177,15 +177,15 @@ class WebhookPipelineTests(TestCase):
 
         session = MagicMock()
         # total_subsidy=5000 (cargo subsidy, never deposited to wallet)
-        # total_payment=15000 (deposited by game server)
+        # total_payment=15000 (already includes subsidy; game deposited 10000)
         await on_player_profit(character, 5000, 15000, session)
 
-        # Should confiscate only total_payment (what the game server deposited)
+        # Should confiscate only base_payment (total_payment - total_subsidy = 10000)
         mock_transfer.assert_awaited_once()
         call_args = mock_transfer.call_args
-        self.assertEqual(call_args[0][1], -15000)
+        self.assertEqual(call_args[0][1], -10000)
 
-        # Should redirect only payment (15000) — subsidy was never in wallet
+        # Should redirect total economic value (15000, including subsidy) to treasury
         mock_donation.assert_awaited_once()
         donation_amount = mock_donation.call_args[0][0]
         self.assertEqual(donation_amount, 15000)

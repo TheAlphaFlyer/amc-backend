@@ -54,21 +54,22 @@ async def on_player_profit(
         total_subsidy = 0
 
     if character.is_gov_employee:
-        # Confiscate earnings from wallet → treasury.
-        # total_payment is what the game server deposited into the wallet.
-        # total_subsidy is never deposited, so it must NOT count as contribution.
+        # total_payment already includes total_subsidy (baked in by process_event).
+        # The game server only deposited the base amount into the wallet.
+        # We must only confiscate what the game actually deposited.
+        base_payment = total_payment - total_subsidy
         if total_payment > 0:
             from amc.gov_employee import redirect_income_to_treasury
 
-            # Confiscate what the game server deposited into the wallet
-            await transfer_money(
-                session,
-                int(-total_payment),
-                "Government Service",
-                str(character.player.unique_id),
-            )
-            # Record only actual earnings as treasury contribution
-            # Subsidies are excluded — they were never deposited to the wallet
+            # Confiscate only what the game server deposited into the wallet
+            if base_payment > 0:
+                await transfer_money(
+                    session,
+                    int(-base_payment),
+                    "Government Service",
+                    str(character.player.unique_id),
+                )
+            # Record full economic value (including subsidy) as contribution
             await redirect_income_to_treasury(
                 total_payment,
                 character,
