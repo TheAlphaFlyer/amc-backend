@@ -1387,6 +1387,8 @@ class PolicePatrolLog(models.Model):
         Player, on_delete=models.SET_NULL, null=True, related_name="police_patrols"
     )
     patrol_point_id = models.IntegerField()
+    base_payment = models.IntegerField(default=0)
+    area_bonus_payment = models.IntegerField(default=0)
     data = models.JSONField(null=True, blank=True)
 
 

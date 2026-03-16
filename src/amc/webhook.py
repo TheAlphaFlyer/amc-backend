@@ -11,7 +11,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money
+from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -315,12 +315,23 @@ async def handle_tow_request(event, player, timestamp):
     return payment, subsidy
 
 
-async def handle_patrol_arrived(event, player, timestamp):
+async def handle_patrol_arrived(event, player, timestamp, http_client_mod=None):
     patrol_point_id = event["data"].get("PatrolPointId", 0)
+    base_payment = 0
+    area_bonus_payment = 0
+
+    if http_client_mod:
+        payments = await get_patrol_point_payments(http_client_mod)
+        if patrol_point_id in payments:
+            base_payment = payments[patrol_point_id]["BasePayment"]
+            area_bonus_payment = payments[patrol_point_id]["AreaBonusPayment"]
+
     await PolicePatrolLog.objects.acreate(
         timestamp=timestamp,
         player=player,
         patrol_point_id=patrol_point_id,
+        base_payment=base_payment,
+        area_bonus_payment=area_bonus_payment,
         data=event.get("data"),
     )
     return 0, 0
@@ -759,7 +770,7 @@ async def process_event(
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
 
         case "ServerArrivedAtPolicePatrolPoint":
-            await handle_patrol_arrived(event, player, timestamp)
+            await handle_patrol_arrived(event, player, timestamp, http_client_mod)
 
         case "ServerSelectPolicePullOverPenaltyResponse":
             await handle_police_penalty(event, player, timestamp)

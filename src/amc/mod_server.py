@@ -200,6 +200,40 @@ async def get_rp_mode(session, player_id):
     return False
 
 
+_patrol_payments_cache: dict = {}
+_patrol_payments_cache_ts: float = 0
+
+
+async def get_patrol_point_payments(session, cache_ttl=300):
+    """Fetch patrol point payment data from the mod server, cached for cache_ttl seconds."""
+    import time
+
+    global _patrol_payments_cache, _patrol_payments_cache_ts
+    now = time.monotonic()
+    if _patrol_payments_cache and (now - _patrol_payments_cache_ts) < cache_ttl:
+        return _patrol_payments_cache
+
+    try:
+        async with session.get("/police/patrol_areas", timeout=FAST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return _patrol_payments_cache
+            data = await resp.json()
+    except Exception:
+        return _patrol_payments_cache
+
+    payments = {}
+    for area in data.get("data", []):
+        for pt in area.get("Points", []):
+            payments[pt["PatrolPointId"]] = {
+                "BasePayment": pt.get("BasePayment", 0),
+                "AreaBonusPayment": pt.get("AreaBonusPayment", 0),
+            }
+
+    _patrol_payments_cache = payments
+    _patrol_payments_cache_ts = now
+    return payments
+
+
 async def get_decal(session, player_id):
     async with session.get(f"/player_vehicles/{player_id}/decal") as resp:
         if resp.status != 200:
