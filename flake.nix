@@ -381,7 +381,7 @@
                 ALLOWED_HOSTS = lib.strings.concatStringsSep " " cfg.allowedHosts;
                 DJANGO_SETTINGS_MODULE = "amc_backend.settings";
               } // cfg.environment;
-              restartIfChanged = true;
+              restartIfChanged = false;
               serviceConfig = {
                 Type = "simple";
                 User = cfg.user;
@@ -407,7 +407,7 @@
                 inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
                 DJANGO_SETTINGS_MODULE = "amc_backend.settings";
               } // cfg.environment;
-              restartIfChanged = true;
+              restartIfChanged = false;
               serviceConfig = {
                 Type = "simple";
                 User = cfg.user;
