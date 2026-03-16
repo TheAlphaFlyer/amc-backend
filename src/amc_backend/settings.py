@@ -224,6 +224,8 @@ EVENT_MOD_SERVER_API_URL = os.environ.get(
 )
 
 REDIS_SETTINGS = {}
+if redis_port := os.environ.get("REDIS_PORT"):
+    REDIS_SETTINGS["port"] = int(redis_port)
 
 # Discord settings
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
