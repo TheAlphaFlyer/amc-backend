@@ -38,7 +38,7 @@ async def activate_gov_role(character, session):
     character.custom_name = gov_name
     await character.asave(update_fields=["custom_name"])
 
-    if session:
+    if session and character.guid:
         await set_character_name(session, character.guid, gov_name)
 
 
@@ -53,7 +53,7 @@ async def deactivate_gov_role(character, session):
         character.custom_name = original_name
     await character.asave(update_fields=["gov_employee_until", "custom_name"])
 
-    if session:
+    if session and character.guid:
         await set_character_name(
             session, character.guid, original_name or character.name
         )
@@ -92,7 +92,7 @@ async def redirect_income_to_treasury(
         character.custom_name = gov_name
         await character.asave(update_fields=["custom_name"])
 
-        if session:
+        if session and character.guid:
             await set_character_name(session, character.guid, gov_name)
 
         if http_client:
