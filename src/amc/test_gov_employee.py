@@ -194,6 +194,40 @@ class WebhookPipelineTests(TestCase):
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 15000)
 
+    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
+    async def test_on_player_profit_gov_contract_burned(
+        self, mock_donation, mock_transfer
+    ):
+        """Contract payment is burned: confiscated from wallet but not deposited to treasury."""
+        from amc.webhook import on_player_profit
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            gov_employee_until=timezone.now() + timedelta(hours=12),
+            gov_employee_level=1,
+            gov_employee_contributions=0,
+        )
+
+        session = MagicMock()
+        # total_subsidy=5000, total_payment=15000 (base=10000), contract=3000
+        await on_player_profit(
+            character, 5000, 15000, session, contract_payment=3000
+        )
+
+        # Wallet confiscation = base_payment + contract = 10000 + 3000 = 13000
+        mock_transfer.assert_awaited_once()
+        self.assertEqual(mock_transfer.call_args[0][1], -13000)
+
+        # Ledger records only base_payment (10000), contract burned
+        mock_donation.assert_awaited_once()
+        self.assertEqual(mock_donation.call_args[0][0], 10000)
+
+        # Contribution tracks total_payment (15000), excludes contract
+        await character.arefresh_from_db()
+        self.assertEqual(character.gov_employee_contributions, 15000)
+
     @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
     @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)

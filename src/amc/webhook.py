@@ -41,14 +41,16 @@ from amc.locations import gwangjin_shortcut
 
 
 async def on_player_profits(player_profits, session, http_client=None):
-    for character, total_subsidy, total_payment in player_profits:
+    for character, total_subsidy, total_payment, contract_payment in player_profits:
         await on_player_profit(
-            character, total_subsidy, total_payment, session, http_client
+            character, total_subsidy, total_payment, session, http_client,
+            contract_payment=contract_payment,
         )
 
 
 async def on_player_profit(
-    character, total_subsidy, total_payment, session, http_client=None
+    character, total_subsidy, total_payment, session, http_client=None,
+    contract_payment=0,
 ):
     if character.reject_ubi:
         total_subsidy = 0
@@ -58,27 +60,29 @@ async def on_player_profit(
         # The game server only deposited the base amount into the wallet.
         # We must only confiscate what the game actually deposited.
         base_payment = total_payment - total_subsidy
-        if total_payment > 0:
+        # Total wallet confiscation: base earnings + contract payment (burned)
+        wallet_confiscation = base_payment + contract_payment
+        if wallet_confiscation > 0:
             from amc.gov_employee import redirect_income_to_treasury
 
-            # Confiscate only what the game server deposited into the wallet
-            if base_payment > 0:
-                await transfer_money(
-                    session,
-                    int(-base_payment),
-                    "Government Service",
-                    str(character.player.unique_id),
-                )
-            # Ledger: base_payment (real money confiscated)
-            # Contribution: total_payment (includes subsidy for level progression)
-            await redirect_income_to_treasury(
-                base_payment,
-                character,
-                "Government Service – Earnings",
-                http_client=http_client,
-                session=session,
-                contribution=total_payment,
+            await transfer_money(
+                session,
+                int(-wallet_confiscation),
+                "Government Service",
+                str(character.player.unique_id),
             )
+            # Ledger: only base_payment (real earnings, excludes burned contracts)
+            # Contribution: total_payment (includes subsidy for level progression)
+            # Contract payment is burned — not deposited to treasury or contribution
+            if base_payment > 0:
+                await redirect_income_to_treasury(
+                    base_payment,
+                    character,
+                    "Government Service – Earnings",
+                    http_client=http_client,
+                    session=session,
+                    contribution=total_payment,
+                )
         # Skip subsidy payment, loan repayment, and savings
         return
 
@@ -539,6 +543,7 @@ async def process_events(
 
         total_payment = 0
         total_subsidy = 0
+        total_contract_payment = 0
 
         is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
         used_shortcut = (
@@ -548,7 +553,7 @@ async def process_events(
 
         for event in es:
             try:
-                payment, subsidy = await process_event(
+                payment, subsidy, contract_pay = await process_event(
                     event,
                     player,
                     character,
@@ -562,6 +567,7 @@ async def process_events(
                 )
                 total_payment += payment
                 total_subsidy += subsidy
+                total_contract_payment += contract_pay
             except Exception as e:
                 event_str = json.dumps(event)
                 asyncio.create_task(
@@ -577,7 +583,7 @@ async def process_events(
             total_payment -= total_subsidy
             total_subsidy = 0
 
-        player_profits.append((character, total_subsidy, total_payment))
+        player_profits.append((character, total_subsidy, total_payment, total_contract_payment))
 
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
@@ -669,6 +675,7 @@ async def process_event(
     print(event)
     total_payment = 0
     subsidy = 0
+    contract_payment = 0
     current_tz = timezone.get_current_timezone()
     timestamp = timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
 
@@ -697,7 +704,7 @@ async def process_event(
 
         case "ServerContractCargoDelivered":
             payment, _ = await handle_contract_delivered(event, player, timestamp)
-            total_payment += payment
+            contract_payment += payment
 
         case "ServerPassengerArrived":
             payment, subsidy = await handle_passenger_arrived(event, player, timestamp)
@@ -710,4 +717,4 @@ async def process_event(
         case "ServerResetVehicleAt":
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
 
-    return total_payment, subsidy
+    return total_payment, subsidy, contract_payment

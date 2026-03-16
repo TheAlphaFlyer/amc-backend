@@ -69,7 +69,7 @@ class ProcessEventTests(TestCase):
                 "CharacterGuid": str(character.guid),
             },
         }
-        payment, subsidy = await process_event(event, player, character)
+        payment, subsidy, _ = await process_event(event, player, character)
         self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 1)
         delivery = await ServerCargoArrivedLog.objects.select_related(
             "player", "sender_point", "destination_point"
@@ -109,7 +109,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy = await process_event(event, player, character)
+        payment, subsidy, _ = await process_event(event, player, character)
         self.assertEqual(await ServerPassengerArrivedLog.objects.acount(), 1)
         log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
@@ -137,7 +137,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy = await process_event(event, player, character)
+        payment, subsidy, _ = await process_event(event, player, character)
         self.assertEqual(await ServerTowRequestArrivedLog.objects.acount(), 1)
         log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
@@ -181,7 +181,7 @@ class ProcessEventTests(TestCase):
             },
         }
 
-        payment, subsidy = await process_event(
+        payment, subsidy, _ = await process_event(
             event, player, character, is_rp_mode=True, treasury_balance=100_000
         )
 
@@ -536,7 +536,7 @@ class ExtraWebhookTests(TestCase):
 
         # get_subsidy_for_cargo usually returns some subsidy.
         # Let's ensure it would have a subsidy usually.
-        payment, subsidy = await process_event(event, player, character)
+        payment, subsidy, _ = await process_event(event, player, character)
 
         # With shortcut used, subsidy should be 0 and payment should not include it
         self.assertEqual(subsidy, 0)
@@ -567,8 +567,8 @@ class ExtraWebhookTests(TestCase):
             await asyncio.sleep(0)
             player_profits = mock_profits.call_args[0][0]
 
-        # player_profits format: (character, total_subsidy, total_payment)
-        char, total_subsidy, total_payment = player_profits[0]
+        # player_profits format: (character, total_subsidy, total_payment, contract_payment)
+        char, total_subsidy, total_payment, _ = player_profits[0]
         self.assertEqual(total_subsidy, 0)
 
     async def test_cargo_dumped(
