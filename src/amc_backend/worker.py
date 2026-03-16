@@ -13,7 +13,7 @@ import amc.tasks as tasks_module  # noqa: E402
 from necesse.tasks import process_necesse_log  # noqa: E402
 from amc.events import monitor_events, send_event_embeds  # noqa: E402
 from amc.locations import monitor_locations  # noqa: E402
-from amc.webhook import monitor_webhook, monitor_webhook_test  # noqa: E402
+from amc.webhook import monitor_webhook  # noqa: E402
 from amc.ubi import handout_ubi, TASK_FREQUENCY as UBI_TASK_FREQUENCY  # noqa: E402
 from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
 from amc.jobs import monitor_jobs  # noqa: E402
@@ -68,15 +68,7 @@ async def startup(ctx):
     ctx["http_client_event_mod"] = aiohttp.ClientSession(
         base_url=settings.EVENT_MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
     )
-    ctx["http_client_test"] = aiohttp.ClientSession(
-        base_url=settings.TEST_GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
-    )
-    ctx["http_client_test_mod"] = aiohttp.ClientSession(
-        base_url=settings.TEST_MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
-    )
-    ctx["http_client_test_webhook"] = aiohttp.ClientSession(
-        base_url=settings.TEST_WEBHOOK_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
-    )
+
 
     if settings.DISCORD_TOKEN:
         ctx["discord_client"] = discord_client
@@ -101,14 +93,7 @@ async def shutdown(ctx):
     if http_client := ctx.get("http_client_event_mod"):
         await http_client.close()
 
-    if http_client := ctx.get("http_client_test"):
-        await http_client.close()
 
-    if http_client := ctx.get("http_client_test_mod"):
-        await http_client.close()
-
-    if http_client := ctx.get("http_client_test_webhook"):
-        await http_client.close()
 
     if bot_task_handle and (discord_client := ctx.get("discord_client")):
         asyncio.run_coroutine_threadsafe(discord_client.close(), discord_client.loop)
@@ -135,8 +120,6 @@ class WorkerSettings:
     cron_jobs = [
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_webhook, second=set(range(0, 60, 4))),
-        # pyrefly: ignore [bad-argument-type]
-        cron(monitor_webhook_test, second=set(range(0, 60, 4))),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_locations, second=None),
         # pyrefly: ignore [bad-argument-type]

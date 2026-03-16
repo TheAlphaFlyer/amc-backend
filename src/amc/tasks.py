@@ -139,7 +139,7 @@ async def aget_or_create_character(
     return (character, player, character_created, player_info)
 
 
-async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=10):
+async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=20):
     """Retry GUID resolution from the mod server. Returns (character_guid, player_info) or (None, None)."""
     for i in range(max_attempts):
         try:
@@ -148,13 +148,13 @@ async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=10
                 guid = player_info.get("CharacterGuid")
                 if guid and guid != Character.INVALID_GUID:
                     return guid, player_info
-            await asyncio.sleep(1)
+            await asyncio.sleep(min(1 + i, 5))
         except Exception as e:
             logger.exception(
                 f"Failed to fetch player info for {player_name} ({player_id}): {e}"
             )
             return None, None
-    logger.warning(f"GUID not resolved after {max_attempts} attempts for {player_name}")
+    logger.warning(f"GUID not resolved after {max_attempts} attempts for {player_name} ({player_id})")
     return None, None
 
 
@@ -799,9 +799,6 @@ async def process_log_line(ctx, line):
         case "motortown-server-event":
             http_client = ctx.get("http_client_event")
             http_client_mod = ctx.get("http_client_event_mod")
-        case "motortown-server-test":
-            http_client = ctx.get("http_client_test")
-            http_client_mod = ctx.get("http_client_test_mod")
         case _:
             http_client = ctx.get("http_client")
             http_client_mod = ctx.get("http_client_mod")

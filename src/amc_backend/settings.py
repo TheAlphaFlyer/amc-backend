@@ -222,15 +222,7 @@ EVENT_GAME_SERVER_API_URL = os.environ.get(
 EVENT_MOD_SERVER_API_URL = os.environ.get(
     "EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011"
 )
-TEST_GAME_SERVER_API_URL = os.environ.get(
-    "TEST_GAME_SERVER_API_URL", "http://127.0.0.1:8081"
-)
-TEST_MOD_SERVER_API_URL = os.environ.get(
-    "TEST_MOD_SERVER_API_URL", "http://127.0.0.1:55001"
-)
-TEST_WEBHOOK_SERVER_API_URL = os.environ.get(
-    "TEST_WEBHOOK_SERVER_API_URL", "http://127.0.0.1:55000"
-)
+
 REDIS_SETTINGS = {}
 
 # Discord settings
