@@ -1,10 +1,12 @@
+import os
 import sys
 import asyncio
 from arq import create_pool
 from arq.connections import RedisSettings
 
 async def _async_handle(*args, **options):
-  redis = await create_pool(RedisSettings())
+  redis_port = int(os.environ.get('REDIS_PORT', 6379))
+  redis = await create_pool(RedisSettings(port=redis_port))
 
   for line in sys.stdin:
     _log_timestamp, hostname, tag, filename, game_timestamp, content = line.split(' ', 5)

@@ -237,6 +237,10 @@
         nixosModules.log-listener = { config, pkgs, lib, ... }:
         let
           cfg = config.services.amc-log-listener;
+          ingestLogsWrapper = pkgs.writeShellScriptBin "ingest_logs_wrapper" ''
+            export REDIS_PORT=${toString cfg.redisPort}
+            exec ${pkgs.amc-scripts}/bin/ingest_logs
+          '';
         in
         {
           options.services.amc-log-listener = {
@@ -246,6 +250,11 @@
               default = 2514;
               example = true;
               description = "The port number for RELP log listener";
+            };
+            redisPort = lib.mkOption {
+              type = lib.types.int;
+              default = 6379;
+              description = "The Redis port to enqueue log jobs to";
             };
           };
           config = lib.mkIf cfg.enable {
@@ -260,7 +269,7 @@
                 Ruleset(name="mt-in") {
                   action (
                     type="omprog"
-                    binary="${pkgs.amc-scripts}/bin/ingest_logs"
+                    binary="${ingestLogsWrapper}/bin/ingest_logs_wrapper"
                     reportFailures="on"
                   )
                 }
