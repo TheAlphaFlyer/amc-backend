@@ -336,17 +336,18 @@ async def handle_cargo_arrived(
             for cargo in valid_cargos
         ]
     )
-    await ServerCargoArrivedLog.objects.abulk_create(logs)
 
     from amc.cargo import get_cargo_bonus
 
+    # Add game-level bonuses (damage bonus etc.) to each log's payment
+    # so it persists in ServerCargoArrivedLog and flows through to Delivery
+    for log in logs:
+        log.payment += get_cargo_bonus(log.cargo_key, log.payment, log.damage or 0)
+
+    await ServerCargoArrivedLog.objects.abulk_create(logs)
+
     total_subsidy = 0
     total_payment = sum([log.payment for log in logs])
-    # Add game-level bonuses (damage bonus etc.) to match what the game deposits
-    total_payment += sum(
-        get_cargo_bonus(log.cargo_key, log.payment, log.damage or 0)
-        for log in logs
-    )
 
     vehicle_key = ""
     if character:
