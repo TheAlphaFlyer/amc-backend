@@ -1381,6 +1381,40 @@ class ServerTowRequestArrivedLog(models.Model):
 
 
 @final
+class PolicePatrolLog(models.Model):
+    timestamp = models.DateTimeField()
+    player = models.ForeignKey(
+        Player, on_delete=models.SET_NULL, null=True, related_name="police_patrols"
+    )
+    patrol_point_id = models.IntegerField()
+    data = models.JSONField(null=True, blank=True)
+
+
+@final
+class PolicePenaltyLog(models.Model):
+    timestamp = models.DateTimeField()
+    player = models.ForeignKey(
+        Player, on_delete=models.SET_NULL, null=True, related_name="police_penalties"
+    )
+    warning_only = models.BooleanField()
+    data = models.JSONField(null=True, blank=True)
+
+
+@final
+class PoliceShiftLog(models.Model):
+    class Action(models.TextChoices):
+        START = "START", "Started Shift"
+        END = "END", "Ended Shift"
+
+    timestamp = models.DateTimeField()
+    player = models.ForeignKey(
+        Player, on_delete=models.SET_NULL, null=True, related_name="police_shifts"
+    )
+    action = models.CharField(max_length=5, choices=Action)
+    data = models.JSONField(null=True, blank=True)
+
+
+@final
 class TeleportPoint(models.Model):
     name = models.CharField(max_length=20)
     character = models.ForeignKey(

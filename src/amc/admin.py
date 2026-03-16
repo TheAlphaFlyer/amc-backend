@@ -44,6 +44,9 @@ from .models import (
     ServerSignContractLog,
     ServerPassengerArrivedLog,
     ServerTowRequestArrivedLog,
+    PolicePatrolLog,
+    PolicePenaltyLog,
+    PoliceShiftLog,
     TeleportPoint,
     VehicleDealership,
     DeliveryJob,
@@ -564,6 +567,32 @@ class ServerTowRequestArrivedLogAdmin(admin.ModelAdmin):
     list_select_related = ["player"]
     search_fields = ["player__unique_id"]
     autocomplete_fields = ["player"]
+
+
+@admin.register(PolicePatrolLog)
+class PolicePatrolLogAdmin(admin.ModelAdmin):
+    list_display = ["id", "timestamp", "player", "patrol_point_id"]
+    list_select_related = ["player"]
+    search_fields = ["player__unique_id"]
+    autocomplete_fields = ["player"]
+
+
+@admin.register(PolicePenaltyLog)
+class PolicePenaltyLogAdmin(admin.ModelAdmin):
+    list_display = ["id", "timestamp", "player", "warning_only"]
+    list_select_related = ["player"]
+    search_fields = ["player__unique_id"]
+    autocomplete_fields = ["player"]
+    list_filter = ["warning_only"]
+
+
+@admin.register(PoliceShiftLog)
+class PoliceShiftLogAdmin(admin.ModelAdmin):
+    list_display = ["id", "timestamp", "player", "action"]
+    list_select_related = ["player"]
+    search_fields = ["player__unique_id"]
+    autocomplete_fields = ["player"]
+    list_filter = ["action"]
 
 
 @admin.register(TeleportPoint)

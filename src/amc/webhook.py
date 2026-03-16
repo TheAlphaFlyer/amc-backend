@@ -30,6 +30,9 @@ from amc.models import (
     ServerSignContractLog,
     ServerPassengerArrivedLog,
     ServerTowRequestArrivedLog,
+    PolicePatrolLog,
+    PolicePenaltyLog,
+    PoliceShiftLog,
     Delivery,
     DeliveryPoint,
     DeliveryJob,
@@ -310,6 +313,38 @@ async def handle_tow_request(event, player, timestamp):
             subsidy = 2_000 + payment * 0.5
 
     return payment, subsidy
+
+
+async def handle_patrol_arrived(event, player, timestamp):
+    patrol_point_id = event["data"].get("PatrolPointId", 0)
+    await PolicePatrolLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        patrol_point_id=patrol_point_id,
+        data=event.get("data"),
+    )
+    return 0, 0
+
+
+async def handle_police_penalty(event, player, timestamp):
+    warning_only = event["data"].get("bWarningOnly", False)
+    await PolicePenaltyLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        warning_only=warning_only,
+        data=event.get("data"),
+    )
+    return 0, 0
+
+
+async def handle_police_shift(event, player, timestamp, action):
+    await PoliceShiftLog.objects.acreate(
+        timestamp=timestamp,
+        player=player,
+        action=action,
+        data=event.get("data"),
+    )
+    return 0, 0
 
 
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
@@ -722,5 +757,17 @@ async def process_event(
 
         case "ServerResetVehicleAt":
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
+
+        case "ServerArrivedAtPolicePatrolPoint":
+            await handle_patrol_arrived(event, player, timestamp)
+
+        case "ServerSelectPolicePullOverPenaltyResponse":
+            await handle_police_penalty(event, player, timestamp)
+
+        case "ServerAddPolicePlayer":
+            await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.START)
+
+        case "ServerRemovePolicePlayer":
+            await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.END)
 
     return total_payment, subsidy, contract_payment
