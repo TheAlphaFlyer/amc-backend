@@ -1,7 +1,9 @@
 from amc.command_framework import registry, CommandContext
-from amc.models import DeliveryJob, BotInvocationLog
+from amc.models import DeliveryJob, JobPostingConfig, BotInvocationLog
 from amc.utils import get_time_difference_string
 from amc.subsidies import get_subsidies_text
+from amc.jobs import calculate_treasury_multiplier
+from amc_finance.services import get_treasury_fund_balance
 from django.db.models import F
 from django.utils.translation import gettext as _, gettext_lazy
 
@@ -17,6 +19,20 @@ async def cmd_jobs(ctx: CommandContext):
         quantity_fulfilled__lt=F("quantity_requested"),
         expired_at__gte=ctx.timestamp,
     ).prefetch_related("source_points", "destination_points", "cargos")
+
+    # Calculate treasury boost
+    config = await JobPostingConfig.aget_config()
+    treasury_balance = await get_treasury_fund_balance()
+    treasury_mult = calculate_treasury_multiplier(
+        float(treasury_balance),
+        equilibrium=float(config.treasury_equilibrium),
+        sensitivity=config.treasury_sensitivity,
+    )
+    boost_pct = int(treasury_mult * 100)
+    if treasury_mult >= 1.0:
+        boost_str = f"<EffectGood>{boost_pct}%</>"
+    else:
+        boost_str = f"<EffectBad>{boost_pct}%</>"
 
     jobs_str_list: list[str] = []
     async for job in jobs:
@@ -49,11 +65,13 @@ async def cmd_jobs(ctx: CommandContext):
     await ctx.reply(
         _("""<Title>Delivery Jobs</>
 <Secondary>Complete jobs solo or with others!</>
+<Secondary>Treasury Boost:</> {boost_str}
 
 {jobs_str}
 
 <Title>Subsidies</>: Use /subsidies to view.""").format(
-            jobs_str=jobs_str
+            jobs_str=jobs_str,
+            boost_str=boost_str,
         )
     )
 
