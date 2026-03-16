@@ -396,9 +396,7 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
         # Re-apply GOV tag in case it was lost (e.g. GUID resolution failed on login)
         if character.guid:
             gov_name = make_gov_name(character.name, character.gov_employee_level)
-            asyncio.create_task(
-                set_character_name(ctx.http_client_mod, character.guid, gov_name)
-            )
+            await set_character_name(ctx.http_client_mod, character.guid, gov_name)
 
         await ctx.reply(
             _(
