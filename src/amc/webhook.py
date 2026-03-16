@@ -69,13 +69,15 @@ async def on_player_profit(
                     "Government Service",
                     str(character.player.unique_id),
                 )
-            # Record full economic value (including subsidy) as contribution
+            # Ledger: base_payment (real money confiscated)
+            # Contribution: total_payment (includes subsidy for level progression)
             await redirect_income_to_treasury(
-                total_payment,
+                base_payment,
                 character,
                 "Government Service – Earnings",
                 http_client=http_client,
                 session=session,
+                contribution=total_payment,
             )
         # Skip subsidy payment, loan repayment, and savings
         return

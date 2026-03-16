@@ -185,10 +185,14 @@ class WebhookPipelineTests(TestCase):
         call_args = mock_transfer.call_args
         self.assertEqual(call_args[0][1], -10000)
 
-        # Should redirect total economic value (15000, including subsidy) to treasury
+        # Ledger should record only base_payment (10000 = real money confiscated)
         mock_donation.assert_awaited_once()
-        donation_amount = mock_donation.call_args[0][0]
-        self.assertEqual(donation_amount, 15000)
+        ledger_amount = mock_donation.call_args[0][0]
+        self.assertEqual(ledger_amount, 10000)
+
+        # Contribution should track total_payment (15000, including subsidy)
+        await character.arefresh_from_db()
+        self.assertEqual(character.gov_employee_contributions, 15000)
 
     @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
     @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)

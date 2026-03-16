@@ -60,17 +60,24 @@ async def deactivate_gov_role(character, session):
 
 
 async def redirect_income_to_treasury(
-    amount, character, description, http_client=None, session=None
+    amount, character, description, http_client=None, session=None, contribution=None
 ):
     """Record a government employee's income as a treasury contribution.
 
-    This reuses the player_donation accounting pattern (credits Treasury Revenue,
-    debits Treasury Fund) and additionally tracks gov-specific contributions.
+    Args:
+        amount: Real money confiscated from wallet → treasury ledger.
+        contribution: Total economic value for gov level progression.
+            Defaults to amount if not specified. May include subsidy
+            credit that was never in the wallet.
     """
+    if contribution is None:
+        contribution = amount
+
+    # Ledger: only record real money that was confiscated
     await player_donation(int(amount), character, description=description)
 
-    # Atomically increment contributions
-    character.gov_employee_contributions = F("gov_employee_contributions") + int(amount)
+    # Contributions: track full economic value (including subsidy) for levels
+    character.gov_employee_contributions = F("gov_employee_contributions") + int(contribution)
     await character.asave(update_fields=["gov_employee_contributions"])
 
     # Refresh to get actual DB value, then recalculate level
