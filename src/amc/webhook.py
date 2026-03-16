@@ -52,14 +52,18 @@ async def on_player_profit(
     character, total_subsidy, total_payment, session, http_client=None,
     contract_payment=0,
 ):
+    # Preserve the original subsidy before reject_ubi may zero it.
+    # The gov employee path needs the original value to correctly compute
+    # what the game server actually deposited into the wallet.
+    original_subsidy = total_subsidy
     if character.reject_ubi:
         total_subsidy = 0
 
     if character.is_gov_employee:
-        # total_payment already includes total_subsidy (baked in by process_event).
+        # total_payment already includes original_subsidy (baked in by process_event).
         # The game server only deposited the base amount into the wallet.
         # We must only confiscate what the game actually deposited.
-        base_payment = total_payment - total_subsidy
+        base_payment = total_payment - original_subsidy
         # Total wallet confiscation: base earnings + contract payment (burned)
         wallet_confiscation = base_payment + contract_payment
         if wallet_confiscation > 0:
@@ -88,8 +92,10 @@ async def on_player_profit(
 
     if total_subsidy != 0:
         await subsidise_player(total_subsidy, character, session)
-    loan_repayment = await repay_loan_for_profit(character, total_payment, session)
-    savings = total_payment - loan_repayment
+    # actual_income = what the game deposited + what we actually paid as subsidy
+    actual_income = (total_payment - original_subsidy) + total_subsidy
+    loan_repayment = await repay_loan_for_profit(character, actual_income, session)
+    savings = actual_income - loan_repayment
     if savings > 0:
         await set_aside_player_savings(character, savings, session)
 
