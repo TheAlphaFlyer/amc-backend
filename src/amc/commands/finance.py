@@ -381,16 +381,25 @@ async def cmd_repay_loan(ctx: CommandContext, amount: str = ""):
     category="Finance",
 )
 async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
-    from amc.gov_employee import activate_gov_role
+    from amc.gov_employee import activate_gov_role, make_gov_name
+    from amc.mod_server import set_character_name
     from django.utils import timezone
 
     character = ctx.character
 
-    # If already active, show status
+    # If already active, show status and re-apply tag (self-healing)
     if character.is_gov_employee:
         remaining = character.gov_employee_until - timezone.now()
         hours = int(remaining.total_seconds() // 3600)
         minutes = int((remaining.total_seconds() % 3600) // 60)
+
+        # Re-apply GOV tag in case it was lost (e.g. GUID resolution failed on login)
+        if character.guid:
+            gov_name = make_gov_name(character.name, character.gov_employee_level)
+            asyncio.create_task(
+                set_character_name(ctx.http_client_mod, character.guid, gov_name)
+            )
+
         await ctx.reply(
             _(
                 "<Title>Government Employee Status</>\n\n"
