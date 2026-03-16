@@ -418,6 +418,7 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
                 "<Warning>During this time:</>\n"
                 "- ALL your income will go to the treasury\n"
                 "- You will receive no subsidies or job bonuses\n"
+                "- You will receive <EffectGood>2x UBI</>\n"
                 "- Your contributions will count towards your GOV level\n\n"
                 "Your current GOV level: <Highlight>GOV{level}</>\n"
                 "To confirm, type: <Highlight>/workforgov {code}</>"

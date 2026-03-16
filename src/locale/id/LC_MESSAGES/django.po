@@ -418,6 +418,58 @@ msgstr ""
 "Anda akan otomatis melunasi pinjaman saat Anda memperoleh penghasilan di "
 "server"
 
+#: amc/commands/finance.py:380
+msgid "Opt in as a Government Employee for 24 hours"
+msgstr "Daftar sebagai Pegawai Pemerintah selama 24 jam"
+
+#: amc/commands/finance.py:396
+#, python-brace-format
+msgid ""
+"<Title>Government Employee Status</>\n"
+"\n"
+"<Bold>Level:</> GOV{level}\n"
+"<Bold>Time Remaining:</> {hours}h {minutes}m\n"
+"<Bold>Total Contributions:</> <Money>{contributions:,}</>"
+msgstr ""
+"<Title>Status Pegawai Pemerintah</>\n"
+"\n"
+"<Bold>Level:</> GOV{level}\n"
+"<Bold>Waktu Tersisa:</> {hours}j {minutes}m\n"
+"<Bold>Total Kontribusi:</> <Money>{contributions:,}</>"
+
+#: amc/commands/finance.py:416
+#, python-brace-format
+msgid ""
+"<Title>Work for Government</>\n"
+"You are about to become a <Highlight>Government Employee</> for 24 "
+"hours.\n"
+"\n"
+"<Warning>During this time:</>\n"
+"- ALL your income will go to the treasury\n"
+"- You will receive no subsidies or job bonuses\n"
+"- You will receive <EffectGood>2x UBI</>\n"
+"- Your contributions will count towards your GOV level\n"
+"\n"
+"Your current GOV level: <Highlight>GOV{level}</>\n"
+"To confirm, type: <Highlight>/workforgov {code}</>"
+msgstr ""
+"<Title>Bekerja untuk Pemerintah</>\n"
+"Anda akan menjadi <Highlight>Pegawai Pemerintah</> selama 24 jam.\n"
+"\n"
+"<Warning>Selama waktu ini:</>\n"
+"- SEMUA pendapatan Anda akan masuk ke kas negara\n"
+"- Anda tidak akan menerima subsidi atau bonus pekerjaan\n"
+"- Anda akan menerima <EffectGood>2x UBI</>\n"
+"- Kontribusi Anda akan dihitung untuk level GOV Anda\n"
+"\n"
+"Level GOV Anda saat ini: <Highlight>GOV{level}</>\n"
+"Untuk konfirmasi, ketik: <Highlight>/workforgov {code}</>"
+
+#: amc/commands/finance.py:433
+#, python-brace-format
+msgid "You are now a Government Employee (GOV{level}) for 24 hours!"
+msgstr "Anda sekarang menjadi Pegawai Pemerintah (GOV{level}) selama 24 jam!"
+
 #: amc/commands/general.py:14
 msgid "Show this help message"
 msgstr "Tampilkan pesan bantuan ini"

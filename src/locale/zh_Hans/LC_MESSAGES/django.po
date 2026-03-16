@@ -418,6 +418,58 @@ msgstr ""
 "\n"
 "当你在服务器上赚钱时，会自动偿还贷款"
 
+#: amc/commands/finance.py:380
+msgid "Opt in as a Government Employee for 24 hours"
+msgstr "注册成为政府雇员 24 小时"
+
+#: amc/commands/finance.py:396
+#, python-brace-format
+msgid ""
+"<Title>Government Employee Status</>\n"
+"\n"
+"<Bold>Level:</> GOV{level}\n"
+"<Bold>Time Remaining:</> {hours}h {minutes}m\n"
+"<Bold>Total Contributions:</> <Money>{contributions:,}</>"
+msgstr ""
+"<Title>政府雇员状态</>\n"
+"\n"
+"<Bold>等级:</> GOV{level}\n"
+"<Bold>剩余时间:</> {hours}小时 {minutes}分钟\n"
+"<Bold>总贡献:</> <Money>{contributions:,}</>"
+
+#: amc/commands/finance.py:416
+#, python-brace-format
+msgid ""
+"<Title>Work for Government</>\n"
+"You are about to become a <Highlight>Government Employee</> for 24 "
+"hours.\n"
+"\n"
+"<Warning>During this time:</>\n"
+"- ALL your income will go to the treasury\n"
+"- You will receive no subsidies or job bonuses\n"
+"- You will receive <EffectGood>2x UBI</>\n"
+"- Your contributions will count towards your GOV level\n"
+"\n"
+"Your current GOV level: <Highlight>GOV{level}</>\n"
+"To confirm, type: <Highlight>/workforgov {code}</>"
+msgstr ""
+"<Title>为政府工作</>\n"
+"你即将成为 <Highlight>政府雇员</>，持续 24 小时。\n"
+"\n"
+"<Warning>在此期间:</>\n"
+"- 你的所有收入将上缴国库\n"
+"- 你将不会获得补贴或任务奖金\n"
+"- 你将获得 <EffectGood>2 倍 UBI</>\n"
+"- 你的贡献将计入你的 GOV 等级\n"
+"\n"
+"你当前的 GOV 等级: <Highlight>GOV{level}</>\n"
+"确认请输入: <Highlight>/workforgov {code}</>"
+
+#: amc/commands/finance.py:433
+#, python-brace-format
+msgid "You are now a Government Employee (GOV{level}) for 24 hours!"
+msgstr "你现在是政府雇员 (GOV{level})，持续 24 小时！"
+
 #: amc/commands/general.py:14
 msgid "Show this help message"
 msgstr "显示此帮助信息"
