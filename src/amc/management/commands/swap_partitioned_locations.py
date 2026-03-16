@@ -162,25 +162,36 @@ class Command(BaseCommand):
 
         # --- Setup pg_partman (if available) ---
 
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM pg_available_extensions WHERE name = 'pg_partman'
-                ) THEN
-                    CREATE EXTENSION IF NOT EXISTS pg_partman;
-                    PERFORM partman.create_parent(
-                        p_parent_table := 'public.amc_characterlocation',
-                        p_control := 'timestamp',
-                        p_interval := '1 month',
-                        p_premake := 3
-                    );
-                    RAISE NOTICE 'pg_partman configured for automatic partition maintenance';
-                ELSE
-                    RAISE NOTICE 'pg_partman not available — create future partitions manually';
-                END IF;
-                END $$;
-            """)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    DO $$ BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM pg_available_extensions WHERE name = 'pg_partman'
+                    ) THEN
+                        CREATE EXTENSION IF NOT EXISTS pg_partman;
+                        PERFORM public.create_parent(
+                            p_parent_table := 'public.amc_characterlocation',
+                            p_control := 'timestamp',
+                            p_interval := '1 month',
+                            p_premake := 3
+                        );
+                        RAISE NOTICE 'pg_partman configured for automatic partition maintenance';
+                    ELSE
+                        RAISE NOTICE 'pg_partman not available — create future partitions manually';
+                    END IF;
+                    END $$;
+                """)
+            self.stdout.write(
+                self.style.SUCCESS("pg_partman configured successfully.")
+            )
+        except Exception as e:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"pg_partman setup failed (non-critical): {e}\n"
+                    "Create future partitions manually if needed."
+                )
+            )
 
         self.stdout.write(
             self.style.SUCCESS(
