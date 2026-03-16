@@ -93,39 +93,35 @@ class Command(BaseCommand):
                     'WHERE "timestamp" >= %s AND "timestamp" < %s',
                     [month_start, month_end],
                 )
-                min_id, max_id, month_count = cursor.fetchone()
+                min_id, max_id, old_month_count = cursor.fetchone()
 
             if min_id is None:
                 self.stdout.write("  No rows found for this month, skipping.")
                 continue
 
-            # Resume: find the max ID already backfilled for this month
+            # Resume: compare row counts to detect already-complete months
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT MAX(id) FROM amc_characterlocation_new "
+                    "SELECT COUNT(*) FROM amc_characterlocation_new "
                     'WHERE "timestamp" >= %s AND "timestamp" < %s',
                     [month_start, month_end],
                 )
-                resume_id = cursor.fetchone()[0]
+                new_month_count = cursor.fetchone()[0]
 
-            if resume_id is not None and resume_id >= max_id:
+            if new_month_count >= old_month_count:
                 self.stdout.write(
-                    f"  Already complete (max backfilled id {resume_id:,} >= {max_id:,}), skipping."
+                    f"  Already complete ({new_month_count:,} >= {old_month_count:,} rows), skipping."
                 )
                 continue
 
-            start_id = (resume_id + 1) if resume_id is not None else min_id
-            if resume_id is not None:
-                self.stdout.write(
-                    f"  Resuming from id {start_id:,} (already backfilled up to {resume_id:,})"
-                )
-
             self.stdout.write(
-                f"  ID range: {start_id:,} — {max_id:,}, total month rows: {month_count:,}"
+                f"  ID range: {min_id:,} — {max_id:,}, "
+                f"old: {old_month_count:,}, new: {new_month_count:,}, "
+                f"remaining: ~{old_month_count - new_month_count:,}"
             )
 
             month_copied = 0
-            current_id = start_id
+            current_id = min_id
 
             while current_id <= max_id:
                 batch_end = current_id + batch_size
