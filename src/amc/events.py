@@ -316,7 +316,7 @@ async def show_scheduled_event_results_popup(
 @skip_if_running
 async def monitor_events(ctx, http_client):
     discord_client = ctx.get("discord_client")
-    events_cog = discord_client.get_cog("EventsCog")
+    events_cog = discord_client.get_cog("EventsCog") if discord_client else None
 
     try:
         async with http_client.get("/events") as resp:
@@ -474,6 +474,8 @@ async def send_event_embed(game_event, channel):
 async def send_event_embeds(ctx):
     http_client = ctx.get("http_client_event_mod")
     discord_client = ctx.get("discord_client")
+    if not discord_client:
+        return
     if not discord_client.is_ready():
         await asyncio.wrap_future(
             asyncio.run_coroutine_threadsafe(
