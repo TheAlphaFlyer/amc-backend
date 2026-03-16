@@ -358,11 +358,14 @@ async def on_delivery_job_fulfilled(job, http_client):
             if character_obj.is_gov_employee:
                 from amc.gov_employee import redirect_income_to_treasury
 
+                # Job bonus comes from treasury's own escrowed funds,
+                # no real money moves. Only track as contribution for levels.
                 await redirect_income_to_treasury(
-                    reward,
+                    0,
                     character_obj,
                     "Government Service – Job Bonus",
                     http_client=http_client,
+                    contribution=reward,
                 )
             else:
                 await send_fund_to_player(reward, character_obj, "Job Completion")
