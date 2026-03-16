@@ -125,6 +125,9 @@ async def aget_or_create_character(
             player_info = await get_player(http_client_mod, player_id)
             if player_info:
                 character_guid = player_info.get("CharacterGuid")
+                # Mod server returns all-zeros GUID during early login — treat as absent
+                if character_guid == Character.INVALID_GUID:
+                    character_guid = None
         except Exception as e:
             logger.debug(f"Player info fetch failed (non-blocking): {e}")
 
