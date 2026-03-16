@@ -115,16 +115,32 @@ class Command(BaseCommand):
                     "RENAME TO amc_characterlocation;"
                 )
 
-                # Rename indexes to expected names
+                # Rename old-table indexes out of the way
                 cursor.execute(
-                    "ALTER INDEX charloc_new_char_ts_idx RENAME TO charloc_char_ts_idx;"
+                    "ALTER INDEX IF EXISTS charloc_char_ts_idx "
+                    "RENAME TO charloc_char_ts_idx_old;"
+                )
+                cursor.execute(
+                    "ALTER INDEX IF EXISTS unique_character_location "
+                    "RENAME TO unique_character_location_old;"
+                )
+                cursor.execute(
+                    "ALTER INDEX IF EXISTS amc_characterlocation_pkey "
+                    "RENAME TO amc_characterlocation_pkey_old;"
+                )
+
+                # Rename new-table indexes to expected names
+                cursor.execute(
+                    "ALTER INDEX charloc_new_char_ts_idx "
+                    "RENAME TO charloc_char_ts_idx;"
                 )
                 cursor.execute(
                     "ALTER INDEX unique_character_location_new "
                     "RENAME TO unique_character_location;"
                 )
                 cursor.execute(
-                    "ALTER INDEX pk_charloc_new RENAME TO amc_characterlocation_pkey;"
+                    "ALTER INDEX pk_charloc_new "
+                    "RENAME TO amc_characterlocation_pkey;"
                 )
 
                 # Rename FK constraint
