@@ -40,7 +40,7 @@ async def handout_ubi(ctx):
     eligible = {
         guid: c
         for guid, c in characters.items()
-        if c.driver_level and not c.is_gov_employee
+        if c.driver_level
     }
 
     if not eligible:
@@ -75,11 +75,17 @@ async def handout_ubi(ctx):
                 / MAX_LEVEL,
             )
 
+            if character.is_gov_employee:
+                amount *= 2
+                label = "Government Salary"
+            else:
+                label = "Universal Basic Income"
+
             await send_fund_to_player_wallet(
-                amount, character, "Universal Basic Income"
+                amount, character, label
             )
             await transfer_money(
-                http_client_mod, int(amount), "Universal Basic Income", player_id
+                http_client_mod, int(amount), label, player_id
             )
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
