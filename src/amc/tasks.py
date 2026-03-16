@@ -40,12 +40,13 @@ from amc.models import (
     WorldText,
     WorldObject,
 )
-from amc.game_server import announce, get_players, kick_player
+from amc.game_server import announce, get_players
 from amc.utils import forward_to_discord
 from amc.mod_server import (
     show_popup,
     teleport_player,
     get_player,
+    set_character_name,
     set_world_vehicle_decal,
     spawn_assets,
     spawn_garage,
@@ -114,34 +115,12 @@ def get_welcome_message(last_login, player_name):
 
 
 async def aget_or_create_character(
-    player_name, player_id, http_client_mod=None, wait_for_guid=False
+    player_name, player_id, http_client_mod=None
 ):
     character_guid = None
     player_info = None
-    i = 0
-    if http_client_mod and wait_for_guid:
-        # Only retry for login events where GUID resolution is critical
-        while True:
-            try:
-                player_info = await get_player(http_client_mod, player_id)
-                if player_info:
-                    character_guid = player_info.get("CharacterGuid")
-                if character_guid and character_guid != Character.INVALID_GUID:
-                    break
-                if i >= 10:
-                    logger.warning(
-                        f"GUID not resolved after 10 attempts for {player_name}"
-                    )
-                    break
-                await asyncio.sleep(1)
-                i = i + 1
-            except Exception as e:
-                logger.exception(
-                    f"Failed to fetch player info for {player_name} ({player_id}): {e}"
-                )
-                break
-    elif http_client_mod:
-        # Single attempt for non-login events
+    if http_client_mod:
+        # Single attempt — never blocks with retries
         try:
             player_info = await get_player(http_client_mod, player_id)
             if player_info:
@@ -158,6 +137,156 @@ async def aget_or_create_character(
         player_name, player_id, character_guid
     )
     return (character, player, character_created, player_info)
+
+
+async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=10):
+    """Retry GUID resolution from the mod server. Returns (character_guid, player_info) or (None, None)."""
+    for i in range(max_attempts):
+        try:
+            player_info = await get_player(http_client_mod, player_id)
+            if player_info:
+                guid = player_info.get("CharacterGuid")
+                if guid and guid != Character.INVALID_GUID:
+                    return guid, player_info
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.exception(
+                f"Failed to fetch player info for {player_name} ({player_id}): {e}"
+            )
+            return None, None
+    logger.warning(f"GUID not resolved after {max_attempts} attempts for {player_name}")
+    return None, None
+
+
+async def _login_guid_dependent_actions(
+    character,
+    player,
+    player_name,
+    player_id,
+    http_client,
+    http_client_mod,
+    character_created,
+):
+    """Fire-and-forget: GUID-dependent login side-effects that must not block the arq worker."""
+    try:
+        character_guid, player_info = await _resolve_guid(
+            http_client_mod, player_id, player_name
+        )
+        if not character_guid:
+            logger.warning(
+                f"Skipping GUID-dependent login actions for {player_name} — GUID unresolved"
+            )
+            return
+
+        # Persist GUID if newly resolved
+        if not character.guid or character.guid != character_guid:
+            character.guid = character_guid
+            await character.asave(update_fields=["guid"])
+
+        # --- DOT tag check: rename if unauthorized ---
+        if player_info and "DOT" in player_info.get("PlayerName", ""):
+            if not await Team.objects.filter(tag="DOT", players=player).aexists():
+                import re
+                stripped_name = re.sub(r"\s*\[?DOT\]?\s*", "", player_info["PlayerName"]).strip() or player_name
+                await set_character_name(http_client_mod, character_guid, stripped_name)
+                asyncio.create_task(
+                    show_popup(
+                        http_client_mod,
+                        "You are not authorised to use the DOT tag. It has been removed from your name.",
+                        character_guid=character_guid,
+                        player_id=str(player.unique_id),
+                    )
+                )
+
+        # --- Government Employee: handle login ---
+        if character.gov_employee_until is not None:
+            if character.is_gov_employee:
+                from amc.gov_employee import make_gov_name
+
+                gov_name = make_gov_name(character.name, character.gov_employee_level)
+                asyncio.create_task(
+                    set_character_name(http_client_mod, character_guid, gov_name)
+                )
+            else:
+                from amc.gov_employee import deactivate_gov_role
+
+                await deactivate_gov_role(character, http_client_mod)
+
+        # --- Block [GOV] tag for non-government-employees ---
+        if player_info:
+            import re
+
+            player_display_name = player_info.get("PlayerName", "")
+            if (
+                re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE)
+                and not character.is_gov_employee
+            ):
+                stripped_name = re.sub(r"\s*\[GOV\d*\]\s*", "", player_display_name, flags=re.IGNORECASE).strip() or player_name
+                await set_character_name(http_client_mod, character_guid, stripped_name)
+                asyncio.create_task(
+                    show_popup(
+                        http_client_mod,
+                        "The [GOV] tag is reserved for government employees. It has been removed from your name.",
+                        character_guid=character_guid,
+                        player_id=str(player.unique_id),
+                    )
+                )
+
+        # --- Welcome popup for new players ---
+        if character_created:
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    settings.WELCOME_TEXT,
+                    character_guid=character_guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+
+        # --- New player / suspect teleport check ---
+        if (
+            (character_created or player.suspect)
+            and player_info
+            and player_info.get("Location") is not None
+            and player_info.get("VehicleKey") != "None"
+        ):
+            loc_data = player_info.get("Location")
+            if loc_data:
+                location = Point(
+                    **{axis.lower(): value for axis, value in loc_data.items()}
+                )
+                dps = DeliveryPoint.objects.filter(coord__isnull=False).only("coord")
+                spawned_near_delivery_point = False
+                async for dp in dps:
+                    if location.distance(dp.coord) < 400:
+                        spawned_near_delivery_point = True
+                        break
+            else:
+                spawned_near_delivery_point = False
+
+            if spawned_near_delivery_point:
+                impound_location = {
+                    "X": -289988 + random.randint(-60_00, 60_00),
+                    "Y": 201790 + random.randint(-60_00, 60_00),
+                    "Z": -21950,
+                }
+                await teleport_player(
+                    http_client_mod,
+                    player.unique_id,
+                    impound_location,
+                    no_vehicles=False,
+                )
+                asyncio.create_task(
+                    announce(
+                        f"{player_name}, you have been teleported since you spawned too close to a delivery point as a new player on the server.",
+                        http_client,
+                        color="FF0000",
+                    )
+                )
+                player.suspect = True
+                await player.asave(update_fields=["suspect"])
+    except Exception as e:
+        logger.exception(f"GUID-dependent login actions failed for {player_name}: {e}")
 
 
 async def process_login_event(character_id, timestamp):
@@ -277,7 +406,7 @@ async def process_log_event(
                 character_created,
                 player_info,
             ) = await aget_or_create_character(
-                player_name, player_id, http_client_mod, wait_for_guid=False
+                player_name, player_id, http_client_mod
             )
             await PlayerChatLog.objects.acreate(
                 timestamp=timestamp,
@@ -351,7 +480,7 @@ async def process_log_event(
         ):
             action = PlayerVehicleLog.action_for_event(event)
             character, player, *_ = await aget_or_create_character(
-                player_name, player_id, http_client_mod, wait_for_guid=False
+                player_name, player_id, http_client_mod
             )
             await PlayerVehicleLog.objects.acreate(
                 timestamp=timestamp,
@@ -398,67 +527,17 @@ Not everyone likes to be roughed up!
                 character_created,
                 player_info,
             ) = await aget_or_create_character(
-                player_name, player_id, http_client_mod, wait_for_guid=True
+                player_name, player_id, http_client_mod
             )
-            if ctx.get("startup_time") and timestamp > ctx.get("startup_time"):
-                if player_info and "DOT" in player_info.get("PlayerName", ""):
-                    if not (
-                        await Team.objects.filter(tag="DOT", players=player).aexists()
-                    ):
-                        asyncio.create_task(
-                            show_popup(
-                                http_client_mod,
-                                "You are not authorised to use the DOT tag, please remove it then rejoin the server",
-                                character_guid=character.guid,
-                                player_id=str(player.unique_id),
-                            )
-                        )
-                        asyncio.create_task(
-                            delay(kick_player(http_client, str(player_id)), 10)
-                        )
+            is_current_event = ctx.get("startup_time") and timestamp > ctx.get("startup_time")
 
-                # Government Employee: handle login
-                if character.gov_employee_until is not None:
-                    if character.is_gov_employee:
-                        # Role still active — set [GOV#] name
-                        from amc.gov_employee import make_gov_name
-                        from amc.mod_server import set_character_name
+            # --- Immediate actions (no GUID needed) ---
+            if character:
+                await process_login_event(character.id, timestamp)
+                asyncio.create_task(send_player_messages(http_client_mod, player))
 
-                        gov_name = make_gov_name(
-                            character.name, character.gov_employee_level
-                        )
-                        asyncio.create_task(
-                            set_character_name(
-                                http_client_mod, character.guid, gov_name
-                            )
-                        )
-                    else:
-                        # Role expired while offline — restore name
-                        from amc.gov_employee import deactivate_gov_role
-
-                        await deactivate_gov_role(character, http_client_mod)
-
-                # Block [GOV] tag for non-government-employees
-                if player_info:
-                    import re
-
-                    player_display_name = player_info.get("PlayerName", "")
-                    if (
-                        re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE)
-                        and not character.is_gov_employee
-                    ):
-                        asyncio.create_task(
-                            show_popup(
-                                http_client_mod,
-                                "The [GOV] tag is reserved for government employees. Please remove it and rejoin.",
-                                character_guid=character.guid,
-                                player_id=str(player.unique_id),
-                            )
-                        )
-                        asyncio.create_task(
-                            delay(kick_player(http_client, str(player_id)), 10)
-                        )
-
+            if is_current_event:
+                # Welcome announcement in global chat (doesn't need GUID)
                 try:
                     last_login = None
                     if not character_created:
@@ -470,76 +549,28 @@ Not everyone likes to be roughed up!
                             last_login = latest_status.timespan.upper
                         except PlayerStatusLog.DoesNotExist:
                             pass
-                    welcome_message, is_new_player = get_welcome_message(
+                    welcome_message, _is_new = get_welcome_message(
                         last_login, character.name
                     )
-                    if is_new_player:
-                        asyncio.create_task(
-                            show_popup(
-                                http_client_mod,
-                                settings.WELCOME_TEXT,
-                                character_guid=character.guid,
-                                player_id=str(player.unique_id),
-                            )
-                        )
                     if welcome_message:
                         asyncio.create_task(
                             announce(welcome_message, http_client, delay=5)
                         )
-                    if (
-                        (is_new_player or player.suspect)
-                        and player_info
-                        and player_info.get("Location") is not None
-                        and player_info.get("VehicleKey") != "None"
-                    ):
-                        loc_data = player_info.get("Location")
-                        if loc_data:
-                            location = Point(
-                                **{
-                                    axis.lower(): value
-                                    for axis, value in loc_data.items()
-                                }
-                            )
-                            dps = DeliveryPoint.objects.filter(
-                                coord__isnull=False
-                            ).only("coord")
-                            spawned_near_delivery_point = False
-                            async for dp in dps:
-                                if location.distance(dp.coord) < 400:
-                                    spawned_near_delivery_point = True
-                                    break
-                        else:
-                            spawned_near_delivery_point = False
-
-                        if spawned_near_delivery_point:
-                            impound_location = {
-                                "X": -289988 + random.randint(-60_00, 60_00),
-                                "Y": 201790 + random.randint(-60_00, 60_00),
-                                "Z": -21950,
-                            }
-                            await teleport_player(
-                                http_client_mod,
-                                player.unique_id,
-                                impound_location,
-                                no_vehicles=False,
-                            )
-                            asyncio.create_task(
-                                announce(
-                                    f"{player_name}, you have been teleported since you spawned too close to a delivery point as a new player on the server.",
-                                    http_client,
-                                    color="FF0000",
-                                )
-                            )
-                            player.suspect = True
-                            await player.asave(update_fields=["suspect"])
-                            # TODO: report on discord
                 except Exception as e:
-                    asyncio.create_task(
-                        announce(f"Failed to greet player: {e}", http_client)
+                    logger.exception(f"Failed to greet player: {e}")
+
+                # Fire-and-forget: GUID-dependent actions (popup, tag checks, teleport)
+                asyncio.create_task(
+                    _login_guid_dependent_actions(
+                        character,
+                        player,
+                        player_name,
+                        player_id,
+                        http_client,
+                        http_client_mod,
+                        character_created,
                     )
-            if character:
-                await process_login_event(character.id, timestamp)
-                asyncio.create_task(send_player_messages(http_client_mod, player))
+                )
 
             if (
                 discord_client
@@ -589,7 +620,7 @@ Not everyone likes to be roughed up!
             timestamp, company_name, is_corp, owner_name, owner_id
         ):
             character, *_ = await aget_or_create_character(
-                owner_name, owner_id, http_client_mod, wait_for_guid=False
+                owner_name, owner_id, http_client_mod
             )
             company, company_created = await Company.objects.aget_or_create(
                 name=company_name,
