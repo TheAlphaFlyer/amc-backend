@@ -134,6 +134,12 @@ SESSION_COOKIE_DOMAIN = os.environ.get(
 CSRF_COOKIE_DOMAIN = os.environ.get("DJANGO_CSRF_COOKIE_DOMAIN", ".aseanmotorclub.com")
 SESSION_COOKIE_SECURE = not DEBUG  # HTTPS-only in production
 CSRF_COOKIE_SECURE = not DEBUG
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CSRF_TRUSTED_ORIGINS", "https://*.aseanmotorclub.com"
+    ).split(",")
+]
 
 SITE_DOMAIN = os.environ.get("DJANGO_SITE_DOMAIN", "https://www.aseanmotorclub.com")
 
