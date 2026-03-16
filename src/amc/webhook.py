@@ -54,28 +54,23 @@ async def on_player_profit(
         total_subsidy = 0
 
     if character.is_gov_employee:
-        # Confiscate ALL income from wallet → treasury.
-        # total_payment includes subsidy for passenger/tow, but NOT for cargo.
-        # total_subsidy is the cargo subsidy (added separately via subsidise_player).
-        # We must NOT call subsidise_player, and must confiscate total_payment.
-        # The subsidy portion (cargo) was never paid out, so we only confiscate
-        # what the game server actually deposited: total_payment.
-        # But we redirect the full economic value (payment + subsidy) to treasury.
-        total_income = total_payment + total_subsidy
-        if total_income > 0:
+        # Confiscate earnings from wallet → treasury.
+        # total_payment is what the game server deposited into the wallet.
+        # total_subsidy is never deposited, so it must NOT count as contribution.
+        if total_payment > 0:
             from amc.gov_employee import redirect_income_to_treasury
 
             # Confiscate what the game server deposited into the wallet
-            if total_payment > 0:
-                await transfer_money(
-                    session,
-                    int(-total_payment),
-                    "Government Service",
-                    str(character.player.unique_id),
-                )
-            # Record total economic value (base + subsidy) as treasury contribution
+            await transfer_money(
+                session,
+                int(-total_payment),
+                "Government Service",
+                str(character.player.unique_id),
+            )
+            # Record only actual earnings as treasury contribution
+            # Subsidies are excluded — they were never deposited to the wallet
             await redirect_income_to_treasury(
-                total_income,
+                total_payment,
                 character,
                 "Government Service – Earnings",
                 http_client=http_client,

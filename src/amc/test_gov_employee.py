@@ -185,10 +185,10 @@ class WebhookPipelineTests(TestCase):
         call_args = mock_transfer.call_args
         self.assertEqual(call_args[0][1], -15000)
 
-        # Should redirect total economic value (payment + subsidy = 20000) to treasury
+        # Should redirect only payment (15000) — subsidy was never in wallet
         mock_donation.assert_awaited_once()
         donation_amount = mock_donation.call_args[0][0]
-        self.assertEqual(donation_amount, 20000)
+        self.assertEqual(donation_amount, 15000)
 
     @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
     @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
