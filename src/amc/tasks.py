@@ -86,7 +86,7 @@ def _process_discord_queue():
         channel_id, content, _ts = _discord_queue.popleft()
         try:
             asyncio.run_coroutine_threadsafe(
-                forward_to_discord(_discord_client_ref, channel_id, content[:240]),
+                forward_to_discord(_discord_client_ref, channel_id, content),
                 _discord_client_ref.loop,
             )
         except Exception as e:
