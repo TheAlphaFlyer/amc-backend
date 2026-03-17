@@ -171,7 +171,26 @@ async def monitor_jobs(ctx):
         .order_by("?")
     )
 
+    # Filter out templates that conflict with active/future supply chain events
+    from amc.supply_chain import get_conflicting_cargo_keys
+
+    sc_conflicts = await get_conflicting_cargo_keys()
+    filtered_templates = []
     async for template in job_templates:
+        template_cargos = [c.key for c in template.cargos.all()]
+        template_dests = [dp.pk for dp in template.destination_points.all()]
+        conflicting = False
+        for ck in template_cargos:
+            for did in template_dests:
+                if (ck, did) in sc_conflicts or (ck, -1) in sc_conflicts:
+                    conflicting = True
+                    break
+            if conflicting:
+                break
+        if not conflicting:
+            filtered_templates.append(template)
+
+    for template in filtered_templates:
         cargos = template.cargos.all()
         source_points = template.source_points.all()
         destination_points = template.destination_points.all()

@@ -20,6 +20,7 @@ from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
 from amc.jobs import monitor_jobs  # noqa: E402
 from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
+from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
 from amc_finance.services import apply_interest_to_bank_accounts  # noqa: E402
@@ -144,6 +145,8 @@ class WorkerSettings:
         cron(expire_gov_employees, minute=set(range(0, 60, 5)), second=47),
         # pyrefly: ignore [bad-argument-type]
         cron(refresh_all_vehicle_stats, hour=None, minute=30, second=0),
+        # pyrefly: ignore [bad-argument-type]
+        cron(monitor_supply_chain_events, second=47),
         # cron(monitor_server_condition, minute=set(range(3, 60, 5))),
         # cron(monitor_rp_mode, second=set(range(7, 60, 13))),
     ]

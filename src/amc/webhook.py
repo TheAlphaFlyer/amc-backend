@@ -473,7 +473,21 @@ async def handle_cargo_arrived(
                 await job.arefresh_from_db()
                 await on_delivery_job_fulfilled(job, http_client)
 
-        delivery_subsidy = delivery_data["subsidy"]
+        # Supply chain event contribution tracking
+        from amc.supply_chain import check_and_record_contribution
+
+        delivery_obj = await Delivery.objects.filter(
+            character=character, cargo_key=cargo_key, timestamp=timestamp
+        ).afirst()
+        sc_bonus = await check_and_record_contribution(
+            delivery=delivery_obj,
+            character=character,
+            cargo_key=cargo_key,
+            quantity=quantity,
+            destination_point=delivery_destination,
+            source_point=delivery_source,
+        )
+        delivery_subsidy = delivery_data["subsidy"] + sc_bonus
 
         if discord_client:
             asyncio.create_task(

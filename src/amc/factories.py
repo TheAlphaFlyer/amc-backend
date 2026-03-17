@@ -29,6 +29,10 @@ from .models import (
     SubsidyRule,
     MinistryTerm,
     Delivery,
+    # Supply Chain
+    SupplyChainEvent,
+    SupplyChainObjective,
+    SupplyChainContribution,
 )
 
 
@@ -241,3 +245,61 @@ class DeliveryFactory(DjangoModelFactory):
     payment = LazyAttribute(lambda _: random.randint(1000, 50000))
     subsidy = LazyAttribute(lambda _: random.randint(0, 10000))
     rp_mode = False
+
+
+# Supply Chain Factories
+
+
+class SupplyChainEventFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SupplyChainEvent
+
+    name = Faker("bs")
+    start_at = LazyAttribute(lambda _: timezone.now() - timedelta(hours=1))
+    end_at = LazyAttribute(lambda _: timezone.now() + timedelta(hours=23))
+    total_prize = LazyAttribute(lambda _: random.randint(100_000, 1_000_000))
+    per_delivery_bonus_pct = 0.20
+    escrowed_amount = LazyAttribute(lambda o: o.total_prize)
+
+
+class SupplyChainObjectiveFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SupplyChainObjective
+
+    event = SubFactory("amc.factories.SupplyChainEventFactory")
+    reward_weight = 10
+    is_primary = False
+    per_delivery_bonus_multiplier = 0.0
+
+    @factory.post_generation
+    def cargos(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).cargos.add(*extracted)
+
+    @factory.post_generation
+    def destination_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).destination_points.add(*extracted)
+
+    @factory.post_generation
+    def source_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).source_points.add(*extracted)
+
+
+class SupplyChainContributionFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SupplyChainContribution
+
+    objective = SubFactory("amc.factories.SupplyChainObjectiveFactory")
+    character = SubFactory("amc.factories.CharacterFactory")
+    cargo_key = "C::Stone"
+    quantity = LazyAttribute(lambda _: random.randint(1, 50))
+    timestamp = LazyAttribute(lambda _: timezone.now())
+    bonus_paid = 0

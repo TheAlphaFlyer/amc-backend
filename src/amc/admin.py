@@ -67,6 +67,9 @@ from .models import (
     MinistryTerm,
     MinistryDashboard,
     JobPostingConfig,
+    SupplyChainEvent,
+    SupplyChainObjective,
+    SupplyChainContribution,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1064,3 +1067,46 @@ class MinistryDashboardAdmin(admin.ModelAdmin):
             **(extra_context or {}),
         }
         return TemplateResponse(request, cast(Any, self.change_list_template), context)
+
+
+# ── Supply Chain Events ──────────────────────────────────────────────
+
+
+class SupplyChainObjectiveInline(admin.TabularInline):
+    model = SupplyChainObjective
+    extra = 1
+    filter_horizontal = ["cargos", "destination_points", "source_points"]
+    readonly_fields = ["quantity_fulfilled"]
+
+
+@admin.register(SupplyChainEvent)
+class SupplyChainEventAdmin(admin.ModelAdmin):
+    list_display = [
+        "name",
+        "start_at",
+        "end_at",
+        "total_prize",
+        "rewards_distributed",
+    ]
+    list_filter = ["rewards_distributed"]
+    search_fields = ["name"]
+    inlines = [SupplyChainObjectiveInline]
+    readonly_fields = ["rewards_distributed", "discord_message_id"]
+
+
+@admin.register(SupplyChainContribution)
+class SupplyChainContributionAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "character",
+        "cargo_key",
+        "quantity",
+        "bonus_paid",
+        "timestamp",
+        "objective",
+    ]
+    list_select_related = ["character", "character__player", "objective", "objective__event"]
+    ordering = ["-timestamp"]
+    search_fields = ["character__name", "cargo_key"]
+    autocomplete_fields = ["character", "delivery"]
+    readonly_fields = ["objective", "character", "delivery"]
