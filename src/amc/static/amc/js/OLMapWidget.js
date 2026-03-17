@@ -134,7 +134,7 @@ class MapWidget {
                 center: ol.extent.getCenter(customProjection.getExtent()),
                 zoom: this.options.default_zoom,
                 minZoom: 2,
-                maxZoom: 6,
+                maxZoom: 5,
                 extent: [
                     0 - MAP_REAL_SIZE,
                     0 - MAP_REAL_SIZE,
@@ -265,10 +265,10 @@ MapWidget.layerBuilder = {
     osm: () => {
         return new ol.layer.Tile({
             source: new ol.source.XYZ({
-                url: "https://www.aseanmotorclub.com/map_tiles/716/{z}_{x}_{y}.avif",
+                url: "https://www.aseanmotorclub.com/map_tiles/717/{z}_{x}_{y}.avif",
                 projection: customProjection,
-                minZoom: 1,
-                maxZoom: 8,
+                minZoom: 2,
+                maxZoom: 5,
                 wrapX: false
             })
         });
