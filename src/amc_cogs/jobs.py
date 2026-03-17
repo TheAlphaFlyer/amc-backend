@@ -143,8 +143,13 @@ class JobsCog(commands.Cog):
             description += destination_name
 
         if vehicle_key:
+            from amc.enums import VehicleKey
+            try:
+                vehicle_label = VehicleKey(vehicle_key).label
+            except ValueError:
+                vehicle_label = vehicle_key
             description += "\n**Vehicle**: "
-            description += vehicle_key
+            description += vehicle_label
 
         # --- Assemble the embed ---
         embed = discord.Embed(
