@@ -60,13 +60,17 @@ async def monitor_deliverypoints(ctx):
 
         dp = existing_dps.get(guid)
         if dp:
-            # Sync name if changed
+            # Sync name, coord, removed if changed
             updated = False
             if dp.name != dp_info["name"]:
                 dp.name = dp_info["name"]
                 updated = True
             if dp.removed:
                 dp.removed = False
+                updated = True
+            new_coord = parse_location(dp_info.get("location", ""))
+            if new_coord and dp.coord.coords != new_coord.coords:
+                dp.coord = new_coord
                 updated = True
             if updated:
                 dps_to_sync.append(dp)
@@ -159,7 +163,7 @@ async def monitor_deliverypoints(ctx):
     # Batch sync name/removed changes
     if dps_to_sync:
         await DeliveryPoint.objects.abulk_update(
-            dps_to_sync, ["name", "removed", "last_updated"]
+            dps_to_sync, ["name", "coord", "removed", "last_updated"]
         )
 
     # Batch save data field updates
