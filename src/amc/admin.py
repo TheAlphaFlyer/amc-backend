@@ -643,7 +643,11 @@ class DeliveryJobTemplateAdmin(admin.ModelAdmin):
         "completion_bonus",
         "rp_mode",
         "job_posting_probability",
+        "success_score",
+        "lifetime_completions",
+        "lifetime_expirations",
     ]
+    readonly_fields = ["success_score", "lifetime_completions", "lifetime_expirations"]
     search_fields = ["name", "description"]
     filter_horizontal = ["cargos", "source_points", "destination_points"]
 
