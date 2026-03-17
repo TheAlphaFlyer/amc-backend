@@ -375,6 +375,40 @@ async def cmd_repay_loan(ctx: CommandContext, amount: str = ""):
     )
 
 
+
+async def _gov_ranking_text(character):
+    """Build ranking and top-10 leaderboard text for gov employees."""
+    from amc.models import Character
+
+    rank = (
+        await Character.objects.filter(
+            gov_employee_contributions__gt=character.gov_employee_contributions,
+        ).acount()
+        + 1
+    )
+    total_ranked = await Character.objects.filter(
+        gov_employee_contributions__gt=0,
+    ).acount()
+
+    top_10 = Character.objects.filter(
+        gov_employee_contributions__gt=0,
+    ).order_by("-gov_employee_contributions")[:10]
+    leaderboard_lines = []
+    i = 1
+    async for c in top_10:
+        leaderboard_lines.append(
+            f"{i}. {c.name} \u2014 <Money>{c.gov_employee_contributions:,}</>"
+        )
+        i += 1
+    leaderboard_str = "\n".join(leaderboard_lines)
+
+    return (
+        f"<Bold>Your Rank:</> #{rank} out of {total_ranked}\n\n"
+        f"<Title>Top 10 Government Employees</>\n"
+        f"{leaderboard_str}"
+    )
+
+
 @registry.register(
     "/workforgov",
     description=gettext_lazy("Opt in as a Government Employee for 24 hours"),
@@ -398,17 +432,21 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
             gov_name = make_gov_name(character.name, character.gov_employee_level)
             await set_character_name(ctx.http_client_mod, character.guid, gov_name)
 
+        ranking_text = await _gov_ranking_text(character)
+
         await ctx.reply(
             _(
                 "<Title>Government Employee Status</>\n\n"
                 "<Bold>Level:</> GOV{level}\n"
                 "<Bold>Time Remaining:</> {hours}h {minutes}m\n"
-                "<Bold>Total Contributions:</> <Money>{contributions:,}</>"
+                "<Bold>Total Contributions:</> <Money>{contributions:,}</>\n"
+                "{ranking}"
             ).format(
                 level=character.gov_employee_level,
                 hours=hours,
                 minutes=minutes,
                 contributions=character.gov_employee_contributions,
+                ranking=ranking_text,
             )
         )
         return
@@ -418,6 +456,10 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
     )
 
     if not verified:
+        ranking_text = ""
+        if character.gov_employee_contributions > 0:
+            ranking_text = "\n" + await _gov_ranking_text(character)
+
         await ctx.reply(
             _(
                 "<Title>Work for Government</>\n"
@@ -429,9 +471,11 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
                 "- Your contributions will count towards your GOV level\n\n"
                 "Your current GOV level: <Highlight>GOV{level}</>\n"
                 "To confirm, type: <Highlight>/workforgov {code}</>"
+                "{ranking}"
             ).format(
                 level=character.gov_employee_level or 1,
                 code=code_expected.upper(),
+                ranking=ranking_text,
             )
         )
         return
@@ -445,3 +489,4 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
     await ctx.announce(
         f"{character.name} is now working as a Government Employee (GOV{character.gov_employee_level})!"
     )
+

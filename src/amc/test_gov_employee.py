@@ -392,19 +392,45 @@ class WorkforgovCommandTests(TestCase):
 
         mock_activate.assert_awaited_once()
 
-    async def test_workforgov_shows_status_when_active(self):
-        player = await sync_to_async(PlayerFactory)()
+    @patch("amc.mod_server.set_character_name", new_callable=AsyncMock)
+    async def test_workforgov_shows_status_when_active(self, mock_set_name):
+        # Create several characters with varying contributions
+        player1 = await sync_to_async(PlayerFactory)()
+        await sync_to_async(CharacterFactory)(
+            player=player1,
+            name="TopPlayer",
+            gov_employee_contributions=5_000_000,
+        )
+
+        player2 = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player,
+            player=player2,
             guid="cmd-active-guid",
+            name="TestPlayer",
             gov_employee_until=timezone.now() + timedelta(hours=12),
             gov_employee_level=3,
             gov_employee_contributions=1_200_000,
         )
 
+        player3 = await sync_to_async(PlayerFactory)()
+        await sync_to_async(CharacterFactory)(
+            player=player3,
+            name="LowPlayer",
+            gov_employee_contributions=100_000,
+        )
+
+        # Character with zero contributions should be excluded
+        player4 = await sync_to_async(PlayerFactory)()
+        await sync_to_async(CharacterFactory)(
+            player=player4,
+            name="ZeroPlayer",
+            gov_employee_contributions=0,
+        )
+
         ctx = MagicMock(spec=CommandContext)
         ctx.reply = AsyncMock()
         ctx.character = character
+        ctx.http_client_mod = MagicMock()
 
         await cmd_workforgov(ctx)
 
@@ -412,6 +438,14 @@ class WorkforgovCommandTests(TestCase):
         output = ctx.reply.call_args[0][0]
         self.assertIn("GOV3", output)
         self.assertIn("Status", output)
+        # Ranking: TopPlayer > TestPlayer > LowPlayer = 3 total, rank #2
+        self.assertIn("#2 out of 3", output)
+        # Leaderboard should include all 3 with positive contributions
+        self.assertIn("TopPlayer", output)
+        self.assertIn("TestPlayer", output)
+        self.assertIn("LowPlayer", output)
+        # ZeroPlayer should be excluded
+        self.assertNotIn("ZeroPlayer", output)
 
 
 class IsGovEmployeePropertyTests(TestCase):
