@@ -76,7 +76,7 @@ portals = [
     ),
 ]
 
-SHORTCUT_ZONE_WARNING_RADIUS = 10000  # game units (~100m)
+SHORTCUT_ZONE_WARNING_RADIUS = 2000  # game units (~20m)
 
 SHORTCUT_ZONE_WARNING_MESSAGE = """\
 <Title>⚠️ Shortcut Zone Ahead</>
@@ -84,9 +84,15 @@ SHORTCUT_ZONE_WARNING_MESSAGE = """\
 Deliveries made through this area will <Highlight>NOT receive any subsidy bonus</>.
 """
 
+SHORTCUT_ZONE_ENTRY_MESSAGE = """\
+<Title>⛔ Entered Shortcut Zone</>
+<Warning>You are now INSIDE a shortcut zone!</>
+Any delivery completed while having passed through this area will <Highlight>NOT be subsidised</>.
+"""
+
 
 async def _check_shortcut_zones(character, old_location, new_location, ctx):
-    """Warn players when they approach within 100 units of a ShortcutZone."""
+    """Warn players when they approach or enter a ShortcutZone."""
     player = character.player
     http_client_mod = ctx.get("http_client_mod")
     if http_client_mod is None:
@@ -102,13 +108,26 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
         distance_old = old_2d.distance(zone_geom)
         distance_new = new_2d.distance(zone_geom)
 
-        was_outside = distance_old > SHORTCUT_ZONE_WARNING_RADIUS
-        is_inside = distance_new <= SHORTCUT_ZONE_WARNING_RADIUS
+        # Proximity WARNING (e.g. 2000 units away)
+        was_outside_warning = distance_old > SHORTCUT_ZONE_WARNING_RADIUS
+        is_inside_warning = distance_new <= SHORTCUT_ZONE_WARNING_RADIUS and distance_new > 0
 
-        if was_outside and is_inside:
+        if was_outside_warning and is_inside_warning:
             await show_popup(
                 http_client_mod,
                 SHORTCUT_ZONE_WARNING_MESSAGE,
+                player_id=player.unique_id,
+            )
+            await asyncio.sleep(0.1)
+
+        # Actual ENTRY (inside the polygon)
+        was_outside_polygon = distance_old > 0
+        is_inside_polygon = distance_new == 0
+
+        if was_outside_polygon and is_inside_polygon:
+            await show_popup(
+                http_client_mod,
+                SHORTCUT_ZONE_ENTRY_MESSAGE,
                 player_id=player.unique_id,
             )
             await asyncio.sleep(0.1)

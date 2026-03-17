@@ -7,6 +7,7 @@ from amc.factories import CharacterFactory
 from amc.locations import (
     _check_shortcut_zones,
     SHORTCUT_ZONE_WARNING_MESSAGE,
+    SHORTCUT_ZONE_ENTRY_MESSAGE,
 )
 
 
@@ -34,12 +35,12 @@ class ShortcutZoneWarningTests(TestCase):
 
     @patch("amc.locations.show_popup", new_callable=AsyncMock)
     async def test_warning_on_approach(self, mock_show_popup):
-        """Player moves from outside 10000 units to within 10000 units → popup fires."""
+        """Player moves from outside 2000 units to within 2000 units → popup fires."""
         await self._create_zone()
         character = await sync_to_async(CharacterFactory)()
 
-        old_loc = Point(-10000, 1000, 0, srid=0)  # 10900 units from polygon edge
-        new_loc = Point(-9000, 1000, 0, srid=0)  # 9900 units from polygon edge
+        old_loc = Point(-2000, 1000, 0, srid=0)  # 2900 units from polygon edge
+        new_loc = Point(-1000, 1000, 0, srid=0)  # 1900 units from polygon edge
 
         ctx = self._make_ctx(AsyncMock())
         await _check_shortcut_zones(character, old_loc, new_loc, ctx)
@@ -52,12 +53,12 @@ class ShortcutZoneWarningTests(TestCase):
 
     @patch("amc.locations.show_popup", new_callable=AsyncMock)
     async def test_no_warning_when_far(self, mock_show_popup):
-        """Player stays beyond 10000 units → no popup."""
+        """Player stays beyond 2000 units → no popup."""
         await self._create_zone()
         character = await sync_to_async(CharacterFactory)()
 
-        old_loc = Point(-15000, 1000, 0, srid=0)  # 15900 units from edge
-        new_loc = Point(-12000, 1000, 0, srid=0)  # 12900 units from edge
+        old_loc = Point(-3000, 1000, 0, srid=0)  # 3900 units from edge
+        new_loc = Point(-2100, 1000, 0, srid=0)  # 3000 units from edge
 
         ctx = self._make_ctx(AsyncMock())
         await _check_shortcut_zones(character, old_loc, new_loc, ctx)
@@ -66,17 +67,36 @@ class ShortcutZoneWarningTests(TestCase):
 
     @patch("amc.locations.show_popup", new_callable=AsyncMock)
     async def test_no_warning_when_already_inside(self, mock_show_popup):
-        """Player was already within 10000 units → no duplicate warning."""
+        """Player was already within 2000 units → no duplicate warning."""
         await self._create_zone()
         character = await sync_to_async(CharacterFactory)()
 
-        old_loc = Point(-8000, 1000, 0, srid=0)  # 8900 units from edge (already close)
-        new_loc = Point(950, 1000, 0, srid=0)  # inside the polygon (distance=0)
+        old_loc = Point(-1000, 1000, 0, srid=0)  # 1900 units from edge (already close)
+        new_loc = Point(-500, 1000, 0, srid=0)  # 1400 units from edge (still close)
 
         ctx = self._make_ctx(AsyncMock())
         await _check_shortcut_zones(character, old_loc, new_loc, ctx)
 
         mock_show_popup.assert_not_called()
+
+    @patch("amc.locations.show_popup", new_callable=AsyncMock)
+    async def test_entry_notification(self, mock_show_popup):
+        """Crossing from outside to inside the polygon → entry popup fires."""
+        await self._create_zone()
+        character = await sync_to_async(CharacterFactory)()
+
+        old_loc = Point(-1000, 1000, 0, srid=0)  # 1900 units from edge
+        new_loc = Point(1000, 1000, 0, srid=0)  # Inside the polygon
+
+        ctx = self._make_ctx(AsyncMock())
+        await _check_shortcut_zones(character, old_loc, new_loc, ctx)
+
+        # Should show entry notification
+        mock_show_popup.assert_called_once_with(
+            ctx["http_client_mod"],
+            SHORTCUT_ZONE_ENTRY_MESSAGE,
+            player_id=character.player.unique_id,
+        )
 
     @patch("amc.locations.show_popup", new_callable=AsyncMock)
     async def test_inactive_zone_ignored(self, mock_show_popup):
