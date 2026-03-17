@@ -1619,6 +1619,18 @@ class DeliveryJobTemplate(models.Model):
         default=5.0, help_text="The number of hours to complete the job"
     )
 
+    # Adaptive posting equilibrium (updated automatically)
+    success_score = models.FloatField(
+        default=1.0,
+        help_text="Adaptive posting multiplier [0.1-2.0]. Boosted on completion, decayed on expiry.",
+    )
+    lifetime_completions = models.PositiveIntegerField(
+        default=0, help_text="Total jobs completed from this template (observability)"
+    )
+    lifetime_expirations = models.PositiveIntegerField(
+        default=0, help_text="Total jobs expired from this template (observability)"
+    )
+
     objects: ClassVar[DeliveryJobTemplateManager] = DeliveryJobTemplateManager()
 
     def __str__(self):

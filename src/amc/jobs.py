@@ -6,7 +6,8 @@ import itertools
 from operator import attrgetter
 from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Q, Prefetch
+from django.db.models import Q, F, Prefetch
+from django.db.models.functions import Least, Greatest
 from amc.models import (
     Cargo,
     DeliveryPointStorage,
@@ -26,6 +27,15 @@ from amc_finance.services import (
     process_ministry_completion,
     process_treasury_expiration_penalty,
 )
+
+
+async def _decay_template_score(job):
+    """Decay the template's success_score on job expiry."""
+    if job.created_from_id:
+        await DeliveryJobTemplate.objects.filter(pk=job.created_from_id).aupdate(
+            success_score=Greatest(0.1, F("success_score") * 0.70),
+            lifetime_expirations=F("lifetime_expirations") + 1,
+        )
 
 
 async def get_job_success_rate(hours_lookback: int = 24) -> tuple[float, int, int]:
@@ -83,9 +93,10 @@ async def cleanup_expired_jobs():
         fulfilled_at__isnull=True,
         funding_term__isnull=False,
         escrowed_amount__gt=0,
-    )
+    ).select_related("created_from")
     async for job in expired_jobs:
         await process_ministry_expiration(job)
+        await _decay_template_score(job)
 
     # 2. Handle non-Ministry expired jobs (government shutdown)
     # Treasury pays penalty of 50% of completion_bonus
@@ -94,9 +105,10 @@ async def cleanup_expired_jobs():
         fulfilled_at__isnull=True,
         funding_term__isnull=True,
         completion_bonus__gt=0,
-    )
+    ).select_related("created_from")
     async for job in expired_non_ministry_jobs:
         await process_treasury_expiration_penalty(job)
+        await _decay_template_score(job)
 
 
 def calculate_treasury_multiplier(
@@ -229,6 +241,7 @@ async def monitor_jobs(ctx):
         # Treasury multiplier influences posting probability
         chance = (
             template.job_posting_probability
+            * template.success_score
             * max(10, num_players)
             / 2000
             / (5 + num_active_jobs * 2)
@@ -377,5 +390,12 @@ async def on_delivery_job_fulfilled(job, http_client):
     # Ministry Rebate Logic
     if job.funding_term_id:
         await process_ministry_completion(job, completion_bonus)
+
+    # Boost template success score on completion
+    if job.created_from_id:
+        await DeliveryJobTemplate.objects.filter(pk=job.created_from_id).aupdate(
+            success_score=Least(2.0, F("success_score") * 1.15),
+            lifetime_completions=F("lifetime_completions") + 1,
+        )
 
     asyncio.create_task(announce(message, http_client, color="90EE90"))
