@@ -10,6 +10,7 @@ from amc_cogs.profile import PlayerProfileCog
 from amc.models import (
     Player,
     Character,
+    CharacterLocationStats,
     PlayerStatusLog,
     ServerCargoArrivedLog,
 )
@@ -166,3 +167,50 @@ class PlayerProfileCogTestCase(TestCase):
         )
         args, kwargs = self.interaction.followup.send.call_args
         self.assertIn("not found", args[0])
+
+    async def test_player_profile_vehicle_stats_separates_on_foot(self):
+        """On-foot shown as % of total, vehicles shown as % of vehicle-only time."""
+        now = timezone.now()
+        player = await Player.objects.acreate(
+            unique_id=76561198000000003,
+            discord_user_id=123456789,
+        )
+        char = await Character.objects.acreate(player=player, name="VehicleGuy")
+        await PlayerStatusLog.objects.acreate(
+            character=char,
+            timespan=Range(now - timedelta(hours=1), now),
+        )
+
+        # 70% on foot, 20% Titan, 10% Kuda Semi
+        await CharacterLocationStats.objects.acreate(
+            character=char,
+            vehicle_stats={"None": 700, "Titan": 200, "Kuda": 100},
+            total_location_records=1000,
+        )
+
+        await cast(Any, self.cog.player_profile.callback)(self.cog, self.interaction)
+        embed = self.interaction.followup.send.call_args.kwargs["embed"]
+
+        # Find the vehicle field
+        vehicle_field = None
+        for field in embed.fields:
+            if "Favourite Vehicles" in field.name:
+                vehicle_field = field
+                break
+
+        self.assertIsNotNone(vehicle_field, "Vehicle stats field should be present")
+
+        # On foot should show 70% (700/1000)
+        self.assertIn("On Foot", vehicle_field.value)
+        self.assertIn("70%", vehicle_field.value)
+
+        # Titan should show 67% (200/300 of vehicle time)
+        self.assertIn("Titan", vehicle_field.value)
+        self.assertIn("67%", vehicle_field.value)
+
+        # Kuda should show 33% (100/300 of vehicle time)
+        self.assertIn("33%", vehicle_field.value)
+
+        # "None" should NOT appear as a vehicle label
+        self.assertNotIn("**None:**", vehicle_field.value)
+

@@ -250,23 +250,39 @@ class PlayerProfileCog(commands.Cog):
             character=character
         ).afirst()
         if stats and stats.vehicle_stats:
-            top_vehicles = sorted(
-                stats.vehicle_stats.items(), key=lambda x: x[1], reverse=True
-            )[:5]
+            all_stats = dict(stats.vehicle_stats)
             total_samples = stats.total_location_records or 1
+
+            # Separate on-foot ("None" key) from actual vehicles
+            on_foot_count = all_stats.pop("None", 0)
+            vehicle_total = sum(all_stats.values())
+
             vehicle_lines = []
-            for key, count in top_vehicles:
-                try:
-                    label = VehicleKey(key).label
-                except ValueError:
-                    label = key
-                pct = count / total_samples * 100
-                vehicle_lines.append(f"**{label}:** {pct:.0f}%")
-            embed.add_field(
-                name="🚗 Favourite Vehicles",
-                value="\n".join(vehicle_lines),
-                inline=True,
-            )
+
+            # Show on-foot % against total samples
+            if on_foot_count:
+                on_foot_pct = on_foot_count / total_samples * 100
+                vehicle_lines.append(f"🚶 **On Foot:** {on_foot_pct:.0f}%")
+
+            # Show vehicles as % of vehicle-only time
+            if all_stats and vehicle_total > 0:
+                top_vehicles = sorted(
+                    all_stats.items(), key=lambda x: x[1], reverse=True
+                )[:5]
+                for key, count in top_vehicles:
+                    try:
+                        label = VehicleKey(key).label
+                    except ValueError:
+                        label = key
+                    pct = count / vehicle_total * 100
+                    vehicle_lines.append(f"**{label}:** {pct:.0f}%")
+
+            if vehicle_lines:
+                embed.add_field(
+                    name="🚗 Favourite Vehicles",
+                    value="\n".join(vehicle_lines),
+                    inline=True,
+                )
 
         # --- Deliveries by Cargo ---
         delivery_stats = (
