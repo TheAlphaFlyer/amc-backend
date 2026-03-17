@@ -10,6 +10,7 @@ from typing import Optional, TYPE_CHECKING
 from amc.game_server import get_players
 from amc.models import (
     Character,
+    CharacterLocationStats,
     Player,
     PlayerStatusLog,
     PlayerVehicleLog,
@@ -22,7 +23,7 @@ from amc.models import (
     Thank,
     RescueRequest,
 )
-from amc.enums import CargoKey
+from amc.enums import CargoKey, VehicleKey
 from amc_finance.models import LedgerEntry
 
 if TYPE_CHECKING:
@@ -243,6 +244,29 @@ class PlayerProfileCog(commands.Cog):
             ),
             inline=True,
         )
+
+        # --- Favourite Vehicles ---
+        stats = await CharacterLocationStats.objects.filter(
+            character=character
+        ).afirst()
+        if stats and stats.vehicle_stats:
+            top_vehicles = sorted(
+                stats.vehicle_stats.items(), key=lambda x: x[1], reverse=True
+            )[:5]
+            total_samples = stats.total_location_records or 1
+            vehicle_lines = []
+            for key, count in top_vehicles:
+                try:
+                    label = VehicleKey(key).label
+                except ValueError:
+                    label = key
+                pct = count / total_samples * 100
+                vehicle_lines.append(f"**{label}:** {pct:.0f}%")
+            embed.add_field(
+                name="🚗 Favourite Vehicles",
+                value="\n".join(vehicle_lines),
+                inline=True,
+            )
 
         # --- Deliveries by Cargo ---
         delivery_stats = (

@@ -13,6 +13,7 @@ import amc.tasks as tasks_module  # noqa: E402
 from necesse.tasks import process_necesse_log  # noqa: E402
 from amc.events import monitor_events, send_event_embeds  # noqa: E402
 from amc.locations import monitor_locations  # noqa: E402
+from amc.characterlocation_stats import refresh_all_vehicle_stats  # noqa: E402
 from amc.webhook import monitor_webhook  # noqa: E402
 from amc.ubi import handout_ubi, TASK_FREQUENCY as UBI_TASK_FREQUENCY  # noqa: E402
 from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
@@ -141,6 +142,8 @@ class WorkerSettings:
         cron(monitor_server_status, second=set(range(3, 60, 10))),
         # pyrefly: ignore [bad-argument-type]
         cron(expire_gov_employees, minute=set(range(0, 60, 5)), second=47),
+        # pyrefly: ignore [bad-argument-type]
+        cron(refresh_all_vehicle_stats, hour=None, minute=30, second=0),
         # cron(monitor_server_condition, minute=set(range(3, 60, 5))),
         # cron(monitor_rp_mode, second=set(range(7, 60, 13))),
     ]

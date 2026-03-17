@@ -2287,3 +2287,27 @@ class MinistryDashboard(models.Model):
     class Meta:
         managed = False
         verbose_name_plural = "Ministry Dashboard"
+
+
+@final
+class CharacterLocationStats(models.Model):
+    character = models.OneToOneField(
+        Character, on_delete=models.CASCADE, related_name="location_stats"
+    )
+    # Top vehicle by sample count
+    favourite_vehicle = models.CharField(
+        max_length=100, null=True, blank=True, choices=VehicleKey
+    )
+    # Full breakdown: {"vehicle_key": count, ...}
+    vehicle_stats = models.JSONField(default=dict)
+    total_location_records = models.PositiveIntegerField(default=0)
+    # Timestamp of the latest CharacterLocation row that was processed
+    last_computed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Character Location Stats"
+        verbose_name_plural = "Character Location Stats"
+
+    def __str__(self):
+        label = VehicleKey(self.favourite_vehicle).label if self.favourite_vehicle else "None"
+        return f"{self.character} — fav: {label}"
