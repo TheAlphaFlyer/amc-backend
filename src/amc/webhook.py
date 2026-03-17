@@ -96,7 +96,7 @@ async def on_player_profit(
     if total_subsidy != 0:
         await subsidise_player(total_subsidy, character, session)
     # actual_income = what the game deposited + what we actually paid as subsidy
-    actual_income = (total_payment - original_subsidy) + total_subsidy
+    actual_income = (total_payment - original_subsidy) + total_subsidy + contract_payment
     loan_repayment = await repay_loan_for_profit(character, actual_income, session)
     savings = actual_income - loan_repayment
     if savings > 0:

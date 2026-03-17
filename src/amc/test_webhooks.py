@@ -1499,3 +1499,70 @@ class SubsidyIntegrationTests(TestCase):
             0,
             "Case mismatch should result in zero subsidy (if strictly matched)",
         )
+
+
+class OnPlayerProfitTests(TestCase):
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_contract_payment_included_in_actual_income(
+        self, mock_subsidise, mock_repay_loan, mock_savings
+    ):
+        """Contract payment should be included in actual_income for non-gov-employees."""
+        from amc.webhook import on_player_profit
+
+        mock_repay_loan.return_value = 0
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, is_gov_employee=False, reject_ubi=False
+        )
+
+        session = MagicMock()
+        total_subsidy = 0
+        total_payment = 10_000  # base cargo earnings
+        contract_payment = 50_000  # contract completion payment
+
+        await on_player_profit(
+            character, total_subsidy, total_payment, session,
+            contract_payment=contract_payment,
+        )
+
+        # set_aside_player_savings should receive actual_income = 10000 + 50000 = 60000
+        mock_savings.assert_called_once()
+        savings_amount = mock_savings.call_args[0][1]
+        self.assertEqual(savings_amount, 60_000)
+
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_contract_payment_with_reject_ubi(
+        self, mock_subsidise, mock_repay_loan, mock_savings
+    ):
+        """Contract payment should still be deposited even with reject_ubi=True."""
+        from amc.webhook import on_player_profit
+
+        mock_repay_loan.return_value = 0
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, is_gov_employee=False, reject_ubi=True
+        )
+
+        session = MagicMock()
+        # total_payment includes subsidy baked in by process_event
+        total_subsidy = 5_000
+        total_payment = 15_000  # 10000 base + 5000 subsidy
+        contract_payment = 50_000
+
+        await on_player_profit(
+            character, total_subsidy, total_payment, session,
+            contract_payment=contract_payment,
+        )
+
+        # reject_ubi zeroes subsidy, so actual_income = (15000 - 5000) + 0 + 50000 = 60000
+        mock_subsidise.assert_not_called()
+        mock_savings.assert_called_once()
+        savings_amount = mock_savings.call_args[0][1]
+        self.assertEqual(savings_amount, 60_000)
+
