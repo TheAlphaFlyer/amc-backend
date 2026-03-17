@@ -39,8 +39,8 @@ from amc.models import (
     Character,
     MinistryTerm,
     SubsidyRule,
+    ShortcutZone,
 )
-from amc.locations import gwangjin_shortcut
 
 
 async def on_player_profits(player_profits, session, http_client=None):
@@ -612,10 +612,12 @@ async def process_events(
         total_contract_payment = 0
 
         is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
-        used_shortcut = (
-            character.last_location is not None
-            and gwangjin_shortcut.covers(character.last_location)
-        )
+        used_shortcut = False
+        if character.last_location is not None:
+            used_shortcut = await ShortcutZone.objects.filter(
+                active=True,
+                polygon__covers=character.last_location,
+            ).aexists()
 
         for event in es:
             try:

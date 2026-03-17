@@ -2167,6 +2167,17 @@ class SubsidyArea(models.Model):
 
 
 @final
+class ShortcutZone(models.Model):
+    name = models.CharField(max_length=200)
+    polygon = models.PolygonField(srid=3857, dim=2)
+    active = models.BooleanField(default=True)
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+@final
 class SubsidyRule(models.Model):
     class RewardType(models.TextChoices):
         PERCENTAGE = "PERCENTAGE", _("Percentage")

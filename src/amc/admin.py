@@ -60,6 +60,7 @@ from .models import (
     WorldObject,
     SubsidyArea,
     SubsidyRule,
+    ShortcutZone,
     DeliveryJobTemplate,
     MinistryElection,
     MinistryCandidacy,
@@ -864,6 +865,34 @@ class JobPostingConfigAdmin(admin.ModelAdmin):
 @admin.register(SubsidyArea)
 class SubsidyAreaAdmin(admin.ModelAdmin):
     list_display = ["name"]
+    search_fields = ["name"]
+
+    class Media:
+        js = (
+            "https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js",
+            "amc/js/OLMapWidget.js",
+        )
+        css = {
+            "all": (
+                "https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css",
+                "gis/css/ol3.css",
+            )
+        }
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        defaults = {
+            "widgets": {
+                "polygon": AMCOpenLayersWidget,
+            }
+        }
+        defaults.update(kwargs)
+        return super().get_form(request, obj, change, **defaults)
+
+
+@admin.register(ShortcutZone)
+class ShortcutZoneAdmin(admin.ModelAdmin):
+    list_display = ["name", "active"]
+    list_filter = ["active"]
     search_fields = ["name"]
 
     class Media:

@@ -6,8 +6,7 @@ from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
 from django.conf import settings
 
-gwangjin_shortcut = Point(359285, 892222, -3519).buffer(100_00)
-migeum_shortcut = Point(227878, 449541, -9308).buffer(60_00)
+
 point_of_interests = [
     (
         Point(**{"z": -20696.78, "y": 150230.13, "x": 1025.73}),

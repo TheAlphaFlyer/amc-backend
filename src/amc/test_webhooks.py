@@ -21,6 +21,7 @@ from amc.models import (
     Delivery,
     SubsidyRule,
     Cargo,
+    ShortcutZone,
 )
 from decimal import Decimal
 from django.utils import timezone
@@ -504,7 +505,13 @@ class ExtraWebhookTests(TestCase):
             character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
         )
 
-        # Point inside gwangjin_shortcut
+        # Create a ShortcutZone polygon covering the test point
+        zone_polygon = Point(359285, 892222, srid=3857).buffer(10000)
+        await ShortcutZone.objects.acreate(
+            name="Test Shortcut Zone",
+            polygon=zone_polygon,
+            active=True,
+        )
         await CharacterLocation.objects.acreate(
             character=character,
             location=Point(359285, 892222, -3519),
@@ -1515,7 +1522,7 @@ class OnPlayerProfitTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, is_gov_employee=False, reject_ubi=False
+            player=player, reject_ubi=False
         )
 
         session = MagicMock()
@@ -1546,7 +1553,7 @@ class OnPlayerProfitTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, is_gov_employee=False, reject_ubi=True
+            player=player, reject_ubi=True
         )
 
         session = MagicMock()

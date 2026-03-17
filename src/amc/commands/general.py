@@ -1,11 +1,8 @@
 import asyncio
 from amc.command_framework import registry, CommandContext
-from amc.models import BotInvocationLog, CharacterLocation, SongRequestLog
+from amc.models import BotInvocationLog, SongRequestLog
 from amc.mod_server import set_character_name, show_popup
 from django.conf import settings
-from django.db.models import Q
-from datetime import timedelta
-from amc.locations import gwangjin_shortcut, migeum_shortcut
 from amc.mod_server import get_player
 from amc.auth import verify_player
 from amc.utils import add_discord_verified_role
@@ -35,7 +32,7 @@ async def cmd_help(ctx: CommandContext):
         if cmd.get("featured", False):
             featured_cmds.append(cmd)
 
-    msg = _("<Title>Available Commands</>\n\n")
+    msg = _("<Title>Available Commands</> \n\n")
 
     # Show Featured section first
     if featured_cmds:
@@ -115,35 +112,6 @@ async def cmd_coords(ctx: CommandContext):
         await ctx.announce(
             f"{int(float(loc['X']))}, {int(float(loc['Y']))}, {int(float(loc['Z']))}"
         )
-
-
-# @registry.register("/shortcutcheck", description=gettext_lazy("Check if you are inside a forbidden shortcut zone"), category="General")
-async def cmd_shortcutcheck(ctx: CommandContext):
-    in_shortcut = await CharacterLocation.objects.filter(
-        Q(location__coveredby=gwangjin_shortcut)
-        | Q(location__coveredby=migeum_shortcut),
-        character=ctx.character,
-        timestamp__gte=ctx.timestamp - timedelta(seconds=5),
-    ).aexists()
-    used_shortcut = await CharacterLocation.objects.filter(
-        character=ctx.character,
-        location__coveredby=gwangjin_shortcut,
-        timestamp__gte=ctx.timestamp - timedelta(hours=1),
-    ).aexists()
-
-    msg = "<Title>Gwangjin Shortcut Status</>\n"
-    msg += (
-        "<Warning>You are inside the forbidden zone</>\n"
-        if in_shortcut
-        else "<EffectGood>You are outside the forbidden zone</>\n"
-    )
-    msg += (
-        "<Warning>You were detected inside the forbidden zone in the last hour</>\n"
-        if used_shortcut
-        else "<EffectGood>You have not been inside the forbidden zone for the last hour</>\n"
-    )
-
-    await ctx.reply(msg)
 
 
 @registry.register(
