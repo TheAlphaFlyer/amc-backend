@@ -2323,3 +2323,135 @@ class CharacterLocationStats(models.Model):
     def __str__(self):
         label = VehicleKey(self.favourite_vehicle).label if self.favourite_vehicle else "None"
         return f"{self.character} — fav: {label}"
+
+
+# ── Supply Chain Events ──────────────────────────────────────────────
+
+
+class SupplyChainEventQuerySet(models.QuerySet):
+    def filter_active(self):
+        now = timezone.now()
+        return self.filter(
+            start_at__lte=now,
+            end_at__gte=now,
+            rewards_distributed=False,
+        )
+
+    def filter_active_or_future(self):
+        now = timezone.now()
+        return self.filter(end_at__gte=now, rewards_distributed=False)
+
+    def filter_ended_not_distributed(self):
+        now = timezone.now()
+        return self.filter(end_at__lt=now, rewards_distributed=False)
+
+
+@final
+class SupplyChainEventManager(
+    models.Manager.from_queryset(SupplyChainEventQuerySet)  # pyrefly: ignore [invalid-inheritance]
+):  # type: ignore[misc]
+    pass
+
+
+@final
+class SupplyChainEvent(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    total_prize = models.PositiveBigIntegerField(
+        help_text="Total reward pool escrowed from treasury"
+    )
+    per_delivery_bonus_pct = models.FloatField(
+        default=0.20,
+        help_text="Fraction of total prize allocated to per-delivery bonuses (e.g. 0.20 = 20%)",
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+    )
+    escrowed_amount = models.PositiveBigIntegerField(
+        default=0, help_text="Amount held from treasury"
+    )
+    rewards_distributed = models.BooleanField(default=False)
+    discord_message_id = models.PositiveBigIntegerField(null=True, blank=True)
+
+    if TYPE_CHECKING:
+        objectives: models.Manager["SupplyChainObjective"]
+
+    objects: ClassVar[SupplyChainEventManager] = SupplyChainEventManager()
+
+    @property
+    def is_active(self):
+        now = timezone.now()
+        return self.start_at <= now <= self.end_at and not self.rewards_distributed
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(start_at__lt=F("end_at")),
+                name="supply_chain_event_start_before_end",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+@final
+class SupplyChainObjective(models.Model):
+    event = models.ForeignKey(
+        SupplyChainEvent, on_delete=models.CASCADE, related_name="objectives"
+    )
+    cargos = models.ManyToManyField(
+        Cargo, related_name="supply_chain_objectives", blank=True
+    )
+    destination_points = models.ManyToManyField(
+        DeliveryPoint, related_name="supply_chain_objectives_in", blank=True
+    )
+    source_points = models.ManyToManyField(
+        DeliveryPoint, related_name="supply_chain_objectives_out", blank=True
+    )
+    ceiling = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max rewardable quantity. Null = uncapped.",
+    )
+    quantity_fulfilled = models.PositiveIntegerField(default=0)
+    reward_weight = models.PositiveIntegerField(
+        default=10, help_text="Relative weight for reward pool share (e.g. 40 for 40%)"
+    )
+    is_primary = models.BooleanField(
+        default=False, help_text="Primary objectives define the main event goal"
+    )
+    per_delivery_bonus_multiplier = models.FloatField(
+        default=0.0,
+        help_text="Multiplier on per-delivery bonus. 0 = no per-delivery bonus for this objective.",
+    )
+
+    if TYPE_CHECKING:
+        contributions: models.Manager["SupplyChainContribution"]
+
+    def __str__(self):
+        cargo_names = ", ".join(c.label for c in self.cargos.all()[:3])
+        return f"{self.event.name} — {cargo_names or 'any cargo'}"
+
+
+@final
+class SupplyChainContribution(models.Model):
+    objective = models.ForeignKey(
+        SupplyChainObjective, on_delete=models.CASCADE, related_name="contributions"
+    )
+    character = models.ForeignKey(
+        Character, on_delete=models.SET_NULL, null=True, related_name="supply_chain_contributions"
+    )
+    cargo_key = models.CharField(max_length=200, db_index=True, choices=CargoKey)
+    quantity = models.PositiveIntegerField()
+    timestamp = models.DateTimeField()
+    delivery = models.ForeignKey(
+        Delivery,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supply_chain_contributions",
+    )
+    bonus_paid = models.PositiveBigIntegerField(
+        default=0, help_text="Per-delivery bonus amount paid"
+    )
