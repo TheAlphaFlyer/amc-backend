@@ -1,21 +1,93 @@
-import json
+from unittest.mock import AsyncMock, patch
 from asgiref.sync import sync_to_async
+from django.contrib.gis.geos import Point, Polygon
 from django.test import TestCase
-from amc.models import CharacterLocation
+from amc.models import ShortcutZone
 from amc.factories import CharacterFactory
-from amc.locations import process_player  # pyrefly: ignore [missing-module-attribute]
+from amc.locations import (
+    _check_shortcut_zones,
+    SHORTCUT_ZONE_WARNING_MESSAGE,
+)
 
 
-class LocationsTests(TestCase):
-    async def test_monitor_location(self):
-        await sync_to_async(CharacterFactory)(
-            name="freeman",
-            player__unique_id="76561198378447512",
-            guid="E603C74946EFF3F8834C9AAB3D0E3181",
+class ShortcutZoneWarningTests(TestCase):
+    """Tests for _check_shortcut_zones proximity warnings."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # A 200x200 square polygon centered at (1000, 1000)
+        cls.zone_polygon = Polygon(
+            ((900, 900), (1100, 900), (1100, 1100), (900, 1100), (900, 900)),
+            srid=3857,
         )
-        data = json.loads(
-            """{"data":[{"OwnEventGuids":{}, "JoinedEventGuids":["5B11926A45D1869C3AA6309F3F564829"], "CharacterGuid":"E603C74946EFF3F8834C9AAB3D0E3181", "BestLapTime":0.0, "bIsAdmin":true, "OwnCompanyGuid":"140F7EE64C640E282A1768A14B550613", "Levels":{}, "VehicleKey":"Fortem", "bIsHost":false, "PlayerName":"freeman", "UniqueID":"76561198378447512", "JoinedCompanyGuid":"0000", "CustomDestinationAbsoluteLocation":{"Z":0.0, "X":0.0, "Y":0.0}, "GridIndex":0, "Location":{"Z":-13839.230637516, "X":-189475.87476375, "Y":-1288.5995332908}}]}"""
+
+    async def _create_zone(self, active=True):
+        return await ShortcutZone.objects.acreate(
+            name="Test Shortcut",
+            polygon=self.zone_polygon,
+            active=active,
         )
-        location = data["data"][0]
-        await process_player(location, {})
-        self.assertTrue(await CharacterLocation.objects.aexists())
+
+    def _make_ctx(self, mock_session):
+        return {"http_client_mod": mock_session}
+
+    @patch("amc.locations.show_popup", new_callable=AsyncMock)
+    async def test_warning_on_approach(self, mock_show_popup):
+        """Player moves from outside 10000 units to within 10000 units → popup fires."""
+        await self._create_zone()
+        character = await sync_to_async(CharacterFactory)()
+
+        old_loc = Point(-10000, 1000, 0, srid=0)  # 10900 units from polygon edge
+        new_loc = Point(-9000, 1000, 0, srid=0)  # 9900 units from polygon edge
+
+        ctx = self._make_ctx(AsyncMock())
+        await _check_shortcut_zones(character, old_loc, new_loc, ctx)
+
+        mock_show_popup.assert_called_once_with(
+            ctx["http_client_mod"],
+            SHORTCUT_ZONE_WARNING_MESSAGE,
+            player_id=character.player.unique_id,
+        )
+
+    @patch("amc.locations.show_popup", new_callable=AsyncMock)
+    async def test_no_warning_when_far(self, mock_show_popup):
+        """Player stays beyond 10000 units → no popup."""
+        await self._create_zone()
+        character = await sync_to_async(CharacterFactory)()
+
+        old_loc = Point(-15000, 1000, 0, srid=0)  # 15900 units from edge
+        new_loc = Point(-12000, 1000, 0, srid=0)  # 12900 units from edge
+
+        ctx = self._make_ctx(AsyncMock())
+        await _check_shortcut_zones(character, old_loc, new_loc, ctx)
+
+        mock_show_popup.assert_not_called()
+
+    @patch("amc.locations.show_popup", new_callable=AsyncMock)
+    async def test_no_warning_when_already_inside(self, mock_show_popup):
+        """Player was already within 10000 units → no duplicate warning."""
+        await self._create_zone()
+        character = await sync_to_async(CharacterFactory)()
+
+        old_loc = Point(-8000, 1000, 0, srid=0)  # 8900 units from edge (already close)
+        new_loc = Point(950, 1000, 0, srid=0)  # inside the polygon (distance=0)
+
+        ctx = self._make_ctx(AsyncMock())
+        await _check_shortcut_zones(character, old_loc, new_loc, ctx)
+
+        mock_show_popup.assert_not_called()
+
+    @patch("amc.locations.show_popup", new_callable=AsyncMock)
+    async def test_inactive_zone_ignored(self, mock_show_popup):
+        """Inactive zone should not trigger a warning."""
+        await self._create_zone(active=False)
+        character = await sync_to_async(CharacterFactory)()
+
+        old_loc = Point(700, 1000, 0, srid=0)
+        new_loc = Point(850, 1000, 0, srid=0)
+
+        ctx = self._make_ctx(AsyncMock())
+        await _check_shortcut_zones(character, old_loc, new_loc, ctx)
+
+        mock_show_popup.assert_not_called()

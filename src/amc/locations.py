@@ -1,7 +1,7 @@
 import asyncio
 from django.contrib.gis.geos import Point
 from django.utils import timezone
-from amc.models import Character, CharacterLocation
+from amc.models import Character, CharacterLocation, ShortcutZone
 from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
 from django.conf import settings
@@ -75,6 +75,43 @@ portals = [
         Point(**{"x": -67245.74, "y": 150831.6, "z": -20646.85}),
     ),
 ]
+
+SHORTCUT_ZONE_WARNING_RADIUS = 10000  # game units (~100m)
+
+SHORTCUT_ZONE_WARNING_MESSAGE = """\
+<Title>⚠️ Shortcut Zone Ahead</>
+<Warning>You are near a shortcut zone!</>
+Deliveries made through this area will <Highlight>NOT receive any subsidy bonus</>.
+"""
+
+
+async def _check_shortcut_zones(character, old_location, new_location, ctx):
+    """Warn players when they approach within 100 units of a ShortcutZone."""
+    player = character.player
+    http_client_mod = ctx.get("http_client_mod")
+    if http_client_mod is None:
+        return
+
+    old_2d = Point(old_location.x, old_location.y, srid=0)
+    new_2d = Point(new_location.x, new_location.y, srid=0)
+
+    async for zone in ShortcutZone.objects.filter(active=True):
+        zone_geom = zone.polygon.clone()
+        zone_geom.srid = 0  # match the player point SRID for distance calc
+
+        distance_old = old_2d.distance(zone_geom)
+        distance_new = new_2d.distance(zone_geom)
+
+        was_outside = distance_old > SHORTCUT_ZONE_WARNING_RADIUS
+        is_inside = distance_new <= SHORTCUT_ZONE_WARNING_RADIUS
+
+        if was_outside and is_inside:
+            await show_popup(
+                http_client_mod,
+                SHORTCUT_ZONE_WARNING_MESSAGE,
+                player_id=player.unique_id,
+            )
+            await asyncio.sleep(0.1)
 
 
 async def _check_pois_and_portals(character, old_location, new_location, ctx):
@@ -154,6 +191,9 @@ async def monitor_locations(ctx):
         # Use cached last_location instead of querying 175M-row table
         if character.last_location:
             await _check_pois_and_portals(
+                character, character.last_location, new_point, ctx
+            )
+            await _check_shortcut_zones(
                 character, character.last_location, new_point, ctx
             )
 
