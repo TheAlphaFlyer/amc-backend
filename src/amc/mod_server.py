@@ -198,6 +198,19 @@ def get_party_size_for_character(parties, character_guid):
     return 1
 
 
+def get_party_members_for_character(parties, character_guid):
+    """Return list of all party member GUIDs for a character's party.
+    Returns [character_guid] if not in any party."""
+    if not character_guid:
+        return [character_guid] if character_guid else []
+    guid_str = str(character_guid).upper()
+    for party in parties:
+        players = party.get("Players", [])
+        if guid_str in players:
+            return list(players)
+    return [guid_str]
+
+
 async def get_webhook_events(session):
     async with session.get("/webhook") as resp:
         data = await resp.json()

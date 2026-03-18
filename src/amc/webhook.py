@@ -12,7 +12,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_size_for_character
+from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -652,14 +652,65 @@ async def process_events(
                 )
                 raise e
 
-        # Party bonus: boost entire payment, delivered as extra subsidy
-        if PARTY_BONUS_ENABLED and total_payment > 0:
-            party_size = get_party_size_for_character(parties, str(character.guid))
+        # Party bonus + payment splitting
+        if PARTY_BONUS_ENABLED and (total_payment > 0 or total_contract_payment > 0):
+            member_guids = get_party_members_for_character(parties, str(character.guid))
+            party_size = len(member_guids)
             if party_size > 1:
+                # 1. Apply party bonus first
                 party_multiplier = 1 + (party_size - 1) * PARTY_BONUS_RATE
                 party_bonus = int(total_payment * (party_multiplier - 1))
                 total_subsidy += party_bonus
                 total_payment += party_bonus
+
+                # 2. Equal split
+                share_payment = total_payment // party_size
+                share_subsidy = total_subsidy // party_size
+                share_contract = total_contract_payment // party_size
+
+                # 3. Look up other party members
+                other_guids = [g for g in member_guids if g.upper() != str(character.guid).upper()]
+                other_characters = []
+                if other_guids:
+                    other_characters = [
+                        c async for c in Character.objects.filter(
+                            guid__in=other_guids
+                        ).select_related("player")
+                    ]
+
+                # 4. Wallet transfers: withdraw others' shares from earner
+                # The game deposited 'base earnings' into earner's wallet.
+                # Subsidy is transferred separately by on_player_profit.
+                # So we need to withdraw each other member's base share.
+                earner_base_share = share_payment - share_subsidy
+                others_withdrawal = earner_base_share * len(other_characters)
+                if others_withdrawal > 0 and http_client_mod:
+                    await transfer_money(
+                        http_client_mod,
+                        int(-others_withdrawal),
+                        "Party Split",
+                        str(character.player.unique_id),
+                    )
+
+                # 5. Deposit base share into each other member's wallet
+                for other_char in other_characters:
+                    if earner_base_share > 0 and http_client_mod:
+                        await transfer_money(
+                            http_client_mod,
+                            int(earner_base_share),
+                            "Party Share",
+                            str(other_char.player.unique_id),
+                        )
+
+                # 6. Apply shortcut then append all members
+                if used_shortcut:
+                    share_payment -= share_subsidy
+                    share_subsidy = 0
+
+                player_profits.append((character, share_subsidy, share_payment, share_contract))
+                for other_char in other_characters:
+                    player_profits.append((other_char, share_subsidy, share_payment, share_contract))
+                continue
 
         if used_shortcut:
             total_payment -= total_subsidy
