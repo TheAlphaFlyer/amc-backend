@@ -176,6 +176,28 @@ async def get_players(session):
         return data["data"]
 
 
+async def get_parties(session):
+    """Fetch current parties. Returns empty list on failure (graceful degradation)."""
+    try:
+        async with session.get("/parties", timeout=FAST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+            return data.get("data", [])
+    except Exception:
+        return []
+
+
+def get_party_size_for_character(parties, character_guid):
+    """Return party size for a character. Returns 1 if not in any party.
+    character_guid should be an uppercase hex string (GuidToString format)."""
+    guid_str = str(character_guid).upper()
+    for party in parties:
+        if guid_str in party.get("Players", []):
+            return len(party["Players"])
+    return 1
+
+
 async def get_webhook_events(session):
     async with session.get("/webhook") as resp:
         data = await resp.json()

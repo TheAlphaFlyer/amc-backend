@@ -1,4 +1,5 @@
 import json
+import os
 import asyncio
 import itertools
 from operator import attrgetter
@@ -11,7 +12,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments
+from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_size_for_character
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -41,6 +42,9 @@ from amc.models import (
     SubsidyRule,
     ShortcutZone,
 )
+
+PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+PARTY_BONUS_RATE = 0.05  # 5% per extra party member
 
 
 async def on_player_profits(player_profits, session, http_client=None):
@@ -582,6 +586,7 @@ async def process_events(
     player_profits = []
 
     treasury_balance = await get_treasury_fund_balance()
+    parties = await get_parties(http_client_mod) if (PARTY_BONUS_ENABLED and http_client_mod) else []
     active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
     for character_guid, es in grouped_player_events:
         if not character_guid:
@@ -646,6 +651,15 @@ async def process_events(
                     )
                 )
                 raise e
+
+        # Party bonus: boost entire payment, delivered as extra subsidy
+        if PARTY_BONUS_ENABLED and total_payment > 0:
+            party_size = get_party_size_for_character(parties, str(character.guid))
+            if party_size > 1:
+                party_multiplier = 1 + (party_size - 1) * PARTY_BONUS_RATE
+                party_bonus = int(total_payment * (party_multiplier - 1))
+                total_subsidy += party_bonus
+                total_payment += party_bonus
 
         if used_shortcut:
             total_payment -= total_subsidy
