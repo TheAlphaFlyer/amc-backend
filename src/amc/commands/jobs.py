@@ -4,6 +4,8 @@ from amc.utils import get_time_difference_string
 from amc.subsidies import get_subsidies_text
 from amc.jobs import calculate_treasury_multiplier
 from amc_finance.services import get_treasury_fund_balance
+from amc.webhook import PARTY_BONUS_ENABLED, PARTY_BONUS_RATE
+from amc.mod_server import get_parties, get_party_size_for_character
 from django.db.models import F
 from django.utils.translation import gettext as _, gettext_lazy
 
@@ -34,6 +36,24 @@ async def cmd_jobs(ctx: CommandContext):
     else:
         boost_str = f"<EffectBad>{boost_pct}%</>"
 
+    # Party bonus info (only when feature is enabled)
+    party_str = ""
+    if PARTY_BONUS_ENABLED and ctx.http_client_mod:
+        parties = await get_parties(ctx.http_client_mod)
+        party_size = get_party_size_for_character(parties, str(ctx.character.guid))
+        bonus_pct = int((party_size - 1) * PARTY_BONUS_RATE * 100)
+        if party_size > 1:
+            party_str = _(
+                "\n<Secondary>Party Bonus:</> <EffectGood>+{bonus_pct}%</> ({party_size} members)"
+                "\n<Secondary>Form larger parties for bigger bonuses!</>"
+            ).format(bonus_pct=bonus_pct, party_size=party_size)
+        else:
+            rate_pct = int(PARTY_BONUS_RATE * 100)
+            party_str = _(
+                "\n<Secondary>Party Bonus:</> <EffectBad>None (solo)</>"
+                "\n<Secondary>Join a party for +{rate_pct}% per member!</>"
+            ).format(rate_pct=rate_pct)
+
     jobs_str_list: list[str] = []
     async for job in jobs:
         cargo_key = (
@@ -63,15 +83,15 @@ async def cmd_jobs(ctx: CommandContext):
 
     jobs_str = "\n\n".join(jobs_str_list)
     await ctx.reply(
-        _("""<Title>Delivery Jobs</>
-<Secondary>Complete jobs solo or with others!</>
-<Secondary>Treasury Boost:</> {boost_str}
-
-{jobs_str}
-
-<Title>Subsidies</>: Use /subsidies to view.""").format(
+        _("<Title>Delivery Jobs</>"
+          "\n<Secondary>Complete jobs solo or with others!</>"
+          "\n<Secondary>Treasury Boost:</> {boost_str}"
+          "{party_str}"
+          "\n\n{jobs_str}"
+          "\n\n<Title>Subsidies</>: Use /subsidies to view.").format(
             jobs_str=jobs_str,
             boost_str=boost_str,
+            party_str=party_str,
         )
     )
 
