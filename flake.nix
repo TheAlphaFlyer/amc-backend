@@ -275,6 +275,8 @@
                 }
               '';
             };
+            # Ensure syslog shuts down quickly (default 90s blocks container stop)
+            systemd.services.syslog.serviceConfig.TimeoutStopSec = "5s";
           };
         };
 
