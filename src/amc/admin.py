@@ -1130,7 +1130,6 @@ class SupplyChainContributionAdmin(admin.ModelAdmin):
         "character",
         "cargo_key",
         "quantity",
-        "bonus_paid",
         "timestamp",
         "objective",
     ]
