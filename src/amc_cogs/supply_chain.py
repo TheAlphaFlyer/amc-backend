@@ -95,8 +95,25 @@ class SupplyChainCog(commands.Cog):
                 inline=False,
             )
 
+        # Calculate current pool from primary objective
+        primary = None
+        async for obj in event.objectives.all():
+            if obj.is_primary:
+                primary = obj
+                break
+
+        if primary:
+            fulfilled = primary.quantity_fulfilled
+            if primary.ceiling is not None:
+                fulfilled = min(fulfilled, primary.ceiling)
+            current_pool = event.reward_per_item * fulfilled
+            max_pool = event.reward_per_item * (primary.ceiling or fulfilled)
+            pool_text = f"Pool: ${current_pool:,} / ${max_pool:,}"
+        else:
+            pool_text = f"${event.reward_per_item:,}/item"
+
         embed.set_footer(
-            text=f"⏱ {math.ceil(hours_remaining)}h remaining | Prize pool: ${event.total_prize:,}"
+            text=f"⏱ {math.ceil(hours_remaining)}h remaining | {pool_text}"
         )
         return embed
 

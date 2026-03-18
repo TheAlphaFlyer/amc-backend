@@ -107,9 +107,9 @@ class ContributionRecordingTests(TestCase):
             event=event, cargos=[self.cargo], destination_points=[self.dest],
         )
 
-        bonus = await self._contribute(cargo_key="C::Iron")
+        result = await self._contribute(cargo_key="C::Iron")
 
-        self.assertEqual(bonus, 0)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 0)
 
     async def test_wrong_destination_no_match(self, mock_send):
@@ -123,9 +123,9 @@ class ContributionRecordingTests(TestCase):
             event=event, cargos=[self.cargo], destination_points=[self.dest],
         )
 
-        bonus = await self._contribute(dest=other_dest)
+        result = await self._contribute(dest=other_dest)
 
-        self.assertEqual(bonus, 0)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 0)
 
     async def test_source_point_filter(self, mock_send):
@@ -143,12 +143,12 @@ class ContributionRecordingTests(TestCase):
         )
 
         # Deliver from wrong source → no match
-        bonus = await self._contribute(src=wrong_source)
-        self.assertEqual(bonus, 0)
+        result = await self._contribute(src=wrong_source)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 0)
 
         # Deliver from correct source → match
-        bonus = await self._contribute(src=self.source)
+        result = await self._contribute(src=self.source)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 1)
 
     async def test_no_cargo_filter_matches_any(self, mock_send):
@@ -190,9 +190,9 @@ class ContributionRecordingTests(TestCase):
             event=event, cargos=[self.cargo], destination_points=[self.dest],
         )
 
-        bonus = await self._contribute()
+        result = await self._contribute()
 
-        self.assertEqual(bonus, 0)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 0)
 
     async def test_future_event_no_match(self, mock_send):
@@ -206,9 +206,9 @@ class ContributionRecordingTests(TestCase):
             event=event, cargos=[self.cargo], destination_points=[self.dest],
         )
 
-        bonus = await self._contribute()
+        result = await self._contribute()
 
-        self.assertEqual(bonus, 0)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 0)
 
     # ── Ceiling enforcement ──
@@ -250,8 +250,8 @@ class ContributionRecordingTests(TestCase):
         self.assertEqual(obj.quantity_fulfilled, 5)
 
         # Next delivery — ceiling fully met, should NOT create contribution
-        bonus = await self._contribute(quantity=10)
-        self.assertEqual(bonus, 0)
+        result = await self._contribute(quantity=10)
+        self.assertEqual(result, 0)
         self.assertEqual(await SupplyChainContribution.objects.acount(), 1)
         await obj.arefresh_from_db()
         self.assertEqual(obj.quantity_fulfilled, 5)  # Unchanged
@@ -274,8 +274,8 @@ class ContributionRecordingTests(TestCase):
     async def test_multiple_concurrent_events(self, mock_send):
         """Delivery matching two simultaneous events creates a contribution for each."""
         await self.asyncSetUp()
-        event1 = await _make_active_event(total_prize=100_000, name="Event A")
-        event2 = await _make_active_event(total_prize=200_000, name="Event B")
+        event1 = await _make_active_event(reward_per_item=100_000, name="Event A")
+        event2 = await _make_active_event(reward_per_item=200_000, name="Event B")
         await sync_to_async(SupplyChainObjectiveFactory)(
             event=event1, cargos=[self.cargo], destination_points=[self.dest],
         )
@@ -304,115 +304,18 @@ class ContributionRecordingTests(TestCase):
 
         self.assertEqual(await SupplyChainContribution.objects.acount(), 2)
 
-
-# ── Per-Delivery Bonus Tests ─────────────────────────────────────────
-
-
-@patch("amc.supply_chain.send_fund_to_player", new_callable=AsyncMock)
-class PerDeliveryBonusTests(TestCase):
-    """Tests for per-delivery bonus calculation and payment."""
-
-    async def asyncSetUp(self):
-        _, self.character = await _make_player_and_char()
-        self.source = await DeliveryPoint.objects.acreate(
-            guid="src1", name="Mine", coord=Point(0, 0, 0)
-        )
-        self.dest = await DeliveryPoint.objects.acreate(
-            guid="dst1", name="Factory", coord=Point(100, 100, 0)
-        )
-        self.cargo = await Cargo.objects.acreate(key="C::Coal", label="Coal")
-
-    async def test_bonus_calculation(self, mock_send):
-        """Per-delivery bonus = quantity * (pool/ceiling) * multiplier."""
+    async def test_no_immediate_payment(self, mock_send):
+        """Contributions do NOT trigger any immediate payment."""
         await self.asyncSetUp()
-        event = await _make_active_event(total_prize=1_000_000, per_delivery_bonus_pct=0.20)
+        event = await _make_active_event(reward_per_item=100_000)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100, reward_weight=10,
-            per_delivery_bonus_multiplier=1.0,
+            event=event, ceiling=10, is_primary=True,
             cargos=[self.cargo], destination_points=[self.dest],
         )
 
-        bonus = await check_and_record_contribution(
-            delivery=None, character=self.character,
-            cargo_key="C::Coal", quantity=10,
-            destination_point=self.dest, source_point=self.source,
-        )
+        await self._contribute(quantity=5)
 
-        # Pool = 1M * 0.20 * (10/10) = 200K. Per-unit = 200K/100 = 2K. 10*2K = 20K
-        self.assertEqual(bonus, 20_000)
-        mock_send.assert_called_once_with(
-            20_000, self.character, f"Supply Chain Event: {event.name}"
-        )
-
-    async def test_zero_multiplier_no_bonus(self, mock_send):
-        """multiplier=0 means no bonus, no payment."""
-        await self.asyncSetUp()
-        event = await _make_active_event(total_prize=1_000_000, per_delivery_bonus_pct=0.20)
-        await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100, per_delivery_bonus_multiplier=0.0,
-            cargos=[self.cargo], destination_points=[self.dest],
-        )
-
-        bonus = await check_and_record_contribution(
-            delivery=None, character=self.character,
-            cargo_key="C::Coal", quantity=10,
-            destination_point=self.dest, source_point=self.source,
-        )
-
-        self.assertEqual(bonus, 0)
         mock_send.assert_not_called()
-
-    async def test_bonus_with_partial_weight(self, mock_send):
-        """Bonus pool is proportional to reward_weight across objectives."""
-        await self.asyncSetUp()
-        cargo2 = await Cargo.objects.acreate(key="C::Iron", label="Iron")
-        event = await _make_active_event(total_prize=1_000_000, per_delivery_bonus_pct=0.20)
-        # This objective gets 40% of the bonus pool
-        await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100, reward_weight=40,
-            per_delivery_bonus_multiplier=1.0,
-            cargos=[self.cargo], destination_points=[self.dest],
-        )
-        # Other objective gets 60%
-        dest2 = await DeliveryPoint.objects.acreate(
-            guid="dst2", name="Other", coord=Point(200, 200, 0)
-        )
-        await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100, reward_weight=60,
-            cargos=[cargo2], destination_points=[dest2],
-        )
-
-        bonus = await check_and_record_contribution(
-            delivery=None, character=self.character,
-            cargo_key="C::Coal", quantity=10,
-            destination_point=self.dest, source_point=self.source,
-        )
-
-        # Pool = 1M * 0.20 * (40/100) = 80K. Per-unit = 80K/100 = 800. 10*800 = 8000
-        self.assertEqual(bonus, 8_000)
-
-    @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
-    async def test_gov_employee_bonus_redirected(self, mock_redirect, mock_send):
-        """Gov employee per-delivery bonus is redirected to treasury."""
-        await self.asyncSetUp()
-        self.character.gov_employee_until = timezone.now() + timedelta(days=30)
-        await self.character.asave(update_fields=["gov_employee_until"])
-
-        event = await _make_active_event(total_prize=1_000_000, per_delivery_bonus_pct=0.20)
-        await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100, reward_weight=10,
-            per_delivery_bonus_multiplier=1.0,
-            cargos=[self.cargo], destination_points=[self.dest],
-        )
-
-        bonus = await check_and_record_contribution(
-            delivery=None, character=self.character,
-            cargo_key="C::Coal", quantity=10,
-            destination_point=self.dest, source_point=self.source,
-        )
-
-        self.assertEqual(bonus, 20_000)
-        mock_send.assert_not_called()  # NOT sent directly to player
 
 
 # ── Reward Distribution Tests ────────────────────────────────────────
@@ -431,13 +334,17 @@ class DistributeRewardsTests(TestCase):
         )
 
     async def test_proportional_distribution(self, mock_send):
-        """Completion pool distributed proportionally to contribution quantities."""
+        """Pool = reward_per_item × primary fulfilled, distributed proportionally."""
         await self._setup()
-        event = await _make_ended_event(total_prize=100_000, per_delivery_bonus_pct=0.20)
+        event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, ceiling=100,
+            event=event, reward_weight=10, ceiling=100, is_primary=True,
             cargos=[self.cargo], destination_points=[self.dest],
         )
+        # Simulate 100 units delivered total (70 Alice, 30 Bob)
+        obj.quantity_fulfilled = 100
+        await obj.asave(update_fields=["quantity_fulfilled"])
+
         await SupplyChainContribution.objects.acreate(
             objective=obj, character=self.c1,
             cargo_key="C::Steel", quantity=70, timestamp=timezone.now(),
@@ -451,10 +358,33 @@ class DistributeRewardsTests(TestCase):
 
         await event.arefresh_from_db()
         self.assertTrue(event.rewards_distributed)
-        # Pool = 100K * 0.80 = 80K. Alice: 70/100*80K = 56K, Bob: 30/100*80K = 24K
+        # Pool = 10K × 100 = 1M. Alice: 70/100 × 1M = 700K, Bob: 30/100 × 1M = 300K
         rewards = {call[0][1].id: call[0][0] for call in mock_send.call_args_list}
-        self.assertEqual(rewards[self.c1.id], 56_000)
-        self.assertEqual(rewards[self.c2.id], 24_000)
+        self.assertEqual(rewards[self.c1.id], 700_000)
+        self.assertEqual(rewards[self.c2.id], 300_000)
+
+    async def test_pool_capped_at_primary_ceiling(self, mock_send):
+        """Pool is capped at ceiling even if quantity_fulfilled exceeds it."""
+        await self._setup()
+        event = await _make_ended_event(reward_per_item=100_000)
+        obj = await sync_to_async(SupplyChainObjectiveFactory)(
+            event=event, reward_weight=10, ceiling=10, is_primary=True,
+            cargos=[self.cargo], destination_points=[self.dest],
+        )
+        # Simulate overshoot: 15 delivered but ceiling is 10
+        obj.quantity_fulfilled = 15
+        await obj.asave(update_fields=["quantity_fulfilled"])
+
+        await SupplyChainContribution.objects.acreate(
+            objective=obj, character=self.c1,
+            cargo_key="C::Steel", quantity=15, timestamp=timezone.now(),
+        )
+
+        await distribute_event_rewards(event)
+
+        # Pool = 100K × min(15, 10) = 100K × 10 = 1M
+        rewards = {call[0][1].id: call[0][0] for call in mock_send.call_args_list}
+        self.assertEqual(rewards[self.c1.id], 1_000_000)
 
     async def test_multi_objective_weighted_distribution(self, mock_send):
         """Reward pool split by objective weight, then by contribution within each."""
@@ -463,18 +393,24 @@ class DistributeRewardsTests(TestCase):
         dest2 = await DeliveryPoint.objects.acreate(
             guid="d2", name="Mine", coord=Point(100, 100, 0)
         )
-        event = await _make_ended_event(total_prize=100_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=10_000)
+        # Primary objective: 60% weight
         obj1 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=60,
+            event=event, reward_weight=60, is_primary=True, ceiling=100,
             cargos=[self.cargo], destination_points=[self.dest],
         )
+        # Secondary objective: 40% weight
         obj2 = await sync_to_async(SupplyChainObjectiveFactory)(
             event=event, reward_weight=40,
             cargos=[cargo2], destination_points=[dest2],
         )
+        # Primary delivered 10 items → pool = 10K × 10 = 100K
+        obj1.quantity_fulfilled = 10
+        await obj1.asave(update_fields=["quantity_fulfilled"])
+
         await SupplyChainContribution.objects.acreate(
             objective=obj1, character=self.c1,
-            cargo_key="C::Steel", quantity=50, timestamp=timezone.now(),
+            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
         )
         await SupplyChainContribution.objects.acreate(
             objective=obj2, character=self.c2,
@@ -484,20 +420,42 @@ class DistributeRewardsTests(TestCase):
         await distribute_event_rewards(event)
 
         rewards = {call[0][1].id: call[0][0] for call in mock_send.call_args_list}
+        # Pool = 100K. obj1 = 60K, obj2 = 40K
         self.assertEqual(rewards[self.c1.id], 60_000)
         self.assertEqual(rewards[self.c2.id], 40_000)
 
-    async def test_idempotent_distribution(self, mock_send):
-        """Calling distribute twice does NOT double-pay."""
+    async def test_no_primary_no_payout(self, mock_send):
+        """No primary objective → pool is 0, no payouts."""
         await self._setup()
-        event = await _make_ended_event(total_prize=50_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=100_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=False,
             cargos=[self.cargo], destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(
             objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            cargo_key="C::Steel", quantity=50, timestamp=timezone.now(),
+        )
+
+        await distribute_event_rewards(event)
+
+        await event.arefresh_from_db()
+        self.assertTrue(event.rewards_distributed)
+        mock_send.assert_not_called()
+
+    async def test_idempotent_distribution(self, mock_send):
+        """Calling distribute twice does NOT double-pay."""
+        await self._setup()
+        event = await _make_ended_event(reward_per_item=10_000)
+        obj = await sync_to_async(SupplyChainObjectiveFactory)(
+            event=event, reward_weight=10, is_primary=True, ceiling=100,
+            cargos=[self.cargo], destination_points=[self.dest],
+        )
+        obj.quantity_fulfilled = 5
+        await obj.asave(update_fields=["quantity_fulfilled"])
+        await SupplyChainContribution.objects.acreate(
+            objective=obj, character=self.c1,
+            cargo_key="C::Steel", quantity=5, timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -508,11 +466,12 @@ class DistributeRewardsTests(TestCase):
     async def test_no_contributions_no_payout(self, mock_send):
         """Event with no contributions still marks as distributed but pays nobody."""
         await self._setup()
-        event = await _make_ended_event(total_prize=50_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=10_000)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=True, ceiling=100,
             cargos=[self.cargo], destination_points=[self.dest],
         )
+        # quantity_fulfilled=0, so pool=0
 
         await distribute_event_rewards(event)
 
@@ -527,15 +486,19 @@ class DistributeRewardsTests(TestCase):
         dest2 = await DeliveryPoint.objects.acreate(
             guid="d2", name="Mine", coord=Point(100, 100, 0)
         )
-        event = await _make_ended_event(total_prize=100_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=10_000)
         obj1 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=50,
+            event=event, reward_weight=50, is_primary=True, ceiling=10,
             cargos=[self.cargo], destination_points=[self.dest],
         )
         obj2 = await sync_to_async(SupplyChainObjectiveFactory)(
             event=event, reward_weight=50,
             cargos=[cargo2], destination_points=[dest2],
         )
+
+        # Primary delivered 10 → pool = 10K × 10 = 100K
+        obj1.quantity_fulfilled = 10
+        await obj1.asave(update_fields=["quantity_fulfilled"])
 
         # Same player contributes to both objectives
         await SupplyChainContribution.objects.acreate(
@@ -561,14 +524,16 @@ class DistributeRewardsTests(TestCase):
         self.c1.gov_employee_until = timezone.now() + timedelta(days=30)
         await self.c1.asave(update_fields=["gov_employee_until"])
 
-        event = await _make_ended_event(total_prize=100_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=True, ceiling=100,
             cargos=[self.cargo], destination_points=[self.dest],
         )
+        obj.quantity_fulfilled = 10
+        await obj.asave(update_fields=["quantity_fulfilled"])
         await SupplyChainContribution.objects.acreate(
             objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=50, timestamp=timezone.now(),
+            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -580,14 +545,16 @@ class DistributeRewardsTests(TestCase):
     async def test_monitor_distributes_ended_events(self, mock_announce, mock_send):
         """Monitor cron picks up ended events and distributes their rewards."""
         await self._setup()
-        event = await _make_ended_event(total_prize=50_000, per_delivery_bonus_pct=0.0)
+        event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=True, ceiling=100,
             cargos=[self.cargo], destination_points=[self.dest],
         )
+        obj.quantity_fulfilled = 5
+        await obj.asave(update_fields=["quantity_fulfilled"])
         await SupplyChainContribution.objects.acreate(
             objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            cargo_key="C::Steel", quantity=5, timestamp=timezone.now(),
         )
 
         await monitor_supply_chain_events({"http_client": MagicMock()})
@@ -600,12 +567,9 @@ class DistributeRewardsTests(TestCase):
     async def test_monitor_skips_already_distributed(self, mock_announce, mock_send):
         """Monitor does NOT re-distribute already-distributed events."""
         await self._setup()
-        event = await _make_ended_event(
-            total_prize=50_000, per_delivery_bonus_pct=0.0,
-            rewards_distributed=True,
-        )
+        event = await _make_ended_event(rewards_distributed=True)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=True,
             cargos=[self.cargo], destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(
@@ -621,9 +585,9 @@ class DistributeRewardsTests(TestCase):
     async def test_monitor_skips_active_events(self, mock_announce, mock_send):
         """Monitor does NOT distribute events that are still active."""
         await self._setup()
-        event = await _make_active_event(total_prize=50_000, per_delivery_bonus_pct=0.0)
+        event = await _make_active_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10,
+            event=event, reward_weight=10, is_primary=True,
             cargos=[self.cargo], destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(

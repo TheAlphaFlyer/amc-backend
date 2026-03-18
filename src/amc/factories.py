@@ -257,9 +257,7 @@ class SupplyChainEventFactory(DjangoModelFactory):
     name = Faker("bs")
     start_at = LazyAttribute(lambda _: timezone.now() - timedelta(hours=1))
     end_at = LazyAttribute(lambda _: timezone.now() + timedelta(hours=23))
-    total_prize = LazyAttribute(lambda _: random.randint(100_000, 1_000_000))
-    per_delivery_bonus_pct = 0.20
-    escrowed_amount = LazyAttribute(lambda o: o.total_prize)
+    reward_per_item = LazyAttribute(lambda _: random.randint(10_000, 100_000))
 
 
 class SupplyChainObjectiveFactory(DjangoModelFactory):
@@ -269,7 +267,6 @@ class SupplyChainObjectiveFactory(DjangoModelFactory):
     event = SubFactory("amc.factories.SupplyChainEventFactory")
     reward_weight = 10
     is_primary = False
-    per_delivery_bonus_multiplier = 0.0
 
     @factory.post_generation
     def cargos(self, create, extracted, **kwargs):
@@ -302,4 +299,3 @@ class SupplyChainContributionFactory(DjangoModelFactory):
     cargo_key = "C::Stone"
     quantity = LazyAttribute(lambda _: random.randint(1, 50))
     timestamp = LazyAttribute(lambda _: timezone.now())
-    bonus_paid = 0

@@ -2370,16 +2370,8 @@ class SupplyChainEvent(models.Model):
     description = models.TextField(blank=True)
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
-    total_prize = models.PositiveBigIntegerField(
-        help_text="Total reward pool escrowed from treasury"
-    )
-    per_delivery_bonus_pct = models.FloatField(
-        default=0.20,
-        help_text="Fraction of total prize allocated to per-delivery bonuses (e.g. 0.20 = 20%)",
-        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
-    )
-    escrowed_amount = models.PositiveBigIntegerField(
-        default=0, help_text="Amount held from treasury"
+    reward_per_item = models.PositiveBigIntegerField(
+        help_text="Reward per unit of primary objective delivered"
     )
     rewards_distributed = models.BooleanField(default=False)
     discord_message_id = models.PositiveBigIntegerField(null=True, blank=True)
@@ -2432,10 +2424,7 @@ class SupplyChainObjective(models.Model):
     is_primary = models.BooleanField(
         default=False, help_text="Primary objectives define the main event goal"
     )
-    per_delivery_bonus_multiplier = models.FloatField(
-        default=0.0,
-        help_text="Multiplier on per-delivery bonus. 0 = no per-delivery bonus for this objective.",
-    )
+
 
     if TYPE_CHECKING:
         contributions: models.Manager["SupplyChainContribution"]
@@ -2462,7 +2451,4 @@ class SupplyChainContribution(models.Model):
         null=True,
         blank=True,
         related_name="supply_chain_contributions",
-    )
-    bonus_paid = models.PositiveBigIntegerField(
-        default=0, help_text="Per-delivery bonus amount paid"
     )

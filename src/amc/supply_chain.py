@@ -27,10 +27,9 @@ async def check_and_record_contribution(
 ) -> int:
     """
     Check if a delivery matches any active supply chain event objective.
-    If so, record the contribution and return the per-delivery bonus amount.
-    Returns 0 if no matching objective.
+    If so, record the contribution. Returns total rewardable quantity recorded.
     """
-    total_bonus = 0
+    total_recorded = 0
 
     active_events = SupplyChainEvent.objects.filter_active().prefetch_related(
         "objectives__cargos",
@@ -55,26 +54,6 @@ async def check_and_record_contribution(
             if rewardable_qty <= 0:
                 continue
 
-            # Calculate per-delivery bonus
-            bonus = 0
-            if objective.per_delivery_bonus_multiplier > 0 and event.total_prize > 0:
-                total_weight = await event.objectives.aaggregate(
-                    total=Sum("reward_weight")
-                )
-                total_w = total_weight["total"] or 1
-                objective_pool = (
-                    event.total_prize
-                    * event.per_delivery_bonus_pct
-                    * (objective.reward_weight / total_w)
-                )
-                # Per-unit bonus: pool / ceiling (or a reasonable denominator)
-                denominator = objective.ceiling or 100
-                bonus = int(
-                    rewardable_qty
-                    * (objective_pool / denominator)
-                    * objective.per_delivery_bonus_multiplier
-                )
-
             # Record the contribution
             await SupplyChainContribution.objects.acreate(
                 objective=objective,
@@ -83,7 +62,6 @@ async def check_and_record_contribution(
                 quantity=rewardable_qty,
                 timestamp=timezone.now(),
                 delivery=delivery,
-                bonus_paid=bonus,
             )
 
             # Update fulfilled counter
@@ -91,25 +69,9 @@ async def check_and_record_contribution(
                 quantity_fulfilled=F("quantity_fulfilled") + rewardable_qty
             )
 
-            # Pay per-delivery bonus
-            if bonus > 0 and character:
-                if character.is_gov_employee:
-                    from amc.gov_employee import redirect_income_to_treasury
+            total_recorded += rewardable_qty
 
-                    await redirect_income_to_treasury(
-                        0,
-                        character,
-                        "Government Service – Event Bonus",
-                        contribution=bonus,
-                    )
-                else:
-                    await send_fund_to_player(
-                        bonus, character, f"Supply Chain Event: {event.name}"
-                    )
-
-            total_bonus += bonus
-
-    return total_bonus
+    return total_recorded
 
 
 async def _objective_matches(
@@ -139,14 +101,31 @@ async def _objective_matches(
 
 async def distribute_event_rewards(event: SupplyChainEvent, http_client=None):
     """
-    Distribute the completion pool for an ended event.
-    Called by monitor_supply_chain_events when event.end_at has passed.
+    Distribute rewards for an ended event.
+    Pool = reward_per_item × primary_objective.quantity_fulfilled (capped at ceiling).
+    No primary objective → pool is 0.
     """
     if event.rewards_distributed:
         return
 
-    # Completion pool = total_prize * (1 - per_delivery_bonus_pct)
-    completion_pool = int(event.total_prize * (1 - event.per_delivery_bonus_pct))
+    # Find primary objective
+    primary = await event.objectives.filter(is_primary=True).afirst()
+    if not primary:
+        # No primary objective → no payout, just mark as distributed
+        event.rewards_distributed = True
+        await event.asave(update_fields=["rewards_distributed"])
+        return
+
+    # Calculate pool from primary objective deliveries
+    fulfilled = primary.quantity_fulfilled
+    if primary.ceiling is not None:
+        fulfilled = min(fulfilled, primary.ceiling)
+    total_pool = int(event.reward_per_item * fulfilled)
+
+    if total_pool <= 0:
+        event.rewards_distributed = True
+        await event.asave(update_fields=["rewards_distributed"])
+        return
 
     total_weight = await event.objectives.aaggregate(total=Sum("reward_weight"))
     total_w = total_weight["total"] or 1
@@ -154,8 +133,8 @@ async def distribute_event_rewards(event: SupplyChainEvent, http_client=None):
     all_contributor_names = []
 
     async for objective in event.objectives.all():
-        # Objective's share of the completion pool
-        objective_pool = int(completion_pool * (objective.reward_weight / total_w))
+        # Objective's share of the pool
+        objective_pool = int(total_pool * (objective.reward_weight / total_w))
 
         # Get all contributions grouped by character
         contributions = (

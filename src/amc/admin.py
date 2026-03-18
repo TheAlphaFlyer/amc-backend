@@ -1114,7 +1114,7 @@ class SupplyChainEventAdmin(admin.ModelAdmin):
         "name",
         "start_at",
         "end_at",
-        "total_prize",
+        "reward_per_item",
         "rewards_distributed",
     ]
     list_filter = ["rewards_distributed"]
