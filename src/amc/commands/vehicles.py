@@ -90,7 +90,7 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
 
     if issues:
         await ctx.reply(
-            _("<Title>Mod Check</Title>"
+            _("<Title>Mod Check</>"
               "\n\n<Bold>{name}</> — {vehicle}"
               "{issues}").format(
                 name=target_player_name,
