@@ -3,7 +3,10 @@ from amc.command_framework import registry, CommandContext
 from amc.mod_server import list_player_vehicles
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
-from amc.mod_detection import detect_custom_parts, format_custom_parts_game
+from amc.mod_detection import (
+    detect_custom_parts, detect_incompatible_parts,
+    format_custom_parts_game, format_incompatible_parts_game,
+)
 from amc.utils import fuzzy_find_player
 from django.utils.translation import gettext as _, gettext_lazy
 
@@ -67,16 +70,32 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
     vehicle_name = format_vehicle_name(vehicle["fullName"])
     parts = vehicle.get("parts", [])
     custom = detect_custom_parts(parts)
+    incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
 
+    issues = []
     if custom:
-        await ctx.reply(
-            _("<Title>Custom Parts Detected</>"
-              "\n\n<Bold>{name}</> — {vehicle}"
-              "\n{count} custom part(s):\n\n{parts}").format(
-                name=target_player_name,
-                vehicle=vehicle_name,
+        issues.append(
+            _("\n{count} custom part(s):\n\n{parts}").format(
                 count=len(custom),
                 parts=format_custom_parts_game(custom),
+            )
+        )
+    if incompatible:
+        issues.append(
+            _("\n{count} incompatible part(s):\n\n{parts}").format(
+                count=len(incompatible),
+                parts=format_incompatible_parts_game(incompatible),
+            )
+        )
+
+    if issues:
+        await ctx.reply(
+            _("<Title>Mod Check</Title>"
+              "\n\n<Bold>{name}</> — {vehicle}"
+              "{issues}").format(
+                name=target_player_name,
+                vehicle=vehicle_name,
+                issues="\n".join(issues),
             )
         )
     else:

@@ -785,20 +785,46 @@ This notice was issued by Officer {interaction.user.display_name}. If you wish t
             await ctx.followup.send(f"{character.name} has no active vehicle")
             return
 
-        from amc.mod_detection import detect_custom_parts, format_custom_parts
+        from amc.mod_detection import (
+            detect_custom_parts, detect_incompatible_parts,
+            format_custom_parts, format_incompatible_parts,
+        )
 
         for vehicle in main_vehicles.values():
-            custom = detect_custom_parts(vehicle.get("parts", []))
+            parts = vehicle.get("parts", [])
+            custom = detect_custom_parts(parts)
+            incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
             vehicle_name = format_vehicle_name(vehicle["fullName"])
-            color = discord.Color.red() if custom else discord.Color.green()
+            has_issues = custom or incompatible
+            color = discord.Color.red() if has_issues else discord.Color.green()
+
+            description_parts = []
+            if custom:
+                description_parts.append(
+                    f"**Custom Parts ({len(custom)}):**\n{format_custom_parts(custom)}"
+                )
+            if incompatible:
+                description_parts.append(
+                    f"**Incompatible Parts ({len(incompatible)}):**\n"
+                    f"{format_incompatible_parts(incompatible)}"
+                )
+            if not has_issues:
+                description_parts.append("✅ All stock parts")
+
             embed = discord.Embed(
                 title=f"🔍 Mod Check: {character.name}'s {vehicle_name} (#{vehicle['vehicleId']})",
                 color=color,
-                description=format_custom_parts(custom),
+                description="\n\n".join(description_parts),
                 timestamp=timezone.now(),
             )
+            footer_parts = []
             if custom:
-                embed.set_footer(text=f"{len(custom)} custom part(s) detected")
+                footer_parts.append(f"{len(custom)} custom")
+            if incompatible:
+                footer_parts.append(f"{len(incompatible)} incompatible")
+            if footer_parts:
+                footer_text = ", ".join(footer_parts) + " part(s) detected"
+                embed.set_footer(text=footer_text)
             await ctx.followup.send(embed=embed)
 
     @app_commands.command(

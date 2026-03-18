@@ -16,7 +16,10 @@ from django.conf import settings
 from amc.mod_server import list_player_vehicles
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
-from amc.mod_detection import detect_custom_parts, format_custom_parts_plain
+from amc.mod_detection import (
+    detect_custom_parts, detect_incompatible_parts,
+    format_custom_parts_plain, format_incompatible_parts_plain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,18 @@ class Command(BaseCommand):
                         f"{format_custom_parts_plain(custom)}"
                     )
                 )
-            else:
+
+            incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
+            if incompatible:
+                found_any = True
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  ⚠ {len(incompatible)} incompatible part(s):\n"
+                        f"{format_incompatible_parts_plain(incompatible)}"
+                    )
+                )
+
+            if not custom and not incompatible:
                 self.stdout.write(self.style.SUCCESS("  ✓ All stock parts"))
 
         if not found_any:
@@ -117,6 +131,9 @@ class Command(BaseCommand):
                 checked += 1
                 vehicle_name = format_vehicle_name(vehicle["fullName"])
                 custom = detect_custom_parts(vehicle.get("parts", []))
+                incompatible = detect_incompatible_parts(
+                    vehicle.get("parts", []), vehicle["fullName"]
+                )
 
                 if custom:
                     flagged += 1
@@ -127,7 +144,17 @@ class Command(BaseCommand):
                         )
                     )
                     self.stdout.write(format_custom_parts_plain(custom))
-                else:
+                if incompatible:
+                    if not custom:
+                        flagged += 1
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"⚠ {player_name} ({player_id}) — "
+                            f"{vehicle_name}: {len(incompatible)} incompatible part(s)"
+                        )
+                    )
+                    self.stdout.write(format_incompatible_parts_plain(incompatible))
+                if not custom and not incompatible:
                     self.stdout.write(
                         f"  ✓ {player_name} ({player_id}) — {vehicle_name}"
                     )

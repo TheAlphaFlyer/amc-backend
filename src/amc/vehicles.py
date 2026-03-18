@@ -3,7 +3,10 @@ import logging
 from amc.models import CharacterVehicle
 from amc.mod_server import list_player_vehicles, spawn_vehicle, show_popup
 from amc.enums import VehiclePartSlot
-from amc.mod_detection import detect_custom_parts, format_custom_parts_plain
+from amc.mod_detection import (
+    detect_custom_parts, detect_incompatible_parts,
+    format_custom_parts_plain, format_incompatible_parts_plain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +66,17 @@ async def register_player_vehicles(http_client_mod, character, player, active=No
                     vehicle_name,
                     vehicle_id,
                     format_custom_parts_plain(custom),
+                )
+            incompatible = detect_incompatible_parts(
+                vehicle.get("parts", []), vehicle["fullName"]
+            )
+            if incompatible:
+                logger.warning(
+                    "Incompatible parts detected on %s's %s (#%s):\n%s",
+                    character.name,
+                    vehicle_name,
+                    vehicle_id,
+                    format_incompatible_parts_plain(incompatible),
                 )
 
     return results
