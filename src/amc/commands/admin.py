@@ -9,12 +9,10 @@ from amc.mod_server import (
     spawn_vehicle,
     force_exit_vehicle,
     get_players as get_players_mod,
-    list_player_vehicles,
     teleport_player,
 )
 from amc.game_server import get_players
-from amc.vehicles import spawn_registered_vehicle, format_vehicle_name
-from amc.mod_detection import detect_custom_parts, format_custom_parts_game
+from amc.vehicles import spawn_registered_vehicle
 from amc.models import (
     CharacterVehicle,
     VehicleDealership,
@@ -294,75 +292,4 @@ async def cmd_tp_player(
         )
     )
 
-
-@registry.register(
-    "/check_mods",
-    description=gettext_lazy("Check a player's vehicle for custom parts"),
-    category="Admin",
-)
-async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] = None):
-    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
-        return
-
-    # Resolve target player ID
-    if target_player_name:
-        players = await get_players(ctx.http_client)
-        target_pid = fuzzy_find_player(players, target_player_name)
-        if not target_pid:
-            await ctx.reply(
-                _("<Title>Player not found</>"
-                  "\n\nCould not find a player matching that name.")
-            )
-            return
-    else:
-        target_pid = str(ctx.player.unique_id)
-        target_player_name = ctx.character.name
-
-    # Fetch only the active (main) vehicle
-    try:
-        player_vehicles = await list_player_vehicles(
-            ctx.http_client_mod, target_pid, active=True, complete=True
-        )
-    except Exception:
-        await ctx.reply(
-            _("<Title>Error</>"
-              "\n\nFailed to fetch vehicle data. Is the player online?")
-        )
-        return
-
-    if not player_vehicles:
-        await ctx.reply(
-            _("<Title>No Vehicle</>"
-              "\n\n{name} has no active vehicle.").format(
-                name=target_player_name
-            )
-        )
-        return
-
-    # Check the first (main) vehicle
-    v_id, vehicle = next(iter(player_vehicles.items()))
-    vehicle_name = format_vehicle_name(vehicle["fullName"])
-    parts = vehicle.get("parts", [])
-    custom = detect_custom_parts(parts)
-
-    if custom:
-        await ctx.reply(
-            _("<Title>Custom Parts Detected</>"
-              "\n\n<Bold>{name}</> — {vehicle}"
-              "\n{count} custom part(s):\n\n{parts}").format(
-                name=target_player_name,
-                vehicle=vehicle_name,
-                count=len(custom),
-                parts=format_custom_parts_game(custom),
-            )
-        )
-    else:
-        await ctx.reply(
-            _("<Title>Parts Check</>"
-              "\n\n<Bold>{name}</> — {vehicle}"
-              "\n\nAll stock parts.").format(
-                name=target_player_name,
-                vehicle=vehicle_name,
-            )
-        )
 

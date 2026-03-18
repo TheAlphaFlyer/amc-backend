@@ -4,7 +4,6 @@ from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext, CommandRegistry
 from amc.commands.admin import (
-    cmd_check_mods,
     cmd_exit,
     cmd_spawn,
     cmd_spawn_assets,
@@ -14,6 +13,7 @@ from amc.commands.admin import (
     cmd_spawn_garages,
     cmd_tp_player,
 )
+from amc.commands.vehicles import cmd_check_mods
 from amc.commands.decals import cmd_apply_decal, cmd_decals, cmd_save_decal
 from amc.commands.events import (
     cmd_auto_grid,
@@ -1288,7 +1288,6 @@ class CommandsTestCase(TestCase):
 
     async def test_cmd_check_mods_self(self):
         """When no target name is given, checks the caller's own vehicle."""
-        self.ctx.player_info["bIsAdmin"] = True
 
         mock_vehicles = {
             "1001": {
@@ -1305,11 +1304,11 @@ class CommandsTestCase(TestCase):
 
         with (
             patch(
-                "amc.commands.admin.list_player_vehicles",
+                "amc.commands.vehicles.list_player_vehicles",
                 new=AsyncMock(return_value=mock_vehicles),
             ),
             patch(
-                "amc.commands.admin.detect_custom_parts",
+                "amc.commands.vehicles.detect_custom_parts",
                 return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
             ),
         ):
@@ -1321,7 +1320,7 @@ class CommandsTestCase(TestCase):
             self.assertIn("CustomTurbo_XYZ", output)
 
     async def test_cmd_check_mods_target(self):
-        """When a target name is given, fuzzy finds the player and checks their vehicle."""
+        """When an admin gives a target name, fuzzy finds the player and checks their vehicle."""
         self.ctx.player_info["bIsAdmin"] = True
 
         mock_players = [("pid-99", {"name": "SomePlayer"})]
@@ -1337,15 +1336,15 @@ class CommandsTestCase(TestCase):
 
         with (
             patch(
-                "amc.commands.admin.get_players",
+                "amc.commands.vehicles.get_players",
                 new=AsyncMock(return_value=mock_players),
             ),
             patch(
-                "amc.commands.admin.list_player_vehicles",
+                "amc.commands.vehicles.list_player_vehicles",
                 new=AsyncMock(return_value=mock_vehicles),
             ),
             patch(
-                "amc.commands.admin.detect_custom_parts",
+                "amc.commands.vehicles.detect_custom_parts",
                 return_value=[],
             ),
         ):
@@ -1358,10 +1357,8 @@ class CommandsTestCase(TestCase):
 
     async def test_cmd_check_mods_no_vehicle(self):
         """When player has no active vehicle, shows appropriate message."""
-        self.ctx.player_info["bIsAdmin"] = True
-
         with patch(
-            "amc.commands.admin.list_player_vehicles",
+            "amc.commands.vehicles.list_player_vehicles",
             new=AsyncMock(return_value={}),
         ):
             await cmd_check_mods(self.ctx)
@@ -1372,9 +1369,31 @@ class CommandsTestCase(TestCase):
             self.assertIn("no active vehicle", output)
 
     async def test_cmd_check_mods_non_admin(self):
-        """Non-admin users get no response."""
+        """Non-admin users can also use check_mods."""
         self.ctx.player_info["bIsAdmin"] = False
 
-        await cmd_check_mods(self.ctx)
-        self.ctx.reply.assert_not_called()
+        mock_vehicles = {
+            "3003": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [{"Key": "StockEngine", "Slot": 0}],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.vehicles.detect_custom_parts",
+                return_value=[],
+            ),
+        ):
+            await cmd_check_mods(self.ctx)
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Parts Check", output)
 
