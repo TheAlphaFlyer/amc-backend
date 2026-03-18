@@ -1311,12 +1311,16 @@ class CommandsTestCase(TestCase):
                 "amc.commands.vehicles.detect_custom_parts",
                 return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
             ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
+                return_value=[],
+            ),
         ):
             await cmd_check_mods(self.ctx)
 
             self.ctx.reply.assert_called()
             output = self.ctx.reply.call_args[0][0]
-            self.assertIn("Custom Parts Detected", output)
+            self.assertIn("Mod Check", output)
             self.assertIn("CustomTurbo_XYZ", output)
 
     async def test_cmd_check_mods_target(self):
@@ -1345,6 +1349,10 @@ class CommandsTestCase(TestCase):
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
+                return_value=[],
+            ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
                 return_value=[],
             ),
         ):
@@ -1391,9 +1399,152 @@ class CommandsTestCase(TestCase):
                 "amc.commands.vehicles.detect_custom_parts",
                 return_value=[],
             ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
+                return_value=[],
+            ),
         ):
             await cmd_check_mods(self.ctx)
             self.ctx.reply.assert_called()
             output = self.ctx.reply.call_args[0][0]
             self.assertIn("Parts Check", output)
 
+    # --- Incompatible Parts Detection Tests ---
+
+    async def test_detect_incompatible_parts_flags_wrong_type(self):
+        """A Bike engine on a Small vehicle should be flagged as incompatible."""
+        from amc import mod_detection
+
+        # Save originals and mock caches
+        orig_compat = mod_detection._part_compatible_types
+        orig_vtype = mod_detection._vehicle_type_map
+        orig_stock = mod_detection._stock_part_keys
+        try:
+            mod_detection._part_compatible_types = {
+                "bike_i2_30hp": {"Bike"},
+                "smallblock_140hp": {"Small", "Pickup"},
+            }
+            mod_detection._vehicle_type_map = {"Jemusi": "Small"}
+            mod_detection._stock_part_keys = {
+                "bike_i2_30hp", "smallblock_140hp", "stockbrake",
+            }
+
+            parts = [
+                {"Key": "Bike_I2_30HP", "Slot": 0},
+                {"Key": "StockBrake", "Slot": 1},
+            ]
+            result = mod_detection.detect_incompatible_parts(
+                parts, "Jemusi_C Default__Jemusi"
+            )
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["key"], "Bike_I2_30HP")
+            self.assertEqual(result[0]["vehicle_type"], "Small")
+            self.assertIn("Bike", result[0]["allowed_types"])
+        finally:
+            mod_detection._part_compatible_types = orig_compat
+            mod_detection._vehicle_type_map = orig_vtype
+            mod_detection._stock_part_keys = orig_stock
+
+    async def test_detect_incompatible_parts_allows_correct_type(self):
+        """A Small engine on a Small vehicle should pass."""
+        from amc import mod_detection
+
+        orig_compat = mod_detection._part_compatible_types
+        orig_vtype = mod_detection._vehicle_type_map
+        orig_stock = mod_detection._stock_part_keys
+        try:
+            mod_detection._part_compatible_types = {
+                "smallblock_140hp": {"Small", "Pickup"},
+            }
+            mod_detection._vehicle_type_map = {"Jemusi": "Small"}
+            mod_detection._stock_part_keys = {"smallblock_140hp"}
+
+            parts = [{"Key": "SmallBlock_140HP", "Slot": 0}]
+            result = mod_detection.detect_incompatible_parts(
+                parts, "Jemusi_C Default__Jemusi"
+            )
+            self.assertEqual(len(result), 0)
+        finally:
+            mod_detection._part_compatible_types = orig_compat
+            mod_detection._vehicle_type_map = orig_vtype
+            mod_detection._stock_part_keys = orig_stock
+
+    async def test_detect_incompatible_parts_unknown_vehicle(self):
+        """When vehicle name is not in DB, return empty (graceful no-op)."""
+        from amc import mod_detection
+
+        orig_compat = mod_detection._part_compatible_types
+        orig_vtype = mod_detection._vehicle_type_map
+        try:
+            mod_detection._part_compatible_types = {"bike_i2_30hp": {"Bike"}}
+            mod_detection._vehicle_type_map = {}
+
+            parts = [{"Key": "Bike_I2_30HP", "Slot": 0}]
+            result = mod_detection.detect_incompatible_parts(
+                parts, "UnknownCar_C Default__UnknownCar"
+            )
+            self.assertEqual(len(result), 0)
+        finally:
+            mod_detection._part_compatible_types = orig_compat
+            mod_detection._vehicle_type_map = orig_vtype
+
+    async def test_detect_incompatible_parts_no_db(self):
+        """When DB fails to load, return empty."""
+        from amc import mod_detection
+
+        orig_compat = mod_detection._part_compatible_types
+        orig_vtype = mod_detection._vehicle_type_map
+        try:
+            mod_detection._part_compatible_types = {}
+            mod_detection._vehicle_type_map = {}
+
+            parts = [{"Key": "Bike_I2_30HP", "Slot": 0}]
+            result = mod_detection.detect_incompatible_parts(
+                parts, "Jemusi_C Default__Jemusi"
+            )
+            self.assertEqual(len(result), 0)
+        finally:
+            mod_detection._part_compatible_types = orig_compat
+            mod_detection._vehicle_type_map = orig_vtype
+
+    async def test_cmd_check_mods_shows_incompatible(self):
+        """check_mods should show incompatible parts section."""
+
+        mock_vehicles = {
+            "1001": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [
+                    {"Key": "Bike_I2_30HP", "Slot": 0},
+                ],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.vehicles.detect_custom_parts",
+                return_value=[],
+            ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
+                return_value=[{
+                    "key": "Bike_I2_30HP",
+                    "slot": "Engine",
+                    "slot_value": 0,
+                    "vehicle_type": "Small",
+                    "allowed_types": ["Bike"],
+                }],
+            ),
+        ):
+            await cmd_check_mods(self.ctx)
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Mod Check", output)
+            self.assertIn("incompatible", output)
