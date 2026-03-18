@@ -1,7 +1,11 @@
 import re
+import logging
 from amc.models import CharacterVehicle
 from amc.mod_server import list_player_vehicles, spawn_vehicle, show_popup
 from amc.enums import VehiclePartSlot
+from amc.mod_detection import detect_custom_parts, format_custom_parts_plain
+
+logger = logging.getLogger(__name__)
 
 
 async def register_player_vehicles(http_client_mod, character, player, active=None):
@@ -48,6 +52,19 @@ async def register_player_vehicles(http_client_mod, character, player, active=No
                 defaults={"config": config},
             )
         results.append(v)
+
+        # Check main vehicle for custom/modded parts
+        if vehicle.get("isLastVehicle") and vehicle.get("index", -1) == 0:
+            custom = detect_custom_parts(vehicle.get("parts", []))
+            if custom:
+                logger.warning(
+                    "Custom parts detected on %s's %s (#%s):\n%s",
+                    character.name,
+                    vehicle_name,
+                    vehicle_id,
+                    format_custom_parts_plain(custom),
+                )
+
     return results
 
 

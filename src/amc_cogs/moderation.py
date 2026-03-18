@@ -749,6 +749,58 @@ This notice was issued by Officer {interaction.user.display_name}. If you wish t
             )
             await ctx.followup.send(embed=embed)
 
+    @admin_vehicles.command(
+        name="check", description="Check a player's vehicle for custom/modded parts"
+    )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    @app_commands.autocomplete(player_id=player_autocomplete)
+    async def check_player_vehicle_mods(self, ctx, player_id: str):
+        await ctx.response.defer()
+        player = await Player.objects.prefetch_related("characters").aget(
+            Q(unique_id=player_id) | Q(discord_user_id=player_id)
+        )
+        character = await player.get_latest_character()
+        try:
+            player_vehicles = await list_player_vehicles(
+                self.bot.http_client_mod, player_id, complete=True
+            )
+        except Exception:
+            await ctx.followup.send(
+                f"Failed to get {character.name}'s vehicles, make sure they are online"
+            )
+            return
+
+        if not player_vehicles:
+            await ctx.followup.send(f"{character.name} has not spawned any vehicles")
+            return
+
+        # Filter to main vehicle only
+        main_vehicles = {
+            v_id: v
+            for v_id, v in player_vehicles.items()
+            if v.get("isLastVehicle") and v.get("index", -1) == 0
+        }
+
+        if not main_vehicles:
+            await ctx.followup.send(f"{character.name} has no active vehicle")
+            return
+
+        from amc.mod_detection import detect_custom_parts, format_custom_parts
+
+        for vehicle in main_vehicles.values():
+            custom = detect_custom_parts(vehicle.get("parts", []))
+            vehicle_name = format_vehicle_name(vehicle["fullName"])
+            color = discord.Color.red() if custom else discord.Color.green()
+            embed = discord.Embed(
+                title=f"🔍 Mod Check: {character.name}'s {vehicle_name} (#{vehicle['vehicleId']})",
+                color=color,
+                description=format_custom_parts(custom),
+                timestamp=timezone.now(),
+            )
+            if custom:
+                embed.set_footer(text=f"{len(custom)} custom part(s) detected")
+            await ctx.followup.send(embed=embed)
+
     @app_commands.command(
         name="votekick", description="Initiate a vote to kick a player"
     )

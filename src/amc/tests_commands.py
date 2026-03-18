@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext, CommandRegistry
 from amc.commands.admin import (
+    cmd_check_mods,
     cmd_exit,
     cmd_spawn,
     cmd_spawn_assets,
@@ -39,7 +40,6 @@ from amc.commands.general import (
     cmd_credits,
     cmd_help,
     cmd_rename,
-    cmd_shortcutcheck,
     cmd_song_request,
     cmd_verify,
 )
@@ -424,20 +424,6 @@ class CommandsTestCase(TestCase):
         ):
             await cmd_coords(self.ctx)
             self.ctx.announce.assert_called_with("100, 200, 300")
-
-    async def test_cmd_shortcutcheck(self):
-        # Mock CharacterLocation exists checks
-        with patch("amc.models.CharacterLocation.objects.filter") as mock_filter:
-            mock_qs = MagicMock()
-            mock_qs.aexists = AsyncMock(
-                side_effect=[True, False]
-            )  # True for in_shortcut, False for used_shortcut
-            mock_filter.return_value = mock_qs
-
-            await cmd_shortcutcheck(self.ctx)
-            self.ctx.reply.assert_called()
-            args, _ = self.ctx.reply.call_args
-            self.assertIn("inside the forbidden zone", args[0])
 
     # --- Decal Tests ---
 
@@ -1297,3 +1283,98 @@ class CommandsTestCase(TestCase):
             output = self.ctx.reply.call_args[0][0]
             self.assertIn("/general", output)
             self.assertNotIn("/admin", output)
+
+    # --- Check Mods Tests ---
+
+    async def test_cmd_check_mods_self(self):
+        """When no target name is given, checks the caller's own vehicle."""
+        self.ctx.player_info["bIsAdmin"] = True
+
+        mock_vehicles = {
+            "1001": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [
+                    {"Key": "StockEngine", "Slot": 0},
+                    {"Key": "CustomTurbo_XYZ", "Slot": 5},
+                ],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.admin.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.admin.detect_custom_parts",
+                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+            ),
+        ):
+            await cmd_check_mods(self.ctx)
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Custom Parts Detected", output)
+            self.assertIn("CustomTurbo_XYZ", output)
+
+    async def test_cmd_check_mods_target(self):
+        """When a target name is given, fuzzy finds the player and checks their vehicle."""
+        self.ctx.player_info["bIsAdmin"] = True
+
+        mock_players = [("pid-99", {"name": "SomePlayer"})]
+        mock_vehicles = {
+            "2002": {
+                "fullName": "Miramar_C Default__Miramar",
+                "classFullName": "Class /Game/Vehicles/Miramar",
+                "parts": [{"Key": "StockBrake", "Slot": 1}],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.admin.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch(
+                "amc.commands.admin.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.admin.detect_custom_parts",
+                return_value=[],
+            ),
+        ):
+            await cmd_check_mods(self.ctx, "SomePlayer")
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Parts Check", output)
+            self.assertIn("All stock parts", output)
+
+    async def test_cmd_check_mods_no_vehicle(self):
+        """When player has no active vehicle, shows appropriate message."""
+        self.ctx.player_info["bIsAdmin"] = True
+
+        with patch(
+            "amc.commands.admin.list_player_vehicles",
+            new=AsyncMock(return_value={}),
+        ):
+            await cmd_check_mods(self.ctx)
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("No Vehicle", output)
+            self.assertIn("no active vehicle", output)
+
+    async def test_cmd_check_mods_non_admin(self):
+        """Non-admin users get no response."""
+        self.ctx.player_info["bIsAdmin"] = False
+
+        await cmd_check_mods(self.ctx)
+        self.ctx.reply.assert_not_called()
+

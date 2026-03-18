@@ -464,9 +464,15 @@
             environment.systemPackages = [
               self.packages.x86_64-linux.default
               # Convenience wrapper: `amcm <command>` runs amc-manage as the amc user
-              (pkgs.writeShellScriptBin "amcm" ''
+              # Inherits cfg.environment so management commands can reach mod/game servers
+              (let
+                envVars = cfg.environment // {
+                  DJANGO_SETTINGS_MODULE = "amc_backend.settings";
+                };
+                envExports = lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${v}") envVars);
+              in pkgs.writeShellScriptBin "amcm" ''
                 exec su -s /bin/sh ${cfg.user} -c \
-                  "DJANGO_SETTINGS_MODULE=amc_backend.settings exec ${self.packages.x86_64-linux.default}/bin/amc-manage $(printf ' %q' "$@")"
+                  "${envExports} exec ${self.packages.x86_64-linux.default}/bin/amc-manage $(printf ' %q' "$@")"
               '')
             ];
           };
