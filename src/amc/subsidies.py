@@ -289,6 +289,8 @@ def get_passenger_subsidy(passenger):
     match passenger.passenger_type:
         case ServerPassengerArrivedLog.PassengerType.Taxi:
             return 2_000 + passenger.payment * 0.5
+        case ServerPassengerArrivedLog.PassengerType.Ambulance:
+            return 2_000 + passenger.payment * 0.5
         case _:
             return 0
 

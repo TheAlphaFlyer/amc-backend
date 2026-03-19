@@ -294,6 +294,12 @@ async def handle_passenger_arrived(event, player, timestamp):
         if log.urgent:
             log.payment += base_payment * log.urgent_rating * 0.3
 
+    if log.passenger_type == ServerPassengerArrivedLog.PassengerType.Ambulance:
+        radius_ratio = passenger_data.get("Net_SearchAndRescueRadiusRatio")
+        if radius_ratio is not None:
+            bonus_multiplier = 1 - radius_ratio  # smaller radius = higher bonus
+            log.payment += int(base_payment * bonus_multiplier)
+
     await log.asave()
     subsidy = get_passenger_subsidy(log)
     return log.payment, subsidy

@@ -119,6 +119,74 @@ class ProcessEventTests(TestCase):
         self.assertEqual(subsidy, 7_000)
         self.assertEqual(log.player, player)
 
+    async def test_ambulance_with_radius_ratio(self, mock_get_treasury, mock_get_rp_mode):
+        """Ambulance with radius ratio 0.2 → +80% bonus on base payment."""
+        mock_get_rp_mode.return_value = False
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerPassengerArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Passenger": {
+                    "Net_PassengerType": 3,  # Ambulance
+                    "Net_Payment": 10_000,
+                    "Net_bArrived": True,
+                    "Net_Distance": 5_000,
+                    "Net_SearchAndRescueRadiusRatio": 0.2,
+                    "Net_LCComfortSatisfaction": 0,
+                    "Net_TimeLimitPoint": 0,
+                },
+                "PlayerId": str(player.unique_id),
+            },
+        }
+        payment, subsidy, _ = await process_event(event, player, character)
+        self.assertEqual(await ServerPassengerArrivedLog.objects.acount(), 1)
+        log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
+        self.assertIsNotNone(log)
+        # base 10,000 + bonus int(10,000 * 0.8) = 18,000
+        self.assertEqual(log.payment, 18_000)
+        # subsidy: 2,000 + 18,000 * 0.5 = 11,000
+        self.assertEqual(subsidy, 11_000)
+        self.assertEqual(payment, 18_000 + 11_000)
+
+    async def test_ambulance_without_radius_ratio(self, mock_get_treasury, mock_get_rp_mode):
+        """Ambulance without radius ratio field (backward compat) — no bonus, only subsidy."""
+        mock_get_rp_mode.return_value = False
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerPassengerArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Passenger": {
+                    "Net_PassengerType": 3,  # Ambulance
+                    "Net_Payment": 10_000,
+                    "Net_bArrived": True,
+                    "Net_Distance": 5_000,
+                    "Net_LCComfortSatisfaction": 0,
+                    "Net_TimeLimitPoint": 0,
+                },
+                "PlayerId": str(player.unique_id),
+            },
+        }
+        payment, subsidy, _ = await process_event(event, player, character)
+        log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
+        self.assertIsNotNone(log)
+        # No radius ratio → no bonus, payment stays at base
+        self.assertEqual(log.payment, 10_000)
+        # subsidy: 2,000 + 10,000 * 0.5 = 7,000
+        self.assertEqual(subsidy, 7_000.0)
+        self.assertEqual(payment, 17_000.0)
+
     async def test_tow(self, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
         player = await sync_to_async(PlayerFactory)()
