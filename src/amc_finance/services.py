@@ -415,10 +415,6 @@ async def register_player_repay_loan(amount, character):
         ],
     )
 
-    # Reset NPL warning so the player can be warned again if they stop paying
-    loan_account.npl_warning_sent_at = None
-    await loan_account.asave(update_fields=["npl_warning_sent_at"])
-
     return result
 
 

@@ -195,8 +195,8 @@ class NPLTestCase(TestCase):
         npl_ids = [a.id for a in npls]
         self.assertIn(account.id, npl_ids)
 
-    async def test_repay_loan_resets_npl_warning(self):
-        """Repaying a loan should reset npl_warning_sent_at."""
+    async def test_repay_loan_does_not_reset_npl_warning(self):
+        """Repaying a loan should NOT reset npl_warning_sent_at."""
         character = await sync_to_async(CharacterFactory)()
         # Set up: give them a deposit so repayment has vault funds
         player = await sync_to_async(lambda: character.player)()
@@ -217,9 +217,9 @@ class NPLTestCase(TestCase):
         # Repay some of the loan
         await register_player_repay_loan(10_000, character)
 
-        # Check that warning was reset
+        # Check that warning was NOT reset
         await loan_account.arefresh_from_db()
-        self.assertIsNone(loan_account.npl_warning_sent_at)
+        self.assertIsNotNone(loan_account.npl_warning_sent_at)
 
     async def test_vehicle_sold_repays_loan(self):
         """Selling a vehicle should auto-repay the loan from sale proceeds."""
