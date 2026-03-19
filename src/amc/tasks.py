@@ -57,8 +57,11 @@ from amc.utils import (
 )
 from amc_finance.services import (
     player_donation,
+    get_player_loan_balance,
 )
 from amc.webhook import on_player_profit
+from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
+from amc.subsidies import repay_loan_for_profit
 from amc.vehicles import spawn_registered_vehicle
 import logging
 from collections import deque
@@ -98,6 +101,33 @@ def enqueue_discord_message(channel_id: str, content: str, timestamp):
     _discord_queue.append((channel_id, content, timestamp))
     # Process immediately since we're using run_coroutine_threadsafe
     _process_discord_queue()
+
+
+async def on_vehicle_sold(character, vehicle_name, http_client_mod):
+    """Auto-repay loan from vehicle sale proceeds (50% of vehicle cost)."""
+    try:
+        vehicle_key = VehicleKeyByLabel.get(vehicle_name)
+        if not vehicle_key:
+            logger.debug(f"Vehicle '{vehicle_name}' not in VehicleKeyByLabel, skipping sale repayment")
+            return
+
+        vehicle_data = VEHICLE_DATA.get(vehicle_key)
+        if not vehicle_data:
+            logger.debug(f"Vehicle key '{vehicle_key}' not in VEHICLE_DATA, skipping sale repayment")
+            return
+
+        sale_proceeds = vehicle_data["cost"] // 2
+        if sale_proceeds <= 0:
+            return
+
+        loan_balance = await get_player_loan_balance(character)
+        if loan_balance <= 0:
+            return
+
+        await repay_loan_for_profit(character, sale_proceeds, http_client_mod)
+        logger.info(f"Auto loan repayment from vehicle sale: {character.name} sold {vehicle_name} (proceeds: {sale_proceeds})")
+    except Exception as e:
+        logger.exception(f"Vehicle sale loan repayment failed for {character.name}: {e}")
 
 
 def get_welcome_message(last_login, player_name):
@@ -513,6 +543,10 @@ Not everyone likes to be roughed up!
             #  asyncio.create_task(delay(register_player_vehicles(http_client_mod, character, player), 5))
             if action == PlayerVehicleLog.Action.BOUGHT and vehicle_name == "Vulcan":
                 await player_donation(2_250_000, character)
+            if action == PlayerVehicleLog.Action.SOLD and is_current_event:
+                asyncio.create_task(
+                    on_vehicle_sold(character, vehicle_name, http_client_mod)
+                )
             if (
                 discord_client
                 and ctx.get("startup_time")
