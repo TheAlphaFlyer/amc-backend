@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-03-18 18:44+0700\n"
+"POT-Creation-Date: 2026-03-19 19:39+0700\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,13 +18,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: amc/command_framework.py:213
 msgid ""
 "<Title>Command Deprecated</>\n"
 "This command is no longer available."
 msgstr ""
 
-#: amc/command_framework.py:267
 #, python-brace-format
 msgid ""
 "<Title>Error</>\n"
@@ -33,7 +31,6 @@ msgstr ""
 "<Title>错误</>\n"
 "{error}"
 
-#: amc/command_framework.py:288
 #, fuzzy, python-brace-format
 #| msgid ""
 #| "<Title>Error</>\n"
@@ -45,36 +42,28 @@ msgstr ""
 "<Title>错误</>\n"
 "{error}"
 
-#: amc/commands/admin.py:31
 msgid "Spawn display vehicles"
 msgstr "生成展示车辆"
 
-#: amc/commands/admin.py:64
 msgid "Spawn dealership vehicles"
 msgstr "生成经销商车辆"
 
-#: amc/commands/admin.py:74
 msgid "Spawn world assets"
 msgstr "生成世界资产"
 
-#: amc/commands/admin.py:85
 msgid "Spawn garages"
 msgstr "生成车库"
 
-#: amc/commands/admin.py:100
 msgid "Spawn a single garage"
 msgstr "生成单个车库"
 
-#: amc/commands/admin.py:110
 #, python-brace-format
 msgid "Garage spawned! Tag: {tag}"
 msgstr "车库已生成！标签: {tag}"
 
-#: amc/commands/admin.py:118
 msgid "Remove nearby garages (within 100 units)"
 msgstr ""
 
-#: amc/commands/admin.py:158
 #, python-brace-format
 msgid ""
 "<Title>Garage Removed</>\n"
@@ -82,30 +71,26 @@ msgid ""
 "Removed {count} garage(s) near your location."
 msgstr ""
 
-#: amc/commands/admin.py:162
 #, python-brace-format
 msgid ""
 "\n"
 "\n"
-"<Warning>{no_tag} garage(s) had no tag and could not be despawned from the game world. They were only removed from the database.</Warning>"
+"<Warning>{no_tag} garage(s) had no tag and could not be despawned from the "
+"game world. They were only removed from the database.</Warning>"
 msgstr ""
 
-#: amc/commands/admin.py:168
 msgid ""
 "<Title>No Garages Found</>\n"
 "\n"
 "No garages within 100 units of your location."
 msgstr ""
 
-#: amc/commands/admin.py:174
 msgid "Spawn a vehicle"
 msgstr "生成车辆"
 
-#: amc/commands/admin.py:178 amc/commands/admin.py:232
 msgid "Admin-only"
 msgstr "仅限管理员"
 
-#: amc/commands/admin.py:182
 msgid ""
 "<Title>Spawn Vehicle</>\n"
 "\n"
@@ -113,17 +98,14 @@ msgstr ""
 "<Title>生成车辆</>\n"
 "\n"
 
-#: amc/commands/admin.py:204
 msgid "Force exit vehicle (Admin)"
 msgstr "强制离开车辆 (管理员)"
 
-#: amc/commands/admin.py:225
 #, fuzzy
 #| msgid "Teleport to a location"
 msgid "Teleport a player to a location (Admin)"
 msgstr "传送至地点"
 
-#: amc/commands/admin.py:244
 msgid ""
 "<Title>Player not found</>\n"
 "\n"
@@ -133,11 +115,9 @@ msgstr ""
 "\n"
 "请确保名字拼写正确。"
 
-#: amc/commands/admin.py:254
 msgid "You cannot teleport yourself with this command. Use /tp instead."
 msgstr "你不能用此命令传送自己。请使用 /tp。"
 
-#: amc/commands/admin.py:272 amc/commands/teleport.py:71
 #, python-brace-format
 msgid ""
 "Teleport point not found\n"
@@ -150,53 +130,41 @@ msgstr ""
 "\n"
 "{locations}"
 
-#: amc/commands/admin.py:290
 #, fuzzy, python-brace-format
 #| msgid "Teleport to a location"
 msgid "Teleported {player} to {location}"
 msgstr "传送至地点"
 
-#: amc/commands/decals.py:9
 msgid "List your saved decals"
 msgstr "列出已保存的贴纸"
 
-#: amc/commands/decals.py:29
 msgid "Save your current vehicle decal"
 msgstr "保存当前车辆贴纸"
 
-#: amc/commands/decals.py:58
 msgid "Apply a saved decal"
 msgstr "应用已保存的贴纸"
 
-#: amc/commands/events.py:19
 msgid "Start event with staggered delay"
 msgstr "以交错延迟开始活动"
 
-#: amc/commands/events.py:49
 msgid "Automatically grid players for event"
 msgstr "自动为活动安排玩家位置"
 
-#: amc/commands/events.py:73
 msgid "See the results of active events"
 msgstr "查看当前活动结果"
 
-#: amc/commands/events.py:95
 msgid "Creates an event properly"
 msgstr "正确创建活动"
 
-#: amc/commands/events.py:133
 msgid "List current and upcoming scheduled events"
 msgstr "列出当前和即将开始的计划活动"
 
-#: amc/commands/events.py:157
 msgid "Initiate a 5 second countdown"
 msgstr "开始 5 秒倒计时"
 
-#: amc/commands/finance.py:23
 msgid "Access your bank account"
 msgstr "访问你的银行账户"
 
-#: amc/commands/finance.py:55
 #, fuzzy
 #| msgid ""
 #| "<Title>Your Bank ASEAN Account</>\n"
@@ -207,20 +175,26 @@ msgstr "访问你的银行账户"
 #| "<Bold>Max Available Loan:</> <Money>{max_loan:,}</>\n"
 #| "<Small>{max_loan_reason}</>\n"
 #| "<Bold>Earnings Saving Rate:</> <Money>{saving_rate_pct:.0f}%</>\n"
-#| "<Small>Use /set_saving_rate [percentage] to automatically set aside your earnings into your account.</>\n"
+#| "<Small>Use /set_saving_rate [percentage] to automatically set aside your "
+#| "earnings into your account.</>\n"
 #| "\n"
 #| "Commands:\n"
-#| "<Highlight>/set_saving_rate [percentage]</> - Automatically set aside your earnings into your account\n"
+#| "<Highlight>/set_saving_rate [percentage]</> - Automatically set aside "
+#| "your earnings into your account\n"
 #| "<Highlight>/withdraw [amount]</> - Withdraw from your bank account\n"
 #| "<Highlight>/loan [amount]</> - Take out a loan\n"
 #| "\n"
 #| "How to Put Money in the Bank\n"
-#| "<Secondary>Use the /set_saving_rate command to set how much you want to save. It's 0 by default.</>\n"
-#| "<Secondary>You can only fill your bank account by saving your earnings on this server, not through direct deposits.</>\n"
+#| "<Secondary>Use the /set_saving_rate command to set how much you want to "
+#| "save. It's 0 by default.</>\n"
+#| "<Secondary>You can only fill your bank account by saving your earnings on "
+#| "this server, not through direct deposits.</>\n"
 #| "\n"
 #| "How ASEAN Loans Works\n"
-#| "<Secondary>Our loans have a flat one-off 10% fee, and you only have to repay them when you make a profit.</>\n"
-#| "<Secondary>The repayment will range from 10% to 80% of your income, depending on the amount of loan you took.</>\n"
+#| "<Secondary>Our loans have a flat one-off 10% fee, and you only have to "
+#| "repay them when you make a profit.</>\n"
+#| "<Secondary>The repayment will range from 10% to 80% of your income, "
+#| "depending on the amount of loan you took.</>\n"
 #| "\n"
 #| "<Bold>Latest Transactions</>\n"
 #| "{transactions_str}\n"
@@ -228,25 +202,32 @@ msgid ""
 "<Title>Your Bank ASEAN Account</>\n"
 "\n"
 "<Bold>Balance:</> <Money>{balance:,}</>\n"
-"<Small>Daily (IRL) Interest Rate: 2.2% (offline), 4.4% (online). Interest reduces for balances above $10M.</>\n"
+"<Small>Daily (IRL) Interest Rate: 2.2% (offline), 4.4% (online). Interest "
+"reduces for balances above $10M.</>\n"
 "<Bold>Loans:</> <Money>{loan_balance:,}</>\n"
 "<Bold>Max Available Loan:</> <Money>{max_loan:,}</>\n"
 "<Small>{max_loan_reason}</>\n"
 "<Bold>Earnings Saving Rate:</> <Money>{saving_rate_pct:.0f}%</>\n"
-"<Small>Use /set_saving_rate [percentage] to automatically set aside your earnings into your account.</>\n"
+"<Small>Use /set_saving_rate [percentage] to automatically set aside your "
+"earnings into your account.</>\n"
 "\n"
 "Commands:\n"
-"<Highlight>/set_saving_rate [percentage]</> - Automatically set aside your earnings into your account\n"
+"<Highlight>/set_saving_rate [percentage]</> - Automatically set aside your "
+"earnings into your account\n"
 "<Highlight>/withdraw [amount]</> - Withdraw from your bank account\n"
 "<Highlight>/loan [amount]</> - Take out a loan\n"
 "\n"
 "How to Put Money in the Bank\n"
-"<Secondary>Use the /set_saving_rate command to set how much you want to save. It's 0 by default.</>\n"
-"<Secondary>You can only fill your bank account by saving your earnings on this server, not through direct deposits.</>\n"
+"<Secondary>Use the /set_saving_rate command to set how much you want to "
+"save. It's 0 by default.</>\n"
+"<Secondary>You can only fill your bank account by saving your earnings on "
+"this server, not through direct deposits.</>\n"
 "\n"
 "How ASEAN Loans Works\n"
-"<Secondary>Our loans have a flat one-off 10% fee, and you only have to repay them when you make a profit.</>\n"
-"<Secondary>The repayment will range from 10% to 80% of your income, depending on the amount of loan you took.</>\n"
+"<Secondary>Our loans have a flat one-off 10% fee, and you only have to repay "
+"them when you make a profit.</>\n"
+"<Secondary>The repayment will range from 10% to 80% of your income, "
+"depending on the amount of loan you took.</>\n"
 "\n"
 "<Bold>Latest Transactions</>\n"
 "{transactions_str}\n"
@@ -277,15 +258,12 @@ msgstr ""
 "<Bold>最近交易</>\n"
 "{transactions_str}\n"
 
-#: amc/commands/finance.py:85
 msgid "Max available loan depends on your driver+trucking level"
 msgstr "最大可用贷款取决于你的驾驶+货运等级"
 
-#: amc/commands/finance.py:94
 msgid "Donate money to another player"
 msgstr "向另一位玩家捐赠资金"
 
-#: amc/commands/finance.py:106
 msgid ""
 "<Title>Donate to the Treasury</>\n"
 "Thank you for wanting to donate <Highlight>{amount:,}</>!\n"
@@ -293,28 +271,22 @@ msgid ""
 "<Secondary>This code is to make sure you don't donate by accident.</>"
 msgstr ""
 
-#: amc/commands/finance.py:128
 msgid "Donated {amount_int:,}!"
 msgstr "已捐赠 {amount_int:,}！"
 
-#: amc/commands/finance.py:137
 msgid "Withdraw money from your account"
 msgstr "从账户提款"
 
-#: amc/commands/finance.py:148
 #, python-brace-format
 msgid "Confirm large withdrawal: /withdraw {amount} {code_gen}"
 msgstr "确认大额提款: /withdraw {amount} {code_gen}"
 
-#: amc/commands/finance.py:164
 msgid "Take out a loan"
 msgstr "贷款"
 
-#: amc/commands/finance.py:168
 msgid "You must have done at least one delivery"
 msgstr "你必须至少完成过一次运送"
 
-#: amc/commands/finance.py:184
 #, python-brace-format
 msgid ""
 "<Title>Loan</>\n"
@@ -325,15 +297,12 @@ msgstr ""
 "费用: {fee}\n"
 "确认: /loan {amount} {code_expected}"
 
-#: amc/commands/finance.py:196
 msgid "Loan Approved!"
 msgstr "贷款已批准！"
 
-#: amc/commands/finance.py:201
 msgid "Set your automatic saving rate"
 msgstr "设置自动储蓄率"
 
-#: amc/commands/finance.py:213
 #, fuzzy, python-format, python-brace-format
 #| msgid ""
 #| "<Title>Savings rate saved</>\n"
@@ -348,7 +317,6 @@ msgstr ""
 "\n"
 "你收入的 {rate:.0f}% 将自动存入你的银行账户"
 
-#: amc/commands/finance.py:223
 #, python-brace-format
 msgid ""
 "<Title>Set savings rate failed</>\n"
@@ -359,11 +327,9 @@ msgstr ""
 "\n"
 "{error}"
 
-#: amc/commands/finance.py:232
 msgid "Set your loan repayment rate"
 msgstr "设置你的贷款还款率"
 
-#: amc/commands/finance.py:244
 #, fuzzy, python-format, python-brace-format
 #| msgid ""
 #| "<Title>Loan repayment rate saved</>\n"
@@ -378,7 +344,6 @@ msgstr ""
 "\n"
 "你收入的 {rate:.0f}% 将自动用于偿还贷款（如果有）"
 
-#: amc/commands/finance.py:254
 #, python-brace-format
 msgid ""
 "<Title>Set loan repayment rate failed</>\n"
@@ -389,19 +354,15 @@ msgstr ""
 "\n"
 "{error}"
 
-#: amc/commands/finance.py:265
 msgid "Toggle Universal Basic Income"
 msgstr "切换全民基本收入 (UBI)"
 
-#: amc/commands/finance.py:274
 msgid "You will no longer receive UBI and subsidies"
 msgstr "你将不再收到 UBI 和补贴"
 
-#: amc/commands/finance.py:276
 msgid "You will start to receive UBI and subsidies"
 msgstr "你将开始收到 UBI 和补贴"
 
-#: amc/commands/finance.py:291
 #, python-brace-format
 msgid ""
 "<Title>Toggle UBI failed</>\n"
@@ -412,20 +373,20 @@ msgstr ""
 "\n"
 "{error}"
 
-#: amc/commands/finance.py:300
 msgid "Burn money from your account"
 msgstr "销毁账户资金"
 
-#: amc/commands/finance.py:313
 #, python-brace-format
 msgid ""
 "<Title>Burn</>\n"
 "\n"
 "To prevent any mishap, please read the following:\n"
 "- This action is non-reversible\n"
-"- Please do not burn more than your wallet balance! You will end up with negative balance.\n"
+"- Please do not burn more than your wallet balance! You will end up with "
+"negative balance.\n"
 "\n"
-"If you wish to proceed, type the command again followed by the verification code:\n"
+"If you wish to proceed, type the command again followed by the verification "
+"code:\n"
 "<Highlight>/burn {amount} {code_expected}</>"
 msgstr ""
 "<Title>销毁</>\n"
@@ -437,7 +398,6 @@ msgstr ""
 "如果你希望继续，请再次输入命令并跟上验证码:\n"
 "<Highlight>/burn {amount} {code_expected}</>"
 
-#: amc/commands/finance.py:332
 #, python-brace-format
 msgid ""
 "<Title>Burn</>\n"
@@ -450,7 +410,6 @@ msgstr ""
 "抱歉，验证码不匹配，请重试:\n"
 "<Highlight>/burn {amount} {code_expected}</>"
 
-#: amc/commands/finance.py:353
 #, python-brace-format
 msgid ""
 "<Title>Burn failed</>\n"
@@ -461,11 +420,9 @@ msgstr ""
 "\n"
 "{error}"
 
-#: amc/commands/finance.py:362
 msgid "Repay loan (Deprecated)"
 msgstr "还款（已弃用）"
 
-#: amc/commands/finance.py:370
 msgid ""
 "<Title>Command Removed</>\n"
 "\n"
@@ -475,11 +432,9 @@ msgstr ""
 "\n"
 "当你在服务器上赚钱时，会自动偿还贷款"
 
-#: amc/commands/finance.py:414
 msgid "Opt in as a Government Employee for 24 hours"
 msgstr "注册成为政府雇员 24 小时"
 
-#: amc/commands/finance.py:439
 #, fuzzy
 #| msgid ""
 #| "<Title>Government Employee Status</>\n"
@@ -501,11 +456,11 @@ msgstr ""
 "<Bold>剩余时间:</> {hours}小时 {minutes}分钟\n"
 "<Bold>总贡献:</> <Money>{contributions:,}</>"
 
-#: amc/commands/finance.py:465
 #, fuzzy, python-brace-format
 #| msgid ""
 #| "<Title>Work for Government</>\n"
-#| "You are about to become a <Highlight>Government Employee</> for 24 hours.\n"
+#| "You are about to become a <Highlight>Government Employee</> for 24 "
+#| "hours.\n"
 #| "\n"
 #| "<Warning>During this time:</>\n"
 #| "- ALL your income will go to the treasury\n"
@@ -540,16 +495,13 @@ msgstr ""
 "你当前的 GOV 等级: <Highlight>GOV{level}</>\n"
 "确认请输入: <Highlight>/workforgov {code}</>"
 
-#: amc/commands/finance.py:485
 #, python-brace-format
 msgid "You are now a Government Employee (GOV{level}) for 24 hours!"
 msgstr "你现在是政府雇员 (GOV{level})，持续 24 小时！"
 
-#: amc/commands/general.py:13
 msgid "Show this help message"
 msgstr "显示此帮助信息"
 
-#: amc/commands/general.py:35
 #, fuzzy
 #| msgid ""
 #| "<Title>Available Commands</>\n"
@@ -561,7 +513,6 @@ msgstr ""
 "<Title>可用命令</>\n"
 "\n"
 
-#: amc/commands/general.py:39
 #, fuzzy
 #| msgid ""
 #| "<Title>{cat}</>\n"
@@ -573,12 +524,10 @@ msgstr ""
 "<Title>{cat}</>\n"
 "<Secondary></>\n"
 
-#: amc/commands/general.py:49 amc/commands/general.py:78
 #, python-brace-format
 msgid "<Secondary>Shorthand: {shorthands}</>"
 msgstr "<Secondary>快捷方式: {shorthands}</>"
 
-#: amc/commands/general.py:65
 #, python-brace-format
 msgid ""
 "<Title>{cat}</>\n"
@@ -587,46 +536,38 @@ msgstr ""
 "<Title>{cat}</>\n"
 "<Secondary></>\n"
 
-#: amc/commands/general.py:92
 msgid "List the awesome people who made this community possible"
 msgstr "列出使这个社区成为可能的杰出人物"
 
-#: amc/commands/general.py:105
 msgid "See your current coordinates"
 msgstr "查看当前坐标"
 
-#: amc/commands/general.py:118
 msgid "Verify your account"
 msgstr "验证你的账户"
 
-#: amc/commands/general.py:152
 msgid "Rename your character"
 msgstr "重命名你的角色"
 
-#: amc/commands/general.py:175
 msgid "Ask the bot a question"
 msgstr "向机器人提问"
 
-#: amc/commands/general.py:187
 msgid "Request a song for the radio"
 msgstr "请求电台歌曲"
 
-#: amc/commands/jobs.py:15
 msgid "List available server jobs"
 msgstr "列出可用的服务器任务"
 
-#: amc/commands/jobs.py:47
 #, python-brace-format
 msgid ""
 "\n"
-"<Secondary>Party Bonus:</> <EffectGood>+{bonus_pct}%</> ({party_size} members)\n"
+"<Secondary>Party Bonus:</> <EffectGood>+{bonus_pct}%</> ({party_size} "
+"members)\n"
 "<Secondary>Form larger parties for bigger bonuses!</>"
 msgstr ""
 "\n"
 "<Secondary>组队加成:</> <EffectGood>+{bonus_pct}%</> ({party_size} 名成员)\n"
 "<Secondary>组建更大的队伍获得更多奖励！</>"
 
-#: amc/commands/jobs.py:53
 #, python-brace-format
 msgid ""
 "\n"
@@ -637,27 +578,22 @@ msgstr ""
 "<Secondary>组队加成:</> <EffectBad>无 (单人)</>\n"
 "<Secondary>加入队伍可获得每人 +{rate_pct}% 加成！</>"
 
-#: amc/commands/jobs.py:65
 #, python-brace-format
 msgid "<Secondary>Expiring in {time}</>"
 msgstr "<Secondary>{time} 后过期</>"
 
-#: amc/commands/jobs.py:68
 #, python-brace-format
 msgid "<Secondary>Cargo: {cargo_key}</>"
 msgstr "<Secondary>货物: {cargo_key}</>"
 
-#: amc/commands/jobs.py:73
 #, python-brace-format
 msgid "<Secondary>ONLY from: {points}</>"
 msgstr "<Secondary>仅来自: {points}</>"
 
-#: amc/commands/jobs.py:78
 #, python-brace-format
 msgid "<Secondary>ONLY to: {points}</>"
 msgstr "<Secondary>仅前往: {points}</>"
 
-#: amc/commands/jobs.py:86
 #, python-brace-format
 msgid ""
 "<Title>Delivery Jobs</>\n"
@@ -676,15 +612,12 @@ msgstr ""
 "\n"
 "<Title>补贴</>: 使用 /subsidies 查看。"
 
-#: amc/commands/jobs.py:101
 msgid "View job subsidies information"
 msgstr "查看任务补贴信息"
 
-#: amc/commands/language.py:7
 msgid "Set your language preference"
 msgstr "设置你的语言偏好"
 
-#: amc/commands/language.py:26
 msgid ""
 "<Title>Language Settings</>\n"
 "Available languages:\n"
@@ -702,53 +635,43 @@ msgstr ""
 "\n"
 "用法: /language [en|id|zh]"
 
-#: amc/commands/language.py:33
 msgid "Invalid language code. Use 'en', 'id', or 'zh'."
 msgstr "无效的语言代码。请使用 'en'、'id' 或 'zh'。"
 
-#: amc/commands/language.py:42
 #, python-brace-format
 msgid "Language set to {lang}"
 msgstr "语言已设置为 {lang}"
 
-#: amc/commands/rp_rescue.py:20
 msgid "Calls for rescue service"
 msgstr "呼叫救援服务"
 
-#: amc/commands/rp_rescue.py:28
 msgid "You have requested a rescue less than 5 minutes ago"
 msgstr "你在不到 5 分钟前刚刚请求过救援"
 
-#: amc/commands/rp_rescue.py:41
 msgid "Vehicles"
 msgstr ""
 
-#: amc/commands/rp_rescue.py:53
 #, python-brace-format
 msgid "{name} needs help!"
 msgstr ""
 
-#: amc/commands/rp_rescue.py:73
 #, fuzzy, python-brace-format
 #| msgid "{name} needs a rescue! {vehicle_names}. /respond {request_id}"
-msgid "{name} needs a rescue! {vehicle_names}. Respond with /respond {request_id}"
+msgid ""
+"{name} needs a rescue! {vehicle_names}. Respond with /respond {request_id}"
 msgstr "{name} 需要救援！{vehicle_names}。 /respond {request_id}"
 
-#: amc/commands/rp_rescue.py:81
 #, fuzzy
 #| msgid "<EffectGood>Request Sent</>\n"
 msgid "<EffectGood>Request Sent>\n"
 msgstr "<EffectGood>请求已发送</>\n"
 
-#: amc/commands/rp_rescue.py:83
 msgid "Help is on the way."
 msgstr "救援正在路上。"
 
-#: amc/commands/rp_rescue.py:85
 msgid "Rescuers offline, notified Discord."
 msgstr "救援人员离线，已通知 Discord。"
 
-#: amc/commands/rp_rescue.py:98
 #, python-brace-format
 msgid ""
 "@here **{name}** requested rescue.\n"
@@ -757,68 +680,55 @@ msgstr ""
 "@here **{name}** 请求救援。\n"
 "留言: {message}"
 
-#: amc/commands/rp_rescue.py:113
 msgid "Respond to a rescue request"
 msgstr "响应救援请求"
 
-#: amc/commands/rp_rescue.py:127
 msgid "Invalid or expired rescue request."
 msgstr "无效或已过期的救援请求。"
 
-#: amc/commands/rp_rescue.py:133
 #, fuzzy, python-brace-format
 #| msgid "{responder} responded to {requester}'s request!"
 msgid "{responder} is responding to {requester}'s rescue request!"
 msgstr "{responder} 响应了 {requester} 的请求！"
 
-#: amc/commands/rp_rescue.py:140
 #, python-brace-format
 msgid ""
 "<Title>Rescue Response</>\n"
 "You are responding to {requester}'s rescue!\n"
 "\n"
 "<EffectGood>Teleport Enabled</>\n"
-"Use <Highlight>/tp</> with your custom destination marker to teleport within 10,000 units of {requester} for the next 10 minutes."
+"Use <Highlight>/tp</> with your custom destination marker to teleport within "
+"10,000 units of {requester} for the next 10 minutes."
 msgstr ""
 
-#: amc/commands/social.py:13
 msgid "Thank another player to increase their social score"
 msgstr "感谢另一位玩家以提高其社交评分"
 
-#: amc/commands/social.py:31
 msgid "Player not found"
 msgstr "未找到玩家"
 
-#: amc/commands/social.py:37
 msgid "Player not found in DB"
 msgstr "数据库中未找到玩家"
 
-#: amc/commands/social.py:45
 msgid "Already thanked recently."
 msgstr "最近已经感谢过了。"
 
-#: amc/commands/social.py:60
 msgid "Thank sent"
 msgstr "感谢已发送"
 
-#: amc/commands/social.py:66
 #, python-brace-format
 msgid "{sender} thanked you"
 msgstr "{sender} 感谢了你"
 
-#: amc/commands/teleport.py:14
 msgid "Teleport to coordinates (Admin Only)"
 msgstr "传送至坐标 (仅限管理员)"
 
-#: amc/commands/teleport.py:26
 msgid "Admin Only"
 msgstr "仅限管理员"
 
-#: amc/commands/teleport.py:31
 msgid "Teleport to a location"
 msgstr "传送至地点"
 
-#: amc/commands/teleport.py:122
 #, python-brace-format
 msgid ""
 "<Title>Rescue Teleport Restricted</Title>\n"
@@ -828,7 +738,6 @@ msgid ""
 "Move your custom destination marker closer to the requester."
 msgstr ""
 
-#: amc/commands/teleport.py:148
 #, python-brace-format
 msgid ""
 "<Title>Teleport</>\n"
@@ -843,15 +752,12 @@ msgstr ""
 "\n"
 "{locations}"
 
-#: amc/commands/vehicles.py:16
 msgid "Despawn your vehicle"
 msgstr "移除你的车辆"
 
-#: amc/commands/vehicles.py:28
 msgid "Check a player's vehicle for custom parts"
 msgstr ""
 
-#: amc/commands/vehicles.py:39
 #, fuzzy
 #| msgid ""
 #| "<Title>Player not found</>\n"
@@ -866,14 +772,12 @@ msgstr ""
 "\n"
 "请确保名字拼写正确。"
 
-#: amc/commands/vehicles.py:54
 msgid ""
 "<Title>Error</>\n"
 "\n"
 "Failed to fetch vehicle data. Is the player online?"
 msgstr ""
 
-#: amc/commands/vehicles.py:61
 #, python-brace-format
 msgid ""
 "<Title>No Vehicle</>\n"
@@ -881,7 +785,6 @@ msgid ""
 "{name} has no active vehicle."
 msgstr ""
 
-#: amc/commands/vehicles.py:78
 #, python-brace-format
 msgid ""
 "\n"
@@ -890,7 +793,6 @@ msgid ""
 "{parts}"
 msgstr ""
 
-#: amc/commands/vehicles.py:85
 #, python-brace-format
 msgid ""
 "\n"
@@ -899,7 +801,6 @@ msgid ""
 "{parts}"
 msgstr ""
 
-#: amc/commands/vehicles.py:93
 #, python-brace-format
 msgid ""
 "<Title>Mod Check</>\n"
@@ -907,7 +808,6 @@ msgid ""
 "<Bold>{name}</> — {vehicle}{issues}"
 msgstr ""
 
-#: amc/commands/vehicles.py:103
 #, python-brace-format
 msgid ""
 "<Title>Parts Check</>\n"
@@ -917,79 +817,86 @@ msgid ""
 "All stock parts."
 msgstr ""
 
-#: amc/models.py:914
 msgid "Company"
 msgstr "公司"
 
-#: amc/models.py:915
 msgid "Companies"
 msgstr "公司"
 
-#: amc/models.py:1017
 msgid "Entered"
 msgstr "已进入"
 
-#: amc/models.py:1018
 msgid "Exited"
 msgstr "已退出"
 
-#: amc/models.py:1019
 msgid "Bought"
 msgstr "已购买"
 
-#: amc/models.py:1020
 msgid "Sold"
 msgstr "已售出"
 
-#: amc/models.py:2183
 msgid "Percentage"
 msgstr ""
 
-#: amc/models.py:2184
 msgid "Flat Amount"
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:11
+msgid ""
+"<Title>ASEAN Server Subsidies</Title>\n"
+"\n"
+msgstr ""
+"<Title>ASEAN 服务器补贴</Title>\n"
+"\n"
+
+msgid "<Title>Wrecker Subsidies</Title>\n"
+msgstr "<Title>拖车补贴</Title>\n"
+
+msgid ""
+"<Bold>Flipped Vehicle</> - <Money>2,000</> + <Money>100%</> of payment\n"
+"<Bold>Other Tow Requests</> - <Money>2,000</> + <Money>50%</> of payment\n"
+"\n"
+"<Title>Body Damage Bonus</Title>\n"
+"<Secondary>Tow requests include a body damage bonus up to <Money>55%</> of "
+"base payment.</>\n"
+"<Secondary>Keep the towed vehicle's body intact for maximum bonus!</>\n"
+msgstr ""
+"<Bold>翻车</> - <Money>2,000</> + <Money>100%</> 的报酬\n"
+"<Bold>其他拖车请求</> - <Money>2,000</> + <Money>50%</> 的报酬\n"
+"\n"
+"<Title>车身损伤奖金</Title>\n"
+"<Secondary>拖车请求包含车身损伤奖金，最高可达基础报酬的 <Money>55%</>。</>\n"
+"<Secondary>保持被拖车辆车身完好以获得最大奖金！</>\n"
+
 msgid "Create from Template"
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:12
 msgid "Select an existing template to pre-fill the job details."
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:17
 msgid "Select a template..."
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:23
 msgid "Continue with Template"
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:29
 msgid "Create from Scratch"
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:30
 msgid "Start with a blank form."
 msgstr ""
 
-#: amc/templates/admin/amc/deliveryjob/select_template.html:33
 msgid "Create Blank Job"
 msgstr ""
 
-#: amc/templates/amc/openlayers.html:4
 msgid "Delete all Features"
 msgstr ""
 
-#: amc_backend/settings.py:191
 msgid "English"
 msgstr "英语"
 
-#: amc_backend/settings.py:192
 msgid "Indonesian"
 msgstr "印尼语"
 
-#: amc_backend/settings.py:193
 msgid "Simplified Chinese"
 msgstr "简体中文"
 
@@ -1175,7 +1082,8 @@ msgstr "简体中文"
 #~ "\n"
 #~ "Your vehicle will be automatically spawned here when the server starts!\n"
 #~ "\n"
-#~ "To change the position, you will need to do /display again with the same vehicle."
+#~ "To change the position, you will need to do /display again with the same "
+#~ "vehicle."
 #~ msgstr ""
 #~ "\n"
 #~ "<Title>成功标记为展示车辆</>\n"

@@ -2,6 +2,7 @@ import asyncio
 from decimal import Decimal
 from django.db.models import Q
 from django.contrib.gis.geos import Point
+from django.utils.translation import gettext as _
 from amc.mod_server import show_popup, transfer_money
 from amc.models import ServerPassengerArrivedLog, SubsidyRule
 from amc_finance.services import (
@@ -14,7 +15,7 @@ from amc_finance.services import (
 
 
 async def get_subsidies_text():
-    text = "<Title>ASEAN Server Subsidies</>\n\n"
+    text = _("<Title>ASEAN Server Subsidies</Title>\n\n")
 
     rules = SubsidyRule.objects.filter(active=True).order_by("-priority")
 
@@ -54,6 +55,18 @@ async def get_subsidies_text():
         if all_dests:
             dest_names = ", ".join([obj.name for obj in all_dests])
             text += f"<Secondary>To: {dest_names}</>\n"
+
+    # Tow Request Subsidies
+    text += "\n"
+    text += _("<Title>Wrecker Subsidies</Title>\n")
+    text += _(
+        "<Bold>Flipped Vehicle</> - <Money>2,000</> + <Money>100%</> of payment\n"
+        "<Bold>Other Tow Requests</> - <Money>2,000</> + <Money>50%</> of payment\n"
+        "\n"
+        "<Title>Body Damage Bonus</Title>\n"
+        "<Secondary>Tow requests include a body damage bonus up to <Money>55%</> of base payment.</>\n"
+        "<Secondary>Keep the towed vehicle's body intact for maximum bonus!</>\n"
+    )
 
     return text
 
