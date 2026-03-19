@@ -41,7 +41,6 @@ from amc_finance.services import (
     get_player_loan_balance,
     get_character_max_loan,
     make_treasury_bank_deposit,
-    make_treasury_bank_withdrawal,
     get_non_performing_loans,
 )
 from amc.subsidies import DEFAULT_SAVING_RATE
@@ -748,6 +747,35 @@ The repayment will range from 10% to 40% of your income, depending on the amount
 ### Purpose & Authorization
 This transaction was authorized under Treasury Mandate 2.1 (Financial Mechanism and Liquidity Maintanance).
 The purpose of this transfer is to ensure sufficient liquidity within the server's regulated financial system, promoting stability and confidence.
+""")
+
+    @app_commands.command(
+        name="treasury_bank_withdrawal",
+        description="Withdraws funds from the bank back to the treasury",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def treasury_bank_withdrawal(self, interaction, amount: int, description: str):
+        now = timezone.now()
+        try:
+            await make_treasury_bank_withdrawal(amount, description)
+        except ValueError as e:
+            await interaction.response.send_message(f"❌ {e}", ephemeral=True)
+            return
+        await interaction.response.send_message(f"""\
+# GOVERNMENT TREASURY: OFFICIAL TRANSACTION RECORD
+
+**Date & Time:** {now.strftime("%d %B %Y, %I:%M %p")}
+**Action Type:** {description}
+
+### Transaction Details
+- Originating Entity: aseanbank
+- Receiving Entity: Office of the Treasury
+- Transaction Method: Treasury Direct Withdrawal
+- Amount: {amount:,}
+
+### Purpose & Authorization
+This transaction was authorized under Treasury Mandate 2.1 (Financial Mechanism and Liquidity Maintenance).
+The purpose of this transfer is to return funds from the bank to the government treasury.
 """)
 
     @app_commands.command(
