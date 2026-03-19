@@ -309,6 +309,13 @@ async def handle_tow_request(event, player, timestamp):
     tow_request = event["data"].get("TowRequest")
     tow_data = tow_request or {}
     payment = tow_data.get("Net_Payment", 0)
+
+    # Body damage bonus: full bonus at 0 damage, scales to 0 at full damage.
+    # The game deposits this on top of Net_Payment into the player's wallet.
+    # Max bonus rate ~55% of base payment (derived from game data).
+    body_damage = tow_data.get("BodyDamage", 1.0)  # default 1.0 = no bonus
+    payment += int(payment * 0.55 * (1 - body_damage))
+
     await ServerTowRequestArrivedLog.objects.acreate(
         timestamp=timestamp,
         player=player,

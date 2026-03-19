@@ -188,6 +188,7 @@ class ProcessEventTests(TestCase):
         self.assertEqual(payment, 17_000.0)
 
     async def test_tow(self, mock_get_treasury, mock_get_rp_mode):
+        """Tow with no body damage info (backward compat) — BodyDamage defaults to 1.0, no bonus."""
         mock_get_rp_mode.return_value = False
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
@@ -214,6 +215,63 @@ class ProcessEventTests(TestCase):
         self.assertEqual(payment, 22_000)
         self.assertEqual(subsidy, 12_000)
         self.assertEqual(log.player, player)
+
+    async def test_tow_body_damage_bonus(self, mock_get_treasury, mock_get_rp_mode):
+        """Tow with 0 body damage → full bonus (55% of base)."""
+        mock_get_rp_mode.return_value = False
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerTowRequestArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "TowRequest": {
+                    "Net_TowRequestFlags": 0,
+                    "Net_Payment": 10_000,
+                    "BodyDamage": 0.0,  # 0 damage → full bonus
+                },
+                "PlayerId": str(player.unique_id),
+            },
+        }
+        payment, subsidy, _ = await process_event(event, player, character)
+        log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
+        # 0 damage: bonus = int(10_000 * 0.55) = 5_500, total payment = 15_500
+        self.assertEqual(log.payment, 15_500)
+        # subsidy for non-flipped: 2_000 + 15_500 * 0.5 = 9_750
+        self.assertEqual(subsidy, 9_750)
+        self.assertEqual(payment, 15_500 + 9_750)
+
+    async def test_tow_body_damage_partial(self, mock_get_treasury, mock_get_rp_mode):
+        """Tow with partial body damage: bonus scales linearly with (1 - BodyDamage)."""
+        mock_get_rp_mode.return_value = False
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerTowRequestArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "TowRequest": {
+                    "Net_TowRequestFlags": 0,
+                    "Net_Payment": 10_000,
+                    "BodyDamage": 0.5,  # 50% damage → 50% of max bonus
+                },
+                "PlayerId": str(player.unique_id),
+            },
+        }
+        payment, subsidy, _ = await process_event(event, player, character)
+        log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
+        # bonus = int(10_000 * 0.55 * 0.5) = 2_750, total = 12_750
+        self.assertEqual(log.payment, 12_750)
+        self.assertEqual(subsidy, 2_000 + 12_750 * 0.5)
+        self.assertEqual(payment, 12_750 + subsidy)
 
     async def test_rp_mode_subsidy(self, mock_get_treasury, mock_get_rp_mode):
         # Verify subsidy calculation when RP mode is ON
