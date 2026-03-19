@@ -46,7 +46,7 @@ from amc.mod_server import (
     show_popup,
     teleport_player,
     get_player,
-    set_character_name,
+    list_player_vehicles,
     set_world_vehicle_decal,
     spawn_assets,
     spawn_garage,
@@ -59,6 +59,8 @@ from amc_finance.services import (
     player_donation,
     get_player_loan_balance,
 )
+from amc.mod_detection import detect_custom_parts
+from amc.player_tags import refresh_player_name
 from amc.webhook import on_player_profit
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
 from amc.subsidies import repay_loan_for_profit
@@ -216,12 +218,16 @@ async def _login_guid_dependent_actions(
             character.guid = character_guid
             await character.asave(update_fields=["guid"])
 
-        # --- DOT tag check: rename if unauthorized ---
-        if player_info and "DOT" in player_info.get("PlayerName", ""):
-            if not await Team.objects.filter(tag="DOT", players=player).aexists():
-                import re
-                stripped_name = re.sub(r"\s*\[?DOT\]?\s*", "", player_info["PlayerName"]).strip() or player_name
-                await set_character_name(http_client_mod, character_guid, stripped_name)
+        # --- Tag Enforcement ---
+        # 1. Update the player's name based on current DB state
+        await refresh_player_name(character, http_client_mod)
+        
+        # 2. Check if they tried to login with unauthorized tags and warn them
+        if player_info:
+            player_display_name = player_info.get("PlayerName", "")
+            
+            # DOT tag check
+            if "DOT" in player_display_name and not await Team.objects.filter(tag="DOT", players=player).aexists():
                 asyncio.create_task(
                     show_popup(
                         http_client_mod,
@@ -231,31 +237,9 @@ async def _login_guid_dependent_actions(
                     )
                 )
 
-        # --- Government Employee: handle login ---
-        if character.gov_employee_until is not None:
-            if character.is_gov_employee:
-                from amc.gov_employee import make_gov_name
-
-                gov_name = make_gov_name(character.name, character.gov_employee_level)
-                asyncio.create_task(
-                    set_character_name(http_client_mod, character_guid, gov_name)
-                )
-            else:
-                from amc.gov_employee import deactivate_gov_role
-
-                await deactivate_gov_role(character, http_client_mod)
-
-        # --- Block [GOV] tag for non-government-employees ---
-        if player_info:
+            # GOV tag check (for expired/non-employees trying to use the tag)
             import re
-
-            player_display_name = player_info.get("PlayerName", "")
-            if (
-                re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE)
-                and not character.is_gov_employee
-            ):
-                stripped_name = re.sub(r"\s*\[GOV\d*\]\s*", "", player_display_name, flags=re.IGNORECASE).strip() or player_name
-                await set_character_name(http_client_mod, character_guid, stripped_name)
+            if re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE) and not character.is_gov_employee:
                 asyncio.create_task(
                     show_popup(
                         http_client_mod,
@@ -320,6 +304,47 @@ async def _login_guid_dependent_actions(
                 await player.asave(update_fields=["suspect"])
     except Exception as e:
         logger.exception(f"GUID-dependent login actions failed for {player_name}: {e}")
+
+
+async def register_player_vehicles(session, character, player):
+    try:
+        await list_player_vehicles(
+            session, str(player.unique_id), active=True, complete=True
+        )
+        # TODO save to db?
+    except Exception as e:
+        logger.error(f"Failed to register player vehicles for {character.name}: {e}")
+
+
+async def handle_player_vehicle_mod_check(character, player, session, action: PlayerVehicleLog.Action):
+    """Check modded parts when entering a vehicle, or remove MOD tag when exiting."""
+    # When exiting, we just clear the [MOD] tag
+    if action == PlayerVehicleLog.Action.EXITED:
+        await refresh_player_name(character, session, has_custom_parts=False)
+        return
+
+    # When entering, we must fetch their active vehicle to see if it has custom parts
+    if action == PlayerVehicleLog.Action.ENTERED:
+        try:
+            player_vehicles = await list_player_vehicles(
+                session, str(player.unique_id), active=True, complete=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch vehicle parts for {character.name}: {e}")
+            return
+
+        if not player_vehicles:
+            # They entered a vehicle but list_player_vehicles returned empty?
+            # Fallback: remove the tag
+            await refresh_player_name(character, session, has_custom_parts=False)
+            return
+
+        # Check the first (main) active vehicle
+        v_id, vehicle = next(iter(player_vehicles.items()))
+        parts = vehicle.get("parts", [])
+        custom_parts = detect_custom_parts(parts)
+        
+        await refresh_player_name(character, session, has_custom_parts=bool(custom_parts))
 
 
 async def process_login_event(character_id, timestamp):
@@ -540,6 +565,12 @@ Not everyone likes to be roughed up!
                             player_id=str(player.unique_id),
                         )
                     )
+                    
+            if action in [PlayerVehicleLog.Action.ENTERED, PlayerVehicleLog.Action.EXITED]:
+                asyncio.create_task(
+                    handle_player_vehicle_mod_check(character, player, http_client_mod, action)
+                )
+
             #  asyncio.create_task(delay(register_player_vehicles(http_client_mod, character, player), 5))
             if action == PlayerVehicleLog.Action.BOUGHT and vehicle_name == "Vulcan":
                 await player_donation(2_250_000, character)

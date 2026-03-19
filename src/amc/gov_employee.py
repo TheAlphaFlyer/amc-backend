@@ -2,8 +2,8 @@ import re
 from datetime import timedelta
 from django.db.models import F
 from django.utils import timezone
-from amc.mod_server import set_character_name
 from amc_finance.services import player_donation
+from amc.player_tags import refresh_player_name
 
 GOV_LEVEL_STEP = 500_000
 GOV_ROLE_DURATION = timedelta(hours=24)
@@ -34,29 +34,16 @@ async def activate_gov_role(character, session):
     character.gov_employee_level = level
     await character.asave(update_fields=["gov_employee_until", "gov_employee_level"])
 
-    gov_name = make_gov_name(character.name, level)
-    character.custom_name = gov_name
-    await character.asave(update_fields=["custom_name"])
-
-    if session and character.guid:
-        await set_character_name(session, character.guid, gov_name)
+    await refresh_player_name(character, session)
 
 
 async def deactivate_gov_role(character, session):
     """Deactivate the government employee role and restore name."""
     character.gov_employee_until = None
-    original_name = strip_gov_name(character.custom_name or character.name)
-    # If the stripped name matches the original name, clear custom_name
-    if original_name == character.name:
-        character.custom_name = None
-    else:
-        character.custom_name = original_name
-    await character.asave(update_fields=["gov_employee_until", "custom_name"])
+    character.gov_employee_level = 0
+    await character.asave(update_fields=["gov_employee_until", "gov_employee_level"])
 
-    if session and character.guid:
-        await set_character_name(
-            session, character.guid, original_name or character.name
-        )
+    await refresh_player_name(character, session)
 
 
 async def redirect_income_to_treasury(
@@ -88,12 +75,7 @@ async def redirect_income_to_treasury(
         await character.asave(update_fields=["gov_employee_level"])
 
         # Level up logic
-        gov_name = make_gov_name(character.name, new_level)
-        character.custom_name = gov_name
-        await character.asave(update_fields=["custom_name"])
-
-        if session and character.guid:
-            await set_character_name(session, character.guid, gov_name)
+        await refresh_player_name(character, session)
 
         if http_client:
             from amc.game_server import announce

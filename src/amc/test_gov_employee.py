@@ -54,7 +54,7 @@ class GovNameTests(TestCase):
 
 
 class ActivateDeactivateTests(TestCase):
-    @patch("amc.gov_employee.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_activate_gov_role(self, mock_set_name):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
@@ -71,7 +71,7 @@ class ActivateDeactivateTests(TestCase):
         self.assertIn("[GOV1]", character.custom_name)
         mock_set_name.assert_awaited_once()
 
-    @patch("amc.gov_employee.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_activate_with_existing_contributions(self, mock_set_name):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
@@ -84,7 +84,7 @@ class ActivateDeactivateTests(TestCase):
         self.assertEqual(character.gov_employee_level, 4)
         self.assertIn("[GOV4]", character.custom_name)
 
-    @patch("amc.gov_employee.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_deactivate_gov_role(self, mock_set_name):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
@@ -104,7 +104,7 @@ class ActivateDeactivateTests(TestCase):
         # custom_name should be cleared if it matches original name
         mock_set_name.assert_awaited_once()
 
-    @patch("amc.gov_employee.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_deactivate_restores_original_name(self, mock_set_name):
         player = await sync_to_async(PlayerFactory)()
         original_name = "OriginalPlayer"
