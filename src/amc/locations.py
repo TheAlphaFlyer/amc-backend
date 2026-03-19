@@ -81,13 +81,13 @@ SHORTCUT_ZONE_WARNING_RADIUS = 2000  # game units (~20m)
 SHORTCUT_ZONE_WARNING_MESSAGE = """\
 <Title>⚠️ Shortcut Zone Ahead</>
 <Warning>You are near a shortcut zone!</>
-Deliveries made through this area will <Highlight>NOT receive any subsidy bonus</>.
+Deliveries made through this area will <Highlight>NOT receive any subsidy bonus</> and will <Highlight>NOT count towards job completion</>.
 """
 
 SHORTCUT_ZONE_ENTRY_MESSAGE = """\
 <Title>⛔ Entered Shortcut Zone</>
 <Warning>You are now INSIDE a shortcut zone!</>
-Any delivery completed while having passed through this area will <Highlight>NOT be subsidised</>.
+Any delivery completed while having passed through this area will <Highlight>NOT be subsidised</> and will <Highlight>NOT count towards job completion</>.
 """
 
 
