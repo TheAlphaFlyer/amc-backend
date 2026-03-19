@@ -15,6 +15,8 @@ from .services import (
     get_non_performing_loans,
     register_player_take_loan,
     register_player_repay_loan,
+    make_treasury_bank_deposit,
+    make_treasury_bank_withdrawal,
 )
 
 
@@ -251,3 +253,41 @@ class NPLTestCase(TestCase):
         with patch("amc.subsidies.transfer_money", new_callable=AsyncMock) as mock_transfer:
             await on_vehicle_sold(character, "Tuscan", None)
             mock_transfer.assert_not_called()
+
+
+class TreasuryBankTransferTestCase(TestCase):
+    async def test_treasury_bank_withdrawal(self):
+        """Deposit into bank, then withdraw — all 4 accounts should return to original."""
+        await make_treasury_bank_deposit(500_000, "Test deposit")
+
+        treasury_fund = await Account.objects.aget(
+            book=Account.Book.GOVERNMENT, name="Treasury Fund"
+        )
+        treasury_in_bank = await Account.objects.aget(
+            book=Account.Book.GOVERNMENT, name="Treasury Fund (in Bank)"
+        )
+        bank_vault = await Account.objects.aget(
+            book=Account.Book.BANK, character=None, account_type=Account.AccountType.ASSET
+        )
+        bank_equity = await Account.objects.aget(
+            book=Account.Book.BANK, account_type=Account.AccountType.EQUITY
+        )
+
+        self.assertEqual(treasury_in_bank.balance, 500_000)
+        self.assertEqual(bank_equity.balance, 500_000)
+
+        await make_treasury_bank_withdrawal(500_000, "Test withdrawal")
+
+        await treasury_fund.arefresh_from_db()
+        await treasury_in_bank.arefresh_from_db()
+        await bank_vault.arefresh_from_db()
+        await bank_equity.arefresh_from_db()
+
+        self.assertEqual(treasury_in_bank.balance, 0)
+        self.assertEqual(bank_equity.balance, 0)
+
+    async def test_treasury_bank_withdrawal_exceeds_balance(self):
+        """Withdrawing more than deposited should raise ValueError."""
+        await make_treasury_bank_deposit(100_000, "Small deposit")
+        with self.assertRaises(ValueError):
+            await make_treasury_bank_withdrawal(200_000, "Over-withdrawal")

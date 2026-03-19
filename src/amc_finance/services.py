@@ -799,6 +799,79 @@ async def make_treasury_bank_deposit(amount, description):
     )
 
 
+async def make_treasury_bank_withdrawal(amount, description):
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    treasury_fund_in_bank, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund (in Bank)",
+    )
+    bank_vault, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.BANK,
+        character=None,
+        defaults={
+            "name": "Bank Vault",
+        },
+    )
+    bank_treasury_account, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.EQUITY,
+        book=Account.Book.BANK,
+        character=None,
+        defaults={
+            "name": "Bank Equity",
+        },
+    )
+
+    if amount > treasury_fund_in_bank.balance:
+        raise ValueError(
+            f"Insufficient treasury balance in bank: {treasury_fund_in_bank.balance:,} available, {amount:,} requested"
+        )
+
+    # Government books: Treasury Fund (in Bank) → Treasury Fund
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {
+                "account": treasury_fund,
+                "debit": amount,
+                "credit": 0,
+            },
+            {
+                "account": treasury_fund_in_bank,
+                "debit": 0,
+                "credit": amount,
+            },
+        ],
+    )
+    # Bank books: Bank Equity → Bank Vault
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {
+                "account": bank_treasury_account,
+                "debit": amount,
+                "credit": 0,
+            },
+            {
+                "account": bank_vault,
+                "debit": 0,
+                "credit": amount,
+            },
+        ],
+    )
+
+
 async def allocate_ministry_budget(amount, term):
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,

@@ -41,6 +41,7 @@ from amc_finance.services import (
     get_player_loan_balance,
     get_character_max_loan,
     make_treasury_bank_deposit,
+    make_treasury_bank_withdrawal,
     get_non_performing_loans,
 )
 from amc.subsidies import DEFAULT_SAVING_RATE
@@ -908,7 +909,11 @@ The purpose of this transfer is to ensure sufficient liquidity within the server
         warned = 0
         for account in npl_accounts:
             if account.npl_warning_sent_at is not None:
-                continue
+                # Re-send warning if it's been a full period since the last warning
+                if timezone.now() < account.npl_warning_sent_at + timedelta(
+                    days=account.repayment_period_days
+                ):
+                    continue
             player = account.character.player
             if not player or not player.discord_user_id:
                 continue
