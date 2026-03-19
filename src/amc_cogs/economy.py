@@ -1,7 +1,9 @@
 import re
+import logging
 from io import BytesIO
 from decimal import Decimal
 from datetime import time as dt_time, timedelta, timezone as dt_timezone
+from asgiref.sync import sync_to_async
 from django.utils import timezone
 from django.db import models
 from django.db.models import (
@@ -39,6 +41,7 @@ from amc_finance.services import (
     get_player_loan_balance,
     get_character_max_loan,
     make_treasury_bank_deposit,
+    get_non_performing_loans,
 )
 from amc.subsidies import DEFAULT_SAVING_RATE
 from amc.save_file import decrypt, encrypt
@@ -102,6 +105,8 @@ class EconomyCog(commands.Cog):
         self.daily_top_haulers_task.start()
         self.weekly_donations_task.start()
         self.daily_gov_employee_summary_task.start()
+        self.npl_warning_task.start()
+        self.npl_collections_board_task.start()
 
     @tasks.loop(time=dt_time(hour=2, minute=0, tzinfo=dt_timezone.utc))
     async def daily_top_haulers_task(self):
@@ -892,6 +897,172 @@ The purpose of this transfer is to ensure sufficient liquidity within the server
         embed.set_footer(text=f"Requested by {interaction.user.display_name}")
 
         await interaction.followup.send(embed=embed)
+
+    # --- NPL Management Features ---
+
+    @tasks.loop(time=dt_time(hour=3, minute=0, tzinfo=dt_timezone.utc))
+    async def npl_warning_task(self):
+        """Send a one-time DM warning to players with non-performing loans."""
+        logger = logging.getLogger("amc.npl")
+        npl_accounts = await sync_to_async(get_non_performing_loans)()
+        warned = 0
+        for account in npl_accounts:
+            if account.npl_warning_sent_at is not None:
+                continue
+            player = account.character.player
+            if not player or not player.discord_user_id:
+                continue
+            try:
+                user = await self.bot.fetch_user(player.discord_user_id)
+                await user.send(
+                    f"📋 **Courtesy Notice from the Bank of ASEAN**\n\n"
+                    f"Your loan for character **{account.character.name}** is behind "
+                    f"on its payment plan.\n"
+                    f"Outstanding balance: **${account.balance:,.0f}**\n"
+                    f"Repaid this period: **${account.total_repaid_in_period:,.0f}** "
+                    f"/ **${account.min_required_repayment:,.0f}** required\n\n"
+                    f"Please make deliveries or repayments to meet the minimum. "
+                    f"Accounts that remain behind may be publicly listed on the Collections Board."
+                )
+                warned += 1
+            except discord.Forbidden:
+                logger.info(f"Cannot DM user {player.discord_user_id} (DMs disabled)")
+            except Exception:
+                logger.exception(f"Failed to send NPL warning to {player.discord_user_id}")
+                continue
+            account.npl_warning_sent_at = timezone.now()
+            await account.asave(update_fields=["npl_warning_sent_at"])
+
+        if warned:
+            logger.info(f"Sent {warned} NPL warning DMs")
+
+    @tasks.loop(time=dt_time(hour=8, minute=30, tzinfo=dt_timezone.utc))
+    async def npl_collections_board_task(self):
+        """Post a weekly public Collections Board for NPL accounts."""
+        if timezone.now().weekday() != 6:  # Only on Sundays
+            return
+
+        npl_accounts = await sync_to_async(get_non_performing_loans)()
+        # Sort by balance descending
+        npl_accounts.sort(key=lambda a: a.balance, reverse=True)
+
+        lines = []
+        total_outstanding = 0
+        for account in npl_accounts:
+            pct = 0
+            if account.min_required_repayment > 0:
+                pct = int(account.total_repaid_in_period / account.min_required_repayment * 100)
+            lines.append(
+                f"**{account.character.name}** — `${account.balance:,.0f}` (repaid {pct}% of minimum)"
+            )
+            total_outstanding += account.balance
+
+        if not lines:
+            return
+
+        description = "\n".join(lines[:25])
+        if len(lines) > 25:
+            description += f"\n\n*...and {len(lines) - 25} more accounts*"
+
+        embed = discord.Embed(
+            title="🏦 Bank of ASEAN — Collections Board",
+            description=(
+                "The following accounts have not met the minimum repayment "
+                "for their payment plan period.\n\n"
+                + description
+            ),
+            color=discord.Color.red(),
+            timestamp=timezone.now(),
+        )
+        embed.add_field(
+            name="Total Outstanding",
+            value=f"`${total_outstanding:,.0f}`",
+            inline=True,
+        )
+        embed.add_field(
+            name="Accounts Listed",
+            value=f"`{len(lines)}`",
+            inline=True,
+        )
+        embed.set_footer(text="Make deliveries or repayments to clear your name from this list.")
+
+        treasury_channel_id = getattr(
+            settings, "DISCORD_TREASURY_CHANNEL_ID", 1402660537619320872
+        )
+        treasury_channel = self.bot.get_channel(treasury_channel_id)
+        if treasury_channel:
+            sent_message = await treasury_channel.send(embed=embed)
+            general_channel = self.bot.get_channel(self.general_channel_id)
+            if general_channel:
+                await sent_message.forward(general_channel)
+
+    @app_commands.command(
+        name="npl",
+        description="List non-performing loan accounts by repayment shortfall",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def npl_command(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        npl_accounts = await sync_to_async(get_non_performing_loans)()
+
+        if not npl_accounts:
+            await interaction.followup.send("No non-performing loans found.", ephemeral=True)
+            return
+
+        # Sort by shortfall (required - repaid) descending
+        npl_accounts.sort(
+            key=lambda a: a.min_required_repayment - a.total_repaid_in_period,
+            reverse=True,
+        )
+
+        # Build compact table
+        header = f"{'Name':<16} | {'Balance':>10} | {'Repaid':>8} | {'Req':>8} | {'Per':>3}\n"
+        separator = f"{'-'*16}-+-{'-'*10}-+-{'-'*8}-+-{'-'*8}-+-{'-'*3}\n"
+        table_lines = []
+        total_balance = 0
+
+        for account in npl_accounts:
+            name = account.character.name[:16]
+            repaid = account.total_repaid_in_period
+            required = account.min_required_repayment
+            period = account.repayment_period_days
+            line = f"{name:<16} | ${account.balance:>9,.0f} | ${repaid:>7,.0f} | ${required:>7,.0f} | {period:>2}d"
+            table_lines.append(line)
+            total_balance += account.balance
+
+        # Truncate to fit embed
+        shown_lines = []
+        total_len = len(header) + len(separator)
+        for line in table_lines:
+            if total_len + len(line) + 60 > 4096:
+                break
+            shown_lines.append(line)
+            total_len += len(line) + 1
+
+        embed = discord.Embed(
+            title="📊 Non-Performing Loans Report",
+            description=f"```\n{header}{separator}" + "\n".join(shown_lines) + "\n```",
+            color=discord.Color.orange(),
+            timestamp=timezone.now(),
+        )
+        if len(shown_lines) < len(table_lines):
+            embed.add_field(
+                name="Truncated",
+                value=f"Showing {len(shown_lines)} of {len(table_lines)} accounts",
+                inline=True,
+            )
+        embed.add_field(
+            name="Total Outstanding",
+            value=f"`${total_balance:,.0f}`",
+            inline=True,
+        )
+        from amc_finance.services import NPL_DEFAULT_REPAYMENT_RATE, NPL_DEFAULT_PERIOD_DAYS
+        embed.set_footer(
+            text=f"Default plan: {int(NPL_DEFAULT_REPAYMENT_RATE * 100)}% per {NPL_DEFAULT_PERIOD_DAYS}d | Req = required, Per = period"
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message):

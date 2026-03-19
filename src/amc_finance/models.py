@@ -33,6 +33,15 @@ class Account(models.Model):
     name = models.CharField(max_length=100)
     account_type = models.CharField(max_length=10, choices=AccountType.choices)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    npl_warning_sent_at = models.DateTimeField(null=True, blank=True)
+    min_repayment_rate = models.DecimalField(
+        max_digits=5, decimal_places=4, null=True, blank=True,
+        help_text="Min repayment per period as fraction of balance (e.g. 0.10 = 10%). NULL = use global default.",
+    )
+    min_repayment_period_days = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Repayment period in days (e.g. 7 = weekly). NULL = use global default.",
+    )
 
     def __str__(self):
         if self.character:

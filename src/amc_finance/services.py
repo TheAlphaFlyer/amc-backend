@@ -296,6 +296,86 @@ async def register_player_take_loan(amount, character):
     return principal, fee
 
 
+NPL_DEFAULT_REPAYMENT_RATE = Decimal("0.10")  # 10% of balance per period
+NPL_DEFAULT_PERIOD_DAYS = 7  # weekly
+NPL_MIN_BALANCE = 500_000  # minimum loan balance to be considered NPL
+
+
+def get_non_performing_loans():
+    """
+    Returns a list of loan Account objects where cumulative repayments
+    in the configured period are below the required minimum.
+
+    Each account can override the global defaults via:
+    - min_repayment_rate (fraction, e.g. 0.10 = 10%)
+    - min_repayment_period_days (e.g. 7 = weekly)
+
+    Annotated with:
+    - total_repaid_in_period: actual credits in the period
+    - min_required_repayment: balance × rate
+    - last_repayment_at: most recent credit entry
+    """
+    from django.db.models import Max, Subquery, OuterRef, Sum
+
+    now = timezone.now()
+
+    # For the "last_repayment_at" annotation (used for sorting / display)
+    last_repayment_subquery = (
+        LedgerEntry.objects.filter(
+            account=OuterRef("pk"),
+            credit__gt=0,
+        )
+        .values("account")
+        .annotate(latest=Max("journal_entry__created_at"))
+        .values("latest")
+    )
+
+    # Base queryset: all active loan accounts
+    qs = (
+        Account.objects.filter(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.BANK,
+            character__isnull=False,
+            balance__gte=NPL_MIN_BALANCE,
+        )
+        .annotate(
+            last_repayment_at=Subquery(last_repayment_subquery),
+        )
+        .select_related("character", "character__player")
+    )
+
+    # We can't use per-row dynamic cutoffs in a single SQL subquery easily,
+    # so we fetch and filter in Python. This is fine since loan accounts are
+    # a small set (typically < 100).
+    results = []
+    for account in qs:
+        period_days = account.min_repayment_period_days or NPL_DEFAULT_PERIOD_DAYS
+        rate = account.min_repayment_rate if account.min_repayment_rate is not None else NPL_DEFAULT_REPAYMENT_RATE
+        cutoff = now - timedelta(days=period_days)
+
+        # Sum of credits in this account's period
+        total_repaid = (
+            LedgerEntry.objects.filter(
+                account=account,
+                credit__gt=0,
+                journal_entry__created_at__gte=cutoff,
+            )
+            .aggregate(total=Sum("credit"))["total"]
+        ) or Decimal(0)
+
+        min_required = account.balance * rate
+
+        # Attach computed values for display
+        account.total_repaid_in_period = total_repaid
+        account.min_required_repayment = min_required
+        account.repayment_period_days = period_days
+
+        if total_repaid < min_required:
+            results.append(account)
+
+    return results
+
+
 async def register_player_repay_loan(amount, character):
     loan_account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
@@ -317,7 +397,7 @@ async def register_player_repay_loan(amount, character):
     if loan_account.balance < amount:
         raise ValueError("You are repaying more than you owe")
 
-    return await sync_to_async(create_journal_entry)(
+    result = await sync_to_async(create_journal_entry)(
         timezone.now(),
         "Player Loan Repayment",
         character,
@@ -334,6 +414,12 @@ async def register_player_repay_loan(amount, character):
             },
         ],
     )
+
+    # Reset NPL warning so the player can be warned again if they stop paying
+    loan_account.npl_warning_sent_at = None
+    await loan_account.asave(update_fields=["npl_warning_sent_at"])
+
+    return result
 
 
 async def player_donation(amount, character, description="Player Donation"):
