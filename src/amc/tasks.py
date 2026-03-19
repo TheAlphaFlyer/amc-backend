@@ -110,12 +110,16 @@ async def on_vehicle_sold(character, vehicle_name, http_client_mod):
     try:
         vehicle_key = VehicleKeyByLabel.get(vehicle_name)
         if not vehicle_key:
-            logger.debug(f"Vehicle '{vehicle_name}' not in VehicleKeyByLabel, skipping sale repayment")
+            logger.debug(
+                f"Vehicle '{vehicle_name}' not in VehicleKeyByLabel, skipping sale repayment"
+            )
             return
 
         vehicle_data = VEHICLE_DATA.get(vehicle_key)
         if not vehicle_data:
-            logger.debug(f"Vehicle key '{vehicle_key}' not in VEHICLE_DATA, skipping sale repayment")
+            logger.debug(
+                f"Vehicle key '{vehicle_key}' not in VEHICLE_DATA, skipping sale repayment"
+            )
             return
 
         sale_proceeds = vehicle_data["cost"] // 2
@@ -127,9 +131,13 @@ async def on_vehicle_sold(character, vehicle_name, http_client_mod):
             return
 
         await repay_loan_for_profit(character, sale_proceeds, http_client_mod)
-        logger.info(f"Auto loan repayment from vehicle sale: {character.name} sold {vehicle_name} (proceeds: {sale_proceeds})")
+        logger.info(
+            f"Auto loan repayment from vehicle sale: {character.name} sold {vehicle_name} (proceeds: {sale_proceeds})"
+        )
     except Exception as e:
-        logger.exception(f"Vehicle sale loan repayment failed for {character.name}: {e}")
+        logger.exception(
+            f"Vehicle sale loan repayment failed for {character.name}: {e}"
+        )
 
 
 def get_welcome_message(last_login, player_name):
@@ -146,9 +154,7 @@ def get_welcome_message(last_login, player_name):
     return None, False
 
 
-async def aget_or_create_character(
-    player_name, player_id, http_client_mod=None
-):
+async def aget_or_create_character(player_name, player_id, http_client_mod=None):
     character_guid = None
     player_info = None
     if http_client_mod:
@@ -189,7 +195,9 @@ async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=20
                 f"Failed to fetch player info for {player_name} ({player_id}): {e}"
             )
             return None, None
-    logger.warning(f"GUID not resolved after {max_attempts} attempts for {player_name} ({player_id})")
+    logger.warning(
+        f"GUID not resolved after {max_attempts} attempts for {player_name} ({player_id})"
+    )
     return None, None
 
 
@@ -221,13 +229,16 @@ async def _login_guid_dependent_actions(
         # --- Tag Enforcement ---
         # 1. Update the player's name based on current DB state
         await refresh_player_name(character, http_client_mod)
-        
+
         # 2. Check if they tried to login with unauthorized tags and warn them
         if player_info:
             player_display_name = player_info.get("PlayerName", "")
-            
+
             # DOT tag check
-            if "DOT" in player_display_name and not await Team.objects.filter(tag="DOT", players=player).aexists():
+            if (
+                "DOT" in player_display_name
+                and not await Team.objects.filter(tag="DOT", players=player).aexists()
+            ):
                 asyncio.create_task(
                     show_popup(
                         http_client_mod,
@@ -239,7 +250,11 @@ async def _login_guid_dependent_actions(
 
             # GOV tag check (for expired/non-employees trying to use the tag)
             import re
-            if re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE) and not character.is_gov_employee:
+
+            if (
+                re.search(r"\[GOV\d*\]", player_display_name, re.IGNORECASE)
+                and not character.is_gov_employee
+            ):
                 asyncio.create_task(
                     show_popup(
                         http_client_mod,
@@ -316,7 +331,9 @@ async def register_player_vehicles(session, character, player):
         logger.error(f"Failed to register player vehicles for {character.name}: {e}")
 
 
-async def handle_player_vehicle_mod_check(character, player, session, action: PlayerVehicleLog.Action):
+async def handle_player_vehicle_mod_check(
+    character, player, session, action: PlayerVehicleLog.Action
+):
     """Check modded parts when entering a vehicle, or remove MOD tag when exiting."""
     # When exiting, we just clear the [MOD] tag
     if action == PlayerVehicleLog.Action.EXITED:
@@ -340,11 +357,26 @@ async def handle_player_vehicle_mod_check(character, player, session, action: Pl
             return
 
         # Check the first (main) active vehicle
-        v_id, vehicle = next(iter(player_vehicles.items()))
-        parts = vehicle.get("parts", [])
+        main_vehicle = next(
+            (
+                v
+                for v in player_vehicles.values()
+                if v.get("isLastVehicle") and v.get("index", -1) == 0
+            ),
+            None,
+        )
+
+        if not main_vehicle:
+            # Fallback: remove the tag
+            await refresh_player_name(character, session, has_custom_parts=False)
+            return
+
+        parts = main_vehicle.get("parts", [])
         custom_parts = detect_custom_parts(parts)
-        
-        await refresh_player_name(character, session, has_custom_parts=bool(custom_parts))
+
+        await refresh_player_name(
+            character, session, has_custom_parts=bool(custom_parts)
+        )
 
 
 async def process_login_event(character_id, timestamp):
@@ -463,9 +495,7 @@ async def process_log_event(
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(
-                player_name, player_id, http_client_mod
-            )
+            ) = await aget_or_create_character(player_name, player_id, http_client_mod)
             await PlayerChatLog.objects.acreate(
                 timestamp=timestamp,
                 character=character,
@@ -565,10 +595,15 @@ Not everyone likes to be roughed up!
                             player_id=str(player.unique_id),
                         )
                     )
-                    
-            if action in [PlayerVehicleLog.Action.ENTERED, PlayerVehicleLog.Action.EXITED]:
+
+            if action in [
+                PlayerVehicleLog.Action.ENTERED,
+                PlayerVehicleLog.Action.EXITED,
+            ]:
                 asyncio.create_task(
-                    handle_player_vehicle_mod_check(character, player, http_client_mod, action)
+                    handle_player_vehicle_mod_check(
+                        character, player, http_client_mod, action
+                    )
                 )
 
             #  asyncio.create_task(delay(register_player_vehicles(http_client_mod, character, player), 5))
@@ -594,10 +629,10 @@ Not everyone likes to be roughed up!
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(
-                player_name, player_id, http_client_mod
+            ) = await aget_or_create_character(player_name, player_id, http_client_mod)
+            is_current_event = ctx.get("startup_time") and timestamp > ctx.get(
+                "startup_time"
             )
-            is_current_event = ctx.get("startup_time") and timestamp > ctx.get("startup_time")
 
             # --- Immediate actions (no GUID needed) ---
             if character:

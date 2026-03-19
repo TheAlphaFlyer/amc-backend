@@ -4,8 +4,10 @@ from amc.mod_server import list_player_vehicles
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
 from amc.mod_detection import (
-    detect_custom_parts, detect_incompatible_parts,
-    format_custom_parts_game, format_incompatible_parts_game,
+    detect_custom_parts,
+    detect_incompatible_parts,
+    format_custom_parts_game,
+    format_incompatible_parts_game,
 )
 from amc.utils import fuzzy_find_player
 from django.utils.translation import gettext as _, gettext_lazy
@@ -36,8 +38,10 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         target_pid = fuzzy_find_player(players, target_player_name)
         if not target_pid:
             await ctx.reply(
-                _("<Title>Player not found</>"
-                  "\n\nCould not find a player matching that name.")
+                _(
+                    "<Title>Player not found</>"
+                    "\n\nCould not find a player matching that name."
+                )
             )
             return
     else:
@@ -51,22 +55,36 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         )
     except Exception:
         await ctx.reply(
-            _("<Title>Error</>"
-              "\n\nFailed to fetch vehicle data. Is the player online?")
+            _("<Title>Error</>\n\nFailed to fetch vehicle data. Is the player online?")
         )
         return
 
     if not player_vehicles:
         await ctx.reply(
-            _("<Title>No Vehicle</>"
-              "\n\n{name} has no active vehicle.").format(
+            _("<Title>No Vehicle</>\n\n{name} has no active vehicle.").format(
                 name=target_player_name
             )
         )
         return
 
     # Check the first (main) vehicle
-    v_id, vehicle = next(iter(player_vehicles.items()))
+    vehicle = next(
+        (
+            v
+            for v in player_vehicles.values()
+            if v.get("isLastVehicle") and v.get("index", -1) == 0
+        ),
+        None,
+    )
+
+    if not vehicle:
+        await ctx.reply(
+            _(
+                "<Title>No Main Vehicle</>"
+                "\n\nCould not identify the main vehicle among active vehicles."
+            )
+        )
+        return
     vehicle_name = format_vehicle_name(vehicle["fullName"])
     parts = vehicle.get("parts", [])
     custom = detect_custom_parts(parts)
@@ -90,9 +108,7 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
 
     if issues:
         await ctx.reply(
-            _("<Title>Mod Check</>"
-              "\n\n<Bold>{name}</> — {vehicle}"
-              "{issues}").format(
+            _("<Title>Mod Check</>\n\n<Bold>{name}</> — {vehicle}{issues}").format(
                 name=target_player_name,
                 vehicle=vehicle_name,
                 issues="\n".join(issues),
@@ -100,9 +116,11 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         )
     else:
         await ctx.reply(
-            _("<Title>Parts Check</>"
-              "\n\n<Bold>{name}</> — {vehicle}"
-              "\n\nAll stock parts.").format(
+            _(
+                "<Title>Parts Check</>"
+                "\n\n<Bold>{name}</> — {vehicle}"
+                "\n\nAll stock parts."
+            ).format(
                 name=target_player_name,
                 vehicle=vehicle_name,
             )
