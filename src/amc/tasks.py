@@ -59,7 +59,7 @@ from amc_finance.services import (
     player_donation,
     get_player_loan_balance,
 )
-from amc.mod_detection import detect_custom_parts
+from amc.mod_detection import detect_custom_parts, detect_incompatible_parts
 from amc.player_tags import refresh_player_name
 from amc.webhook import on_player_profit
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
@@ -373,9 +373,13 @@ async def handle_player_vehicle_mod_check(
 
         parts = main_vehicle.get("parts", [])
         custom_parts = detect_custom_parts(parts)
+        incompatible_parts = detect_incompatible_parts(
+            parts, main_vehicle["fullName"]
+        )
 
         await refresh_player_name(
-            character, session, has_custom_parts=bool(custom_parts)
+            character, session,
+            has_custom_parts=bool(custom_parts or incompatible_parts),
         )
 
 

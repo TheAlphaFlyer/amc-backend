@@ -1409,6 +1409,80 @@ class CommandsTestCase(TestCase):
             output = self.ctx.reply.call_args[0][0]
             self.assertIn("Parts Check", output)
 
+    async def test_cmd_check_mods_self_applies_mod_tag(self):
+        """When custom parts are found on caller's own vehicle, refresh_player_name is called with has_custom_parts=True."""
+
+        mock_vehicles = {
+            "1001": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [
+                    {"Key": "CustomTurbo_XYZ", "Slot": 5},
+                ],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.vehicles.detect_custom_parts",
+                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+            ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
+                return_value=[],
+            ),
+            patch(
+                "amc.commands.vehicles.refresh_player_name", new=AsyncMock()
+            ) as mock_refresh,
+        ):
+            await cmd_check_mods(self.ctx)
+
+            mock_refresh.assert_awaited_once_with(
+                self.ctx.character, self.ctx.http_client_mod, has_custom_parts=True
+            )
+
+    async def test_cmd_check_mods_self_removes_mod_tag(self):
+        """When no custom parts are found on caller's own vehicle, refresh_player_name is called with has_custom_parts=False."""
+
+        mock_vehicles = {
+            "3003": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [{"Key": "StockEngine", "Slot": 0}],
+                "isLastVehicle": True,
+                "index": 0,
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.vehicles.detect_custom_parts",
+                return_value=[],
+            ),
+            patch(
+                "amc.commands.vehicles.detect_incompatible_parts",
+                return_value=[],
+            ),
+            patch(
+                "amc.commands.vehicles.refresh_player_name", new=AsyncMock()
+            ) as mock_refresh,
+        ):
+            await cmd_check_mods(self.ctx)
+
+            mock_refresh.assert_awaited_once_with(
+                self.ctx.character, self.ctx.http_client_mod, has_custom_parts=False
+            )
+
     # --- Incompatible Parts Detection Tests ---
 
     async def test_detect_incompatible_parts_flags_wrong_type(self):

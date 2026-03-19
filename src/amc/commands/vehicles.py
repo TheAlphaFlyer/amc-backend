@@ -9,6 +9,7 @@ from amc.mod_detection import (
     format_custom_parts_game,
     format_incompatible_parts_game,
 )
+from amc.player_tags import refresh_player_name
 from amc.utils import fuzzy_find_player
 from django.utils.translation import gettext as _, gettext_lazy
 
@@ -33,7 +34,8 @@ async def cmd_despawn(ctx: CommandContext, category: str = "all"):
 async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] = None):
     # Resolve target player ID (only admins can check other players)
     is_admin = ctx.player_info and ctx.player_info.get("bIsAdmin")
-    if target_player_name and is_admin:
+    checking_self = not (target_player_name and is_admin)
+    if not checking_self:
         players = await get_players(ctx.http_client)
         target_pid = fuzzy_find_player(players, target_player_name)
         if not target_pid:
@@ -89,6 +91,13 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
     parts = vehicle.get("parts", [])
     custom = detect_custom_parts(parts)
     incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
+
+    # Recalculate [MOD] tag when checking own vehicle
+    if checking_self:
+        await refresh_player_name(
+            ctx.character, ctx.http_client_mod,
+            has_custom_parts=bool(custom or incompatible),
+        )
 
     issues = []
     if custom:
