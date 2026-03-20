@@ -1,6 +1,8 @@
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
+
 from django.test import TestCase
 from django.utils import timezone
 
@@ -59,6 +61,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
         thread.id = 12345
         thread.owner_id = 67890
+        thread.send = AsyncMock()
 
         await self.cog.on_thread_create(thread)
 
@@ -71,6 +74,52 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
             timedelta(days=7).total_seconds(),
             delta=5,
         )
+
+    async def test_thread_create_sends_welcome_embed(self):
+        """Welcome embed is sent explaining reward mechanics."""
+        thread = MagicMock()
+        thread.parent = MagicMock()
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        thread.owner_id = 67890
+        thread.send = AsyncMock()
+
+        await self.cog.on_thread_create(thread)
+
+        thread.send.assert_called_once()
+        embed = thread.send.call_args.kwargs["embed"]
+        self.assertIn("100,000", embed.description)
+        self.assertIn("/claim_reward", embed.description)
+        self.assertIn("7 days", embed.description)
+        self.assertEqual(embed.color, discord.Color.blue())
+
+    async def test_thread_create_skipped_sends_limit_embed(self):
+        """When weekly limit is exceeded, a warning embed is sent."""
+        now = timezone.now()
+        for i in range(2):
+            await TuningWorkshopSubmission.objects.acreate(
+                thread_id=100 + i,
+                author_discord_id=67890,
+                created_at=now - timedelta(days=i),
+                reward_at=now + timedelta(days=7 - i),
+            )
+
+        thread = MagicMock()
+        thread.parent = MagicMock()
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 200
+        thread.owner_id = 67890
+        thread.send = AsyncMock()
+
+        await self.cog.on_thread_create(thread)
+
+        sub = await TuningWorkshopSubmission.objects.aget(thread_id=200)
+        self.assertTrue(sub.skipped)
+
+        thread.send.assert_called_once()
+        embed = thread.send.call_args.kwargs["embed"]
+        self.assertIn("weekly limit", embed.description.lower())
+        self.assertEqual(embed.color, discord.Color.orange())
 
     async def test_thread_create_ignores_other_channels(self):
         thread = MagicMock()
@@ -104,6 +153,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
         thread.id = 200
         thread.owner_id = 67890
+        thread.send = AsyncMock()
 
         await self.cog.on_thread_create(thread)
         sub = await TuningWorkshopSubmission.objects.aget(thread_id=200)
@@ -124,6 +174,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
         thread.id = 200
         thread.owner_id = 22222
+        thread.send = AsyncMock()
 
         await self.cog.on_thread_create(thread)
         sub = await TuningWorkshopSubmission.objects.aget(thread_id=200)
@@ -211,6 +262,196 @@ class TuningWorkshopRewardProcessingTestCase(TestCase):
         self.assertTrue(sub.processed)
         self.assertEqual(sub.reaction_count, 0)
         self.assertEqual(await Voucher.objects.acount(), 0)
+
+
+class ClaimRewardCommandTestCase(TestCase):
+    """Tests for the /claim_reward Discord slash command."""
+
+    def setUp(self):
+        self.bot = MagicMock()
+        self.bot.user = MagicMock()
+        self.bot.user.id = 999999
+        self.cog = TuningWorkshopCog(self.bot)
+
+    async def test_claim_reward_wrong_channel(self):
+        interaction = AsyncMock()
+        interaction.channel = MagicMock(spec=[])  # not a Thread
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        interaction.response.send_message.assert_called_once()
+        call_kwargs = interaction.response.send_message.call_args
+        self.assertIn("only be used inside", call_kwargs[0][0])
+        self.assertTrue(call_kwargs[1]["ephemeral"])
+
+    async def test_claim_reward_wrong_forum(self):
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = 99999  # wrong forum
+        interaction.channel = thread
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("only be used inside", interaction.response.send_message.call_args[0][0])
+
+    async def test_claim_reward_no_submission(self):
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 99999
+        interaction.channel = thread
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn(
+            "No tracked submission",
+            interaction.response.send_message.call_args[0][0],
+        )
+
+    async def test_claim_reward_not_author(self):
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            reward_at=now + timedelta(days=7),
+        )
+
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        interaction.channel = thread
+        interaction.user = MagicMock(id=99999)  # different user
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn(
+            "Only the thread author",
+            interaction.response.send_message.call_args[0][0],
+        )
+
+    async def test_claim_reward_already_processed(self):
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            reward_at=now + timedelta(days=7),
+            processed=True,
+        )
+
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        interaction.channel = thread
+        interaction.user = MagicMock(id=67890)
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn(
+            "already been processed",
+            interaction.response.send_message.call_args[0][0],
+        )
+
+    async def test_claim_reward_skipped(self):
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            reward_at=now + timedelta(days=7),
+            skipped=True,
+        )
+
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        interaction.channel = thread
+        interaction.user = MagicMock(id=67890)
+        interaction.response = AsyncMock()
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn(
+            "skipped",
+            interaction.response.send_message.call_args[0][0],
+        )
+
+    async def test_claim_reward_no_reactions(self):
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            reward_at=now + timedelta(days=7),
+        )
+
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        interaction.channel = thread
+        interaction.user = MagicMock(id=67890)
+        interaction.response = AsyncMock()
+
+        starter_message = MagicMock()
+        starter_message.reactions = []
+        thread.fetch_message = AsyncMock(return_value=starter_message)
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn(
+            "no reactions",
+            interaction.response.send_message.call_args[0][0],
+        )
+
+    async def test_claim_reward_shows_confirmation(self):
+        """Valid early claim shows confirmation with reaction count and warning."""
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            reward_at=now + timedelta(days=7),
+        )
+
+        interaction = AsyncMock()
+        thread = MagicMock(spec=discord.Thread)
+        thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
+        thread.id = 12345
+        interaction.channel = thread
+        interaction.user = MagicMock(id=67890)
+        interaction.response = AsyncMock()
+
+        user1 = MagicMock(id=11111, bot=False)
+        user2 = MagicMock(id=22222, bot=False)
+
+        reaction1 = MagicMock()
+        reaction1.users = MagicMock(return_value=AsyncIterator([user1, user2]))
+
+        starter_message = MagicMock()
+        starter_message.reactions = [reaction1]
+        thread.fetch_message = AsyncMock(return_value=starter_message)
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        interaction.response.send_message.assert_called_once()
+        call_kwargs = interaction.response.send_message.call_args[1]
+        self.assertTrue(call_kwargs["ephemeral"])
+        embed = call_kwargs["embed"]
+        self.assertIn("2", embed.description)
+        self.assertIn("200,000", embed.description)
+        self.assertIn("Warning", embed.description)
+        self.assertIsNotNone(call_kwargs.get("view"))
 
 
 class ClaimVoucherCommandTestCase(TestCase):

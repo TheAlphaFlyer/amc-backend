@@ -2,6 +2,7 @@ import logging
 from datetime import timedelta
 
 import discord
+from discord import app_commands
 from discord.ext import tasks, commands
 from django.utils import timezone
 
@@ -60,6 +61,134 @@ class TuningWorkshopCog(commands.Cog):
                 f"Tuning workshop submission {thread.id} by {author_id} skipped "
                 f"(weekly limit of {self.MAX_POSTS_PER_WEEK} reached)"
             )
+            embed = discord.Embed(
+                title="🔧 Tuning Workshop",
+                description=(
+                    "⚠️ You've reached the weekly limit of "
+                    f"**{self.MAX_POSTS_PER_WEEK} rewardable posts**.\n\n"
+                    "This post will not be eligible for rewards. "
+                    "Try again next week!"
+                ),
+                color=discord.Color.orange(),
+            )
+        else:
+            reward_at = now + timedelta(days=self.REWARD_DELAY_DAYS)
+            embed = discord.Embed(
+                title="🔧 Tuning Workshop",
+                description=(
+                    "Thanks for your submission! Here's how rewards work:\n\n"
+                    f"💰 You earn **${self.REWARD_PER_REACTION:,}** for each unique reaction from other members.\n"
+                    f"⏰ Rewards are automatically issued **{self.REWARD_DELAY_DAYS} days** after posting "
+                    f"(<t:{int(reward_at.timestamp())}:R>).\n"
+                    "⚡ Want your reward sooner? Use `/claim_reward` in this thread to claim early — "
+                    "but no further reactions will be counted.\n"
+                    "🎟️ You'll receive a voucher code to redeem in-game with `/claim_voucher <code>`."
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.set_footer(
+                text=f"Weekly limit: {self.MAX_POSTS_PER_WEEK} rewardable posts per user"
+            )
+
+        await thread.send(embed=embed)
+
+    @app_commands.command(
+        name="claim_reward",
+        description="Claim your tuning workshop reward early",
+    )
+    async def claim_reward(self, interaction: discord.Interaction):
+        """Let the thread author claim their reward before the 7-day wait."""
+        channel = interaction.channel
+
+        # Must be in a thread within the tuning workshop forum
+        if (
+            not isinstance(channel, discord.Thread)
+            or channel.parent_id != self.FORUM_CHANNEL_ID
+        ):
+            await interaction.response.send_message(
+                "❌ This command can only be used inside a #tuning-workshop thread.",
+                ephemeral=True,
+            )
+            return
+
+        # Look up submission
+        try:
+            submission = await TuningWorkshopSubmission.objects.aget(
+                thread_id=channel.id
+            )
+        except TuningWorkshopSubmission.DoesNotExist:
+            await interaction.response.send_message(
+                "❌ No tracked submission found for this thread.",
+                ephemeral=True,
+            )
+            return
+
+        # Must be the author
+        if interaction.user.id != submission.author_discord_id:
+            await interaction.response.send_message(
+                "❌ Only the thread author can claim the reward.",
+                ephemeral=True,
+            )
+            return
+
+        # Already processed or skipped
+        if submission.processed:
+            await interaction.response.send_message(
+                "❌ This submission has already been processed.",
+                ephemeral=True,
+            )
+            return
+        if submission.skipped:
+            await interaction.response.send_message(
+                "❌ This submission was skipped (weekly limit exceeded).",
+                ephemeral=True,
+            )
+            return
+
+        # Count current reactions for the preview
+        try:
+            starter_message = await channel.fetch_message(channel.id)
+        except (discord.NotFound, discord.HTTPException):
+            await interaction.response.send_message(
+                "❌ Could not fetch the original post to count reactions.",
+                ephemeral=True,
+            )
+            return
+
+        unique_reactors = set()
+        for reaction in starter_message.reactions:
+            async for user in reaction.users():
+                if user.bot or user.id == submission.author_discord_id:
+                    continue
+                unique_reactors.add(user.id)
+
+        reaction_count = len(unique_reactors)
+        reward_amount = reaction_count * self.REWARD_PER_REACTION
+
+        if reaction_count == 0:
+            await interaction.response.send_message(
+                "❌ This post has no reactions from other users yet. "
+                "Wait for some reactions before claiming!",
+                ephemeral=True,
+            )
+            return
+
+        # Show confirmation
+        view = ClaimRewardConfirmView(
+            cog=self, submission=submission, timeout=60
+        )
+        embed = discord.Embed(
+            title="⚡ Claim Reward Early?",
+            description=(
+                f"Your post currently has **{reaction_count}** unique reaction{'s' if reaction_count != 1 else ''}.\n\n"
+                f"💰 Reward: **${reward_amount:,}**\n\n"
+                "⚠️ **Warning:** Claiming now means **no further reactions will be counted**. "
+                "The reward amount shown above is final.\n\n"
+                f"The automatic reward would be issued <t:{int(submission.reward_at.timestamp())}:R>."
+            ),
+            color=discord.Color.yellow(),
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @tasks.loop(hours=1)
     async def process_rewards_task(self):
@@ -159,3 +288,49 @@ class TuningWorkshopCog(commands.Cog):
     @process_rewards_task.before_loop
     async def before_process_rewards(self):
         await self.bot.wait_until_ready()
+
+
+class ClaimRewardConfirmView(discord.ui.View):
+    """Confirmation view for early reward claiming."""
+
+    def __init__(self, cog: TuningWorkshopCog, submission: TuningWorkshopSubmission, timeout: float):
+        super().__init__(timeout=timeout)
+        self.cog = cog
+        self.submission = submission
+
+    @discord.ui.button(label="Confirm & Claim", style=discord.ButtonStyle.green, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Re-check that submission hasn't been processed in the meantime
+        await self.submission.arefresh_from_db()
+        if self.submission.processed:
+            await interaction.response.edit_message(
+                embed=discord.Embed(
+                    title="❌ Already Processed",
+                    description="This submission has already been processed.",
+                    color=discord.Color.red(),
+                ),
+                view=None,
+            )
+            return
+
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="⏳ Processing...",
+                description="Counting reactions and issuing your voucher.",
+                color=discord.Color.blurple(),
+            ),
+            view=None,
+        )
+
+        await self.cog._process_submission(self.submission)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            embed=discord.Embed(
+                title="Cancelled",
+                description="Your reward will be automatically issued after the waiting period.",
+                color=discord.Color.greyple(),
+            ),
+            view=None,
+        )
