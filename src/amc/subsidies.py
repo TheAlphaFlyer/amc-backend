@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.contrib.gis.geos import Point
 from django.utils.translation import gettext as _
 from amc.mod_server import show_popup, transfer_money
+from amc.game_server import announce
 from amc.models import ServerPassengerArrivedLog, SubsidyRule
 from amc_finance.services import (
     send_fund_to_player_wallet,
@@ -11,6 +12,7 @@ from amc_finance.services import (
     get_player_loan_balance,
     register_player_repay_loan,
     register_player_deposit,
+    is_character_npl,
 )
 
 
@@ -108,18 +110,24 @@ def calculate_loan_repayment(
     return repayment
 
 
-async def repay_loan_for_profit(character, payment, session):
+async def repay_loan_for_profit(character, payment, session, repayment_override=None, game_session=None):
     try:
         loan_balance = await get_player_loan_balance(character)
         if loan_balance == 0:
             return 0
-        max_loan, _ = await get_character_max_loan(character)
-        repayment = calculate_loan_repayment(
-            Decimal(payment),
-            loan_balance,
-            max_loan,
-            character_repayment_rate=character.loan_repayment_rate,
-        )
+
+        was_npl = await is_character_npl(character)
+
+        if repayment_override is not None:
+            repayment = min(Decimal(str(repayment_override)), loan_balance)
+        else:
+            max_loan, _ = await get_character_max_loan(character)
+            repayment = calculate_loan_repayment(
+                Decimal(payment),
+                loan_balance,
+                max_loan,
+                character_repayment_rate=character.loan_repayment_rate,
+            )
 
         await transfer_money(
             session,
@@ -128,6 +136,18 @@ async def repay_loan_for_profit(character, payment, session):
             str(character.player.unique_id),
         )
         await register_player_repay_loan(repayment, character)
+
+        # Announce NPL exit in game
+        if was_npl and not await is_character_npl(character):
+            announce_session = game_session or session
+            asyncio.create_task(
+                announce(
+                    f"{character.name} is no longer under a Non-Performing Loan repayment plan. Congratulations!",
+                    announce_session,
+                    color="00FF00",
+                )
+            )
+
         return int(repayment)
     except Exception as e:
         asyncio.create_task(

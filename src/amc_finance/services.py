@@ -425,6 +425,14 @@ async def get_character_npl_status(character):
     }
 
 
+async def is_character_npl(character) -> bool:
+    """Quick check: is the character currently in NPL?"""
+    status = await get_character_npl_status(character)
+    if status is None:
+        return False
+    return bool(status["is_npl"])
+
+
 async def register_player_repay_loan(amount, character):
     loan_account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
