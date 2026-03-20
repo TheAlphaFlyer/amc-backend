@@ -7,7 +7,11 @@ from amc.models import (
 )
 from amc.game_server import get_players
 from amc.mod_server import transfer_money
-from amc_finance.services import send_fund_to_player_wallet
+from amc_finance.services import (
+    send_fund_to_player_wallet,
+    get_player_loan_balance,
+    register_player_repay_loan,
+)
 
 TASK_FREQUENCY = 20  # minutes
 ACTIVE_GRANT_AMOUNT = 18_000 / (60 / TASK_FREQUENCY)
@@ -87,6 +91,18 @@ async def handout_ubi(ctx):
             await transfer_money(
                 http_client_mod, int(amount), label, player_id
             )
+
+            # Auto-repay loan with UBI
+            loan_balance = await get_player_loan_balance(character)
+            if loan_balance > 0:
+                repayment = min(amount, loan_balance)
+                await register_player_repay_loan(repayment, character)
+                await transfer_money(
+                    http_client_mod,
+                    int(-repayment),
+                    "ASEAN Loan Repayment",
+                    player_id,
+                )
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
             continue
