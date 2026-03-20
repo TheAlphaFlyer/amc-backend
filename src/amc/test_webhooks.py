@@ -1699,3 +1699,80 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 60_000)
 
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_depot_restock_subsidy_only(
+        self, mock_subsidise, mock_repay_loan, mock_savings
+    ):
+        """Depot restock: base_payment=0, subsidy=10_000.
+
+        The game does NOT deposit money for depot restocking — the 10,000
+        is purely a system subsidy. Passing subsidy_amount as both subsidy
+        AND base_payment would double-count the income.
+        """
+        from amc.webhook import on_player_profit
+
+        mock_repay_loan.return_value = 5_000  # loan takes 5k
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, reject_ubi=False
+        )
+
+        session = MagicMock()
+        subsidy_amount = 10_000
+
+        # This mirrors the fixed call in tasks.py: base_payment=0
+        await on_player_profit(
+            character, subsidy_amount, 0, session,
+        )
+
+        # Subsidy of 10_000 should be paid to wallet
+        mock_subsidise.assert_called_once_with(subsidy_amount, character, session)
+
+        # Loan repayment should be called with actual_income=10_000 (NOT 20_000)
+        mock_repay_loan.assert_called_once_with(character, 10_000, session)
+
+        # Savings = actual_income - repayment = 10_000 - 5_000 = 5_000
+        mock_savings.assert_called_once()
+        savings_amount = mock_savings.call_args[0][1]
+        self.assertEqual(savings_amount, 5_000)
+
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_depot_restock_double_count_regression(
+        self, mock_subsidise, mock_repay_loan, mock_savings
+    ):
+        """Regression: passing subsidy as base_payment MUST NOT happen.
+
+        If base_payment=10_000, actual_income becomes 20_000 and the system
+        deducts repayment + savings based on 20_000 — but only 10_000 was
+        ever deposited to the wallet (the subsidy). This would drain the
+        player's pre-existing wallet balance.
+        """
+        from amc.webhook import on_player_profit
+
+        mock_repay_loan.return_value = 10_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, reject_ubi=False
+        )
+
+        session = MagicMock()
+        subsidy_amount = 10_000
+
+        # Correct call: base_payment=0
+        await on_player_profit(
+            character, subsidy_amount, 0, session,
+        )
+
+        # actual_income should be 10_000 (subsidy only)
+        repay_call_income = mock_repay_loan.call_args[0][1]
+        self.assertEqual(
+            repay_call_income, 10_000,
+            "Loan repayment income should be subsidy only, not double-counted"
+        )
+

@@ -764,7 +764,7 @@ Not everyone likes to be roughed up!
                 subsidy_amount = 10_000
                 asyncio.create_task(
                     on_player_profit(
-                        character, subsidy_amount, subsidy_amount, http_client_mod
+                        character, subsidy_amount, 0, http_client_mod
                     )
                 )
 
