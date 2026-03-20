@@ -48,30 +48,34 @@ PARTY_BONUS_RATE = 0.05  # 5% per extra party member
 
 
 async def on_player_profits(player_profits, session, http_client=None):
-    for character, total_subsidy, total_payment, contract_payment in player_profits:
+    for character, subsidy, base_payment, contract_payment in player_profits:
         await on_player_profit(
-            character, total_subsidy, total_payment, session, http_client,
+            character, subsidy, base_payment, session, http_client,
             contract_payment=contract_payment,
         )
 
 
 async def on_player_profit(
-    character, total_subsidy, total_payment, session, http_client=None,
+    character, subsidy, base_payment, session, http_client=None,
     contract_payment=0,
 ):
-    # Preserve the original subsidy before reject_ubi may zero it.
-    # The gov employee path needs the original value to correctly compute
-    # what the game server actually deposited into the wallet.
-    original_subsidy = total_subsidy
+    """Process a player's profit after party splitting.
+
+    Args:
+        character: The Character receiving the payment.
+        subsidy: Subsidy portion (paid separately from wallet, not baked in).
+        base_payment: What the game actually deposited into the wallet
+            (excludes subsidy and contract).
+        contract_payment: Contract completion payment deposited into wallet.
+        session: HTTP client for mod server calls.
+        http_client: HTTP client for API calls.
+    """
     if character.reject_ubi:
-        total_subsidy = 0
+        subsidy = 0
 
     if character.is_gov_employee:
-        # total_payment already includes original_subsidy (baked in by process_event).
-        # The game server only deposited the base amount into the wallet.
-        # We must only confiscate what the game actually deposited.
-        base_payment = total_payment - original_subsidy
-        # Total wallet confiscation: base earnings + contract payment (burned)
+        # Gov employees: confiscate wallet deposits, redirect to treasury.
+        # Contract payment is burned — confiscated but NOT sent to treasury.
         wallet_confiscation = base_payment + contract_payment
         if wallet_confiscation > 0:
             from amc.gov_employee import redirect_income_to_treasury
@@ -82,25 +86,22 @@ async def on_player_profit(
                 "Government Service",
                 str(character.player.unique_id),
             )
-            # Ledger: only base_payment (real earnings, excludes burned contracts)
-            # Contribution: total_payment (includes subsidy for level progression)
-            # Contract payment is burned — not deposited to treasury or contribution
             if base_payment > 0:
+                # Ledger: real earnings confiscated (excludes burned contracts)
+                # Contribution: includes subsidy credit for gov level progression
                 await redirect_income_to_treasury(
                     base_payment,
                     character,
                     "Government Service – Earnings",
                     http_client=http_client,
                     session=session,
-                    contribution=total_payment,
+                    contribution=base_payment + subsidy,
                 )
-        # Skip subsidy payment, loan repayment, and savings
         return
 
-    if total_subsidy != 0:
-        await subsidise_player(total_subsidy, character, session)
-    # actual_income = what the game deposited + what we actually paid as subsidy
-    actual_income = (total_payment - original_subsidy) + total_subsidy + contract_payment
+    if subsidy != 0:
+        await subsidise_player(subsidy, character, session)
+    actual_income = base_payment + subsidy + contract_payment
     loan_repayment = await repay_loan_for_profit(character, actual_income, session)
     savings = actual_income - loan_repayment
     if savings > 0:
@@ -190,7 +191,7 @@ async def handle_cargo_dumped(event, player, timestamp):
     subsidy, _, rule = await get_subsidy_for_cargo(log)
     if rule and subsidy > 0:
         await SubsidyRule.objects.filter(pk=rule.pk).aupdate(spent=F("spent") + subsidy)
-    return log.payment + subsidy, subsidy
+    return log.payment, subsidy
 
 
 async def handle_contract_signed(event, player, timestamp):
@@ -524,7 +525,7 @@ async def handle_cargo_arrived(
 
         total_subsidy += delivery_subsidy
 
-    return total_payment + total_subsidy, total_subsidy
+    return total_payment, total_subsidy
 
 
 def aggregate_homogenous_events(sorted_events):
@@ -567,6 +568,95 @@ def aggregate_homogenous_events(sorted_events):
             case _:
                 aggregated_events.extend(group_events)
     return aggregated_events
+
+
+async def split_party_payment(
+    character, parties,
+    total_base_payment, total_subsidy, total_contract_payment,
+    http_client_mod, used_shortcut=False,
+):
+    """Split payment among party members, applying party bonus.
+
+    Returns a list of (character, subsidy, base_payment, contract_payment) tuples
+    for all party members, or None if the character is not in a multi-person party.
+
+    The party bonus is calculated as a percentage of base_payment and added
+    as extra subsidy. Wallet transfers move base_share + contract_share from
+    the earner to each other member. Any integer division remainder stays with
+    the earner.
+    """
+    if not PARTY_BONUS_ENABLED:
+        return None
+    if total_base_payment <= 0 and total_contract_payment <= 0:
+        return None
+
+    member_guids = get_party_members_for_character(parties, str(character.guid))
+    party_size = len(member_guids)
+    if party_size <= 1:
+        return None
+
+    # 1. Party bonus: percentage of base payment, added as subsidy only.
+    # The game didn't deposit this, the system pays it via on_player_profit.
+    party_multiplier = 1 + (party_size - 1) * PARTY_BONUS_RATE
+    party_bonus = int(total_base_payment * (party_multiplier - 1))
+    total_subsidy += party_bonus
+
+    # 2. Equal split (remainder stays with earner via on_player_profit)
+    share_base = total_base_payment // party_size
+    share_subsidy = total_subsidy // party_size
+    share_contract = total_contract_payment // party_size
+
+    # 3. Look up other party members
+    other_guids = [g for g in member_guids if g.upper() != str(character.guid).upper()]
+    other_characters = []
+    if other_guids:
+        other_characters = [
+            c async for c in Character.objects.filter(
+                guid__in=other_guids
+            ).select_related("player")
+        ]
+
+    # 4. Wallet transfers
+    # The game deposited base earnings + contract payment into earner's wallet.
+    # Subsidy is paid separately by on_player_profit.
+    # Transfer each other member's base + contract share.
+    wallet_share = share_base + share_contract
+    others_withdrawal = wallet_share * len(other_characters)
+    if others_withdrawal > 0 and http_client_mod:
+        await transfer_money(
+            http_client_mod,
+            int(-others_withdrawal),
+            "Party Split",
+            str(character.player.unique_id),
+        )
+
+    for other_char in other_characters:
+        if wallet_share > 0 and http_client_mod:
+            await transfer_money(
+                http_client_mod,
+                int(wallet_share),
+                "Party Share",
+                str(other_char.player.unique_id),
+            )
+
+    # 5. Apply shortcut zone: zero out subsidy after bonus was factored in
+    if used_shortcut:
+        share_subsidy = 0
+
+    # 6. Build profit tuples for all members
+    # Earner keeps the integer division remainder via their own share calculation:
+    # earner gets: total - (share * (party_size - 1))
+    earner_base = total_base_payment - share_base * len(other_characters)
+    earner_contract = total_contract_payment - share_contract * len(other_characters)
+    if used_shortcut:
+        earner_subsidy = 0
+    else:
+        earner_subsidy = total_subsidy - share_subsidy * len(other_characters)
+
+    result = [(character, earner_subsidy, earner_base, earner_contract)]
+    for other_char in other_characters:
+        result.append((other_char, share_subsidy, share_base, share_contract))
+    return result
 
 
 async def process_events(
@@ -625,7 +715,7 @@ async def process_events(
         except Player.DoesNotExist:
             continue
 
-        total_payment = 0
+        total_base_payment = 0
         total_subsidy = 0
         total_contract_payment = 0
 
@@ -639,7 +729,7 @@ async def process_events(
 
         for event in es:
             try:
-                payment, subsidy, contract_pay = await process_event(
+                base_pay, subsidy, contract_pay = await process_event(
                     event,
                     player,
                     character,
@@ -651,7 +741,7 @@ async def process_events(
                     discord_client,
                     active_term=active_term,
                 )
-                total_payment += payment
+                total_base_payment += base_pay
                 total_subsidy += subsidy
                 total_contract_payment += contract_pay
             except Exception as e:
@@ -666,70 +756,20 @@ async def process_events(
                 raise e
 
         # Party bonus + payment splitting
-        if PARTY_BONUS_ENABLED and (total_payment > 0 or total_contract_payment > 0):
-            member_guids = get_party_members_for_character(parties, str(character.guid))
-            party_size = len(member_guids)
-            if party_size > 1:
-                # 1. Apply party bonus first
-                party_multiplier = 1 + (party_size - 1) * PARTY_BONUS_RATE
-                party_bonus = int(total_payment * (party_multiplier - 1))
-                total_subsidy += party_bonus
-                total_payment += party_bonus
+        party_result = await split_party_payment(
+            character, parties,
+            total_base_payment, total_subsidy, total_contract_payment,
+            http_client_mod, used_shortcut=used_shortcut,
+        )
+        if party_result is not None:
+            player_profits.extend(party_result)
+            continue
 
-                # 2. Equal split
-                share_payment = total_payment // party_size
-                share_subsidy = total_subsidy // party_size
-                share_contract = total_contract_payment // party_size
-
-                # 3. Look up other party members
-                other_guids = [g for g in member_guids if g.upper() != str(character.guid).upper()]
-                other_characters = []
-                if other_guids:
-                    other_characters = [
-                        c async for c in Character.objects.filter(
-                            guid__in=other_guids
-                        ).select_related("player")
-                    ]
-
-                # 4. Wallet transfers: withdraw others' shares from earner
-                # The game deposited 'base earnings' into earner's wallet.
-                # Subsidy is transferred separately by on_player_profit.
-                # So we need to withdraw each other member's base share.
-                earner_base_share = share_payment - share_subsidy
-                others_withdrawal = earner_base_share * len(other_characters)
-                if others_withdrawal > 0 and http_client_mod:
-                    await transfer_money(
-                        http_client_mod,
-                        int(-others_withdrawal),
-                        "Party Split",
-                        str(character.player.unique_id),
-                    )
-
-                # 5. Deposit base share into each other member's wallet
-                for other_char in other_characters:
-                    if earner_base_share > 0 and http_client_mod:
-                        await transfer_money(
-                            http_client_mod,
-                            int(earner_base_share),
-                            "Party Share",
-                            str(other_char.player.unique_id),
-                        )
-
-                # 6. Apply shortcut then append all members
-                if used_shortcut:
-                    share_payment -= share_subsidy
-                    share_subsidy = 0
-
-                player_profits.append((character, share_subsidy, share_payment, share_contract))
-                for other_char in other_characters:
-                    player_profits.append((other_char, share_subsidy, share_payment, share_contract))
-                continue
-
+        # Solo path: shortcut zones zero out subsidy
         if used_shortcut:
-            total_payment -= total_subsidy
             total_subsidy = 0
 
-        player_profits.append((character, total_subsidy, total_payment, total_contract_payment))
+        player_profits.append((character, total_subsidy, total_base_payment, total_contract_payment))
 
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
@@ -818,8 +858,15 @@ async def process_event(
     discord_client=None,
     active_term=None,
 ):
+    """Process a single webhook event.
+
+    Returns:
+        (base_payment, subsidy, contract_payment) — all kept separate,
+        never baked together. base_payment is what the game deposited
+        into the player's wallet. subsidy will be paid separately.
+    """
     print(event)
-    total_payment = 0
+    base_payment = 0
     subsidy = 0
     contract_payment = 0
     current_tz = timezone.get_current_timezone()
@@ -827,7 +874,7 @@ async def process_event(
 
     match event["hook"]:
         case "ServerCargoArrived":
-            payment, subsidy = await handle_cargo_arrived(
+            payment, sub = await handle_cargo_arrived(
                 event,
                 player,
                 character,
@@ -839,11 +886,13 @@ async def process_event(
                 discord_client,
                 active_term=active_term,
             )
-            total_payment += payment
+            base_payment += payment
+            subsidy += sub
 
         case "ServerCargoDumped":
-            payment, subsidy = await handle_cargo_dumped(event, player, timestamp)
-            total_payment += payment
+            payment, sub = await handle_cargo_dumped(event, player, timestamp)
+            base_payment += payment
+            subsidy += sub
 
         case "ServerSignContract":
             await handle_contract_signed(event, player, timestamp)
@@ -853,12 +902,14 @@ async def process_event(
             contract_payment += payment
 
         case "ServerPassengerArrived":
-            payment, subsidy = await handle_passenger_arrived(event, player, timestamp)
-            total_payment += payment + subsidy
+            payment, sub = await handle_passenger_arrived(event, player, timestamp)
+            base_payment += payment
+            subsidy += sub
 
         case "ServerTowRequestArrived":
-            payment, subsidy = await handle_tow_request(event, player, timestamp)
-            total_payment += payment + subsidy
+            payment, sub = await handle_tow_request(event, player, timestamp)
+            base_payment += payment
+            subsidy += sub
 
         case "ServerResetVehicleAt":
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
@@ -875,4 +926,4 @@ async def process_event(
         case "ServerRemovePolicePlayer":
             await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.END)
 
-    return total_payment, subsidy, contract_payment
+    return base_payment, subsidy, contract_payment
