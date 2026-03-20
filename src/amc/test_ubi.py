@@ -51,18 +51,16 @@ class HandoutUbiLoanRepaymentTest(TestCase):
 
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.register_player_repay_loan", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_no_loan_no_repayment(
-        self, mock_get_players, mock_loan_balance, mock_repay, mock_send, mock_transfer
+        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer
     ):
         """When no loan exists, UBI is paid normally with no repayment."""
         mock_get_players.return_value = self._mock_players()
         mock_loan_balance.return_value = Decimal(0)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
-        # Patch activity to return active
         with patch(
             "amc.ubi.CharacterLocation.batch_get_character_activity",
             new_callable=AsyncMock,
@@ -72,21 +70,20 @@ class HandoutUbiLoanRepaymentTest(TestCase):
 
         # UBI sent to wallet
         mock_send.assert_called_once()
-        # transfer_money called once (UBI in, no repayment out)
+        # transfer_money called once (UBI in, no repayment)
         mock_transfer.assert_called_once()
         assert mock_transfer.call_args[0][1] > 0  # positive amount
-        # No repayment
-        mock_repay.assert_not_called()
 
+    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.register_player_repay_loan", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_loan_larger_than_ubi(
-        self, mock_get_players, mock_loan_balance, mock_repay, mock_send, mock_transfer
+        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        mock_repay,
     ):
-        """When loan > UBI, full UBI goes to repayment."""
+        """When loan > UBI, repay_loan_for_profit is called with full UBI as override."""
         mock_get_players.return_value = self._mock_players()
         mock_loan_balance.return_value = Decimal(1_000_000)  # large loan
 
@@ -100,26 +97,22 @@ class HandoutUbiLoanRepaymentTest(TestCase):
 
         expected = self._expected_amount()
 
-        # transfer_money called twice: +UBI, then -repayment
-        assert mock_transfer.call_count == 2
-        ubi_call = mock_transfer.call_args_list[0]
-        repay_call = mock_transfer.call_args_list[1]
-        assert ubi_call[0][1] == int(expected)  # positive UBI
-        assert repay_call[0][1] == int(-expected)  # negative repayment (full UBI)
-        assert repay_call[0][2] == "ASEAN Loan Repayment"
+        # repay_loan_for_profit called with repayment_override=min(amount, loan)
+        mock_repay.assert_called_once()
+        call_kwargs = mock_repay.call_args
+        self.assertEqual(call_kwargs[1]["repayment_override"], expected)
+        self.assertIsNotNone(call_kwargs[1]["game_session"])
 
-        # register_player_repay_loan called with full UBI
-        mock_repay.assert_called_once_with(expected, self.character)
-
+    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.register_player_repay_loan", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_loan_smaller_than_ubi(
-        self, mock_get_players, mock_loan_balance, mock_repay, mock_send, mock_transfer
+        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        mock_repay,
     ):
-        """When loan < UBI, only loan balance is repaid, remainder stays."""
+        """When loan < UBI, repayment_override is capped to loan balance."""
         small_loan = Decimal(100)  # smaller than any UBI
         mock_get_players.return_value = self._mock_players()
         mock_loan_balance.return_value = small_loan
@@ -132,24 +125,19 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         ):
             await handout_ubi(ctx)
 
-        expected = self._expected_amount()
+        # repayment_override = min(amount, loan_balance) = small_loan
+        mock_repay.assert_called_once()
+        call_kwargs = mock_repay.call_args
+        self.assertEqual(call_kwargs[1]["repayment_override"], small_loan)
 
-        # transfer_money called twice: +UBI, then -loan_balance
-        assert mock_transfer.call_count == 2
-        ubi_call = mock_transfer.call_args_list[0]
-        repay_call = mock_transfer.call_args_list[1]
-        assert ubi_call[0][1] == int(expected)
-        assert repay_call[0][1] == int(-small_loan)
-
-        mock_repay.assert_called_once_with(small_loan, self.character)
-
+    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.register_player_repay_loan", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_gov_employee_with_loan(
-        self, mock_get_players, mock_loan_balance, mock_repay, mock_send, mock_transfer
+        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        mock_repay,
     ):
         """Gov employee gets 2x UBI, full amount goes to repayment."""
         self.character.gov_employee_until = timezone.now() + timedelta(hours=12)
@@ -166,10 +154,10 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         ):
             await handout_ubi(ctx)
 
-        # Gov employee gets 2x, verify repayment uses the doubled amount
+        # Gov employee gets 2x UBI, verify repayment_override uses doubled amount
         expected_base = self._expected_amount()
         expected_gov = expected_base * 2
 
-        repay_call = mock_transfer.call_args_list[1]
-        assert repay_call[0][1] == int(-expected_gov)
-        mock_repay.assert_called_once_with(expected_gov, self.character)
+        mock_repay.assert_called_once()
+        call_kwargs = mock_repay.call_args
+        self.assertEqual(call_kwargs[1]["repayment_override"], expected_gov)

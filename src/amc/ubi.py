@@ -10,7 +10,6 @@ from amc.mod_server import transfer_money
 from amc_finance.services import (
     send_fund_to_player_wallet,
     get_player_loan_balance,
-    register_player_repay_loan,
 )
 
 TASK_FREQUENCY = 20  # minutes
@@ -33,7 +32,7 @@ async def handout_ubi(ctx):
     guids = [p["character_guid"] for _, p in players]
     characters = {
         c.guid: c
-        async for c in Character.objects.filter(
+        async for c in Character.objects.select_related("player").filter(
             guid__in=guids,
             driver_level__isnull=False,
             reject_ubi=False,
@@ -95,14 +94,14 @@ async def handout_ubi(ctx):
             # Auto-repay loan with UBI
             loan_balance = await get_player_loan_balance(character)
             if loan_balance > 0:
+                from amc.subsidies import repay_loan_for_profit
                 repayment = min(amount, loan_balance)
-                await register_player_repay_loan(repayment, character)
-                await transfer_money(
-                    http_client_mod,
-                    int(-repayment),
-                    "ASEAN Loan Repayment",
-                    player_id,
+                await repay_loan_for_profit(
+                    character, amount, http_client_mod,
+                    repayment_override=repayment,
+                    game_session=http_client,
                 )
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
             continue
+
