@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext, CommandRegistry
 from amc.commands.admin import (
+    cmd_bill,
     cmd_exit,
     cmd_spawn,
     cmd_spawn_assets,
@@ -869,6 +870,139 @@ class CommandsTestCase(TestCase):
             await cmd_tp_player(self.ctx, "Target", "InvalidLoc")
             mock_popup.assert_called()
             self.assertIn("Teleport point not found", mock_popup.call_args[0][1])
+
+    # --- Bill Command Tests ---
+
+    async def test_cmd_bill_non_admin(self):
+        self.ctx.player_info["bIsAdmin"] = False
+        with patch(
+            "amc.commands.admin.transfer_money", new=AsyncMock()
+        ) as mock_transfer:
+            await cmd_bill(self.ctx, "SomePlayer")
+            mock_transfer.assert_not_called()
+
+    async def test_cmd_bill_player_not_found(self):
+        self.ctx.player_info["bIsAdmin"] = True
+        with (
+            patch(
+                "amc.commands.admin.get_players",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch("amc.commands.admin.show_popup", new=AsyncMock()) as mock_popup,
+        ):
+            await cmd_bill(self.ctx, "Ghost")
+            mock_popup.assert_called()
+            self.assertIn("Player not found", mock_popup.call_args[0][1])
+
+    async def test_cmd_bill_success(self):
+        self.ctx.player_info["bIsAdmin"] = True
+        target_char = MagicMock()
+        target_char.name = "BillTarget"
+        target_char.driver_level = 400
+        target_char.gov_employee_contributions = 0
+        target_char.asave = AsyncMock()
+
+        mock_players = [
+            ("pid-bill", {"name": "BillTarget", "character_guid": "guid-bill-target"}),
+        ]
+
+        with (
+            patch(
+                "amc.commands.admin.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch(
+                "amc.commands.admin.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.admin.player_donation", new=AsyncMock()
+            ) as mock_donation,
+            patch(
+                "amc.commands.admin.Character.objects.aget",
+                new=AsyncMock(return_value=target_char),
+            ),
+        ):
+            await cmd_bill(self.ctx, "BillTarget")
+
+            # Full amount at max level
+            mock_transfer.assert_called_with(
+                self.ctx.http_client_mod, -50_000, "Public service bill", "pid-bill"
+            )
+            mock_donation.assert_called_with(
+                50_000, target_char, description="Public service bill"
+            )
+            target_char.asave.assert_called_with(
+                update_fields=["gov_employee_contributions"]
+            )
+            self.ctx.reply.assert_called()
+            self.ctx.announce.assert_called()
+
+    async def test_cmd_bill_scales_by_driver_level(self):
+        self.ctx.player_info["bIsAdmin"] = True
+        target_char = MagicMock()
+        target_char.name = "HalfLevel"
+        target_char.driver_level = 200  # half of MAX_LEVEL=400
+        target_char.gov_employee_contributions = 0
+        target_char.asave = AsyncMock()
+
+        mock_players = [
+            ("pid-half", {"name": "HalfLevel", "character_guid": "guid-half-level"}),
+        ]
+
+        with (
+            patch(
+                "amc.commands.admin.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch(
+                "amc.commands.admin.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.admin.player_donation", new=AsyncMock()
+            ) as mock_donation,
+            patch(
+                "amc.commands.admin.Character.objects.aget",
+                new=AsyncMock(return_value=target_char),
+            ),
+        ):
+            await cmd_bill(self.ctx, "HalfLevel")
+
+            # Half level => 25,000
+            mock_transfer.assert_called_with(
+                self.ctx.http_client_mod, -25_000, "Public service bill", "pid-half"
+            )
+            mock_donation.assert_called_with(
+                25_000, target_char, description="Public service bill"
+            )
+
+    async def test_cmd_bill_no_driver_level(self):
+        self.ctx.player_info["bIsAdmin"] = True
+        target_char = MagicMock()
+        target_char.name = "NoLevel"
+        target_char.driver_level = None
+        target_char.asave = AsyncMock()
+
+        mock_players = [
+            ("pid-nolevel", {"name": "NoLevel", "character_guid": "guid-no-level"}),
+        ]
+
+        with (
+            patch(
+                "amc.commands.admin.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch(
+                "amc.commands.admin.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.admin.Character.objects.aget",
+                new=AsyncMock(return_value=target_char),
+            ),
+        ):
+            await cmd_bill(self.ctx, "NoLevel")
+            mock_transfer.assert_not_called()
+            self.ctx.reply.assert_called()
+            self.assertIn("no driver level", self.ctx.reply.call_args[0][0])
 
     async def test_cmd_spawn_displays(self):
         self.ctx.player_info["bIsAdmin"] = True

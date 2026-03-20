@@ -1,5 +1,7 @@
 import asyncio
+from decimal import Decimal
 from typing import Optional
+from django.db.models import F
 from amc.command_framework import registry, CommandContext
 from amc.mod_server import (
     show_popup,
@@ -10,10 +12,12 @@ from amc.mod_server import (
     force_exit_vehicle,
     get_players as get_players_mod,
     teleport_player,
+    transfer_money,
 )
 from amc.game_server import get_players
 from amc.vehicles import spawn_registered_vehicle
 from amc.models import (
+    Character,
     CharacterVehicle,
     VehicleDealership,
     WorldText,
@@ -24,6 +28,8 @@ from amc.models import (
 from amc.enums import VehicleKey
 from django.utils.translation import gettext as _, gettext_lazy
 from amc.utils import fuzzy_find_player
+from amc.player_tags import strip_all_tags
+from amc_finance.services import player_donation
 
 
 @registry.register(
@@ -213,6 +219,7 @@ async def cmd_exit(ctx: CommandContext, target_player_name: str):
                 p["CharacterGuid"]
                 for p in players
                 if p["PlayerName"] == target_player_name
+                or strip_all_tags(p["PlayerName"]) == target_player_name
             ),
             None,
         )
@@ -293,3 +300,91 @@ async def cmd_tp_player(
     )
 
 
+BILL_AMOUNT = 50_000
+BILL_MAX_LEVEL = 400
+
+
+@registry.register(
+    "/bill",
+    description=gettext_lazy("Bill a player (Admin)"),
+    category="Admin",
+)
+async def cmd_bill(ctx: CommandContext, target_player_name: str):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        return
+
+    # Find the target player
+    players = await get_players(ctx.http_client)
+    target_pid = fuzzy_find_player(players, target_player_name)
+
+    if not target_pid:
+        asyncio.create_task(
+            show_popup(
+                ctx.http_client_mod,
+                _(
+                    "<Title>Player not found</Title>\n\nPlease make sure you typed the name correctly."
+                ),
+                character_guid=ctx.character.guid,
+                player_id=str(ctx.player.unique_id),
+            )
+        )
+        return
+
+    # Look up the target character
+    target_player_data = next(
+        (p for pid, p in players if str(pid) == str(target_pid)), None
+    )
+    if not target_player_data:
+        return
+
+    try:
+        target_character = await Character.objects.aget(
+            guid=target_player_data["character_guid"]
+        )
+    except Character.DoesNotExist:
+        await ctx.reply(_("Character not found in database."))
+        return
+
+    if not target_character.driver_level:
+        await ctx.reply(
+            _("Cannot bill {name}: no driver level.").format(
+                name=target_character.name
+            )
+        )
+        return
+
+    # Scale amount by driver level (same formula as UBI)
+    amount = int(
+        min(
+            Decimal(str(BILL_AMOUNT)),
+            Decimal(str(target_character.driver_level))
+            * Decimal(str(BILL_AMOUNT))
+            / BILL_MAX_LEVEL,
+        )
+    )
+
+    if amount <= 0:
+        return
+
+    # Deduct from player wallet
+    await transfer_money(
+        ctx.http_client_mod, -amount, "Public service bill", str(target_pid)
+    )
+
+    # Record as donation to treasury
+    await player_donation(amount, target_character, description="Public service bill")
+
+    # Record gov worker contribution
+    target_character.gov_employee_contributions = (
+        F("gov_employee_contributions") + amount
+    )
+    await target_character.asave(update_fields=["gov_employee_contributions"])
+
+    await ctx.reply(
+        _("Billed {name} for {amount:,} coins.").format(
+            name=target_character.name, amount=amount
+        )
+    )
+    await ctx.announce(
+        f"{target_character.name} has been billed {amount:,} for public service."
+    )
