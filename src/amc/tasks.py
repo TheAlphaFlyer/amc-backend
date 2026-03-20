@@ -140,16 +140,16 @@ async def on_vehicle_sold(character, vehicle_name, http_client_mod):
         )
 
 
-def get_welcome_message(last_login, player_name):
-    if not last_login:
+def get_welcome_message(last_online, player_name):
+    if not last_online:
         return (
             f"Welcome {player_name}! Use /help to see the available commands on this server. Join the discord at aseanmotorclub.com. Have fun!",
             True,
         )
-    sec_since_login = (timezone.now() - last_login).seconds
-    if sec_since_login > (3600 * 24 * 7):
+    sec_since_online = (timezone.now() - last_online).total_seconds()
+    if sec_since_online > (3600 * 24 * 7):
         return f"Long time no see! Welcome back {player_name}", False
-    if sec_since_login > 3600:
+    if sec_since_online > 3600:
         return f"Welcome back {player_name}!", False
     return None, False
 
@@ -335,7 +335,7 @@ async def handle_player_vehicle_mod_check(
     character, player, session, action: PlayerVehicleLog.Action
 ):
     """Check modded parts when entering a vehicle, or remove MOD tag when exiting."""
-    # When exiting, we just clear the [MOD] tag
+    # When exiting, we just clear the [MODS] tag
     if action == PlayerVehicleLog.Action.EXITED:
         await refresh_player_name(character, session, has_custom_parts=False)
         return
@@ -646,18 +646,9 @@ Not everyone likes to be roughed up!
             if is_current_event:
                 # Welcome announcement in global chat (doesn't need GUID)
                 try:
-                    last_login = None
-                    if not character_created:
-                        try:
-                            latest_status = await PlayerStatusLog.objects.filter(
-                                character__player=player,
-                                timespan__endswith__isnull=False,
-                            ).alatest("timespan__endswith")
-                            last_login = latest_status.timespan.upper
-                        except PlayerStatusLog.DoesNotExist:
-                            pass
                     welcome_message, _is_new = get_welcome_message(
-                        last_login, character.name
+                        character.last_online if not character_created else None,
+                        character.name,
                     )
                     if welcome_message:
                         asyncio.create_task(
