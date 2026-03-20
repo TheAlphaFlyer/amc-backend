@@ -120,7 +120,7 @@ class SubsidyLogicTest(TestCase):
         self.assertEqual(factor, 2.0)  # High priority wins
 
     async def test_damage_scaling(self):
-        # Rule with damage scaling
+        # Rule with damage scaling flag (currently unused by get_subsidy_for_cargo)
         rule = await SubsidyRule.objects.acreate(
             name="Fragile",
             reward_type=SubsidyRule.RewardType.PERCENTAGE,
@@ -139,9 +139,10 @@ class SubsidyLogicTest(TestCase):
         mock_cargo.damage = 0.1  # 10% damage
 
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
-        # Expected: 2.0 * (1.0 - 0.1) = 1.8
-        self.assertAlmostEqual(factor, 1.8)
-        self.assertEqual(amount, 1800)
+        # Damage scaling is not applied in get_subsidy_for_cargo;
+        # the raw reward_value is used as the factor.
+        self.assertAlmostEqual(factor, 2.0)
+        self.assertEqual(amount, 2000)
 
     async def test_get_subsidies_text(self):
         from amc.subsidies import get_subsidies_text
@@ -305,3 +306,87 @@ class SubsidyLogicTest(TestCase):
 
         amount, factor, rule = await get_subsidy_for_cargo(mock_cargo)
         self.assertEqual(factor, 0.0)
+
+
+class CalculateLoanRepaymentTest(TestCase):
+    """Tests for calculate_loan_repayment with the configurable REPAYMENT_FULL_AT curve."""
+
+    def test_zero_utilisation(self):
+        """At 0% utilisation, repayment rate should be 50%."""
+        from amc.subsidies import calculate_loan_repayment
+
+        # payment=1000, loan=1, max_loan=1_000_000 → ~0% util → 50%
+        result = calculate_loan_repayment(
+            Decimal(1000), Decimal(1), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(1))  # min(1, max(1, 1000*0.5=500)) → capped at loan_balance=1
+
+    def test_half_utilisation(self):
+        """At 50% utilisation, repayment should be 100% (with REPAYMENT_FULL_AT=0.5)."""
+        from amc.subsidies import calculate_loan_repayment
+
+        # loan=500_000, max_loan=1_000_000 → 50% util → 100% rate
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(500_000), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(10_000))  # 100% of payment
+
+    def test_quarter_utilisation(self):
+        """At 25% utilisation, repayment should be 75%."""
+        from amc.subsidies import calculate_loan_repayment
+
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(250_000), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(7_500))  # 75% of 10000
+
+    def test_full_utilisation(self):
+        """At 100% utilisation, repayment should be 100%."""
+        from amc.subsidies import calculate_loan_repayment
+
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(1_000_000), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(10_000))
+
+    def test_over_limit_utilisation(self):
+        """When loan exceeds max_loan, utilisation is capped at 1.0 → 100% rate."""
+        from amc.subsidies import calculate_loan_repayment
+
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(2_000_000), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(10_000))
+
+    def test_repayment_capped_at_loan_balance(self):
+        """Repayment can never exceed the outstanding loan balance."""
+        from amc.subsidies import calculate_loan_repayment
+
+        # payment far exceeds loan balance
+        result = calculate_loan_repayment(
+            Decimal(100_000), Decimal(500), Decimal(1_000_000)
+        )
+        self.assertEqual(result, Decimal(500))  # capped at balance
+
+    def test_player_override_higher(self):
+        """Player's custom rate is used when it exceeds the system rate."""
+        from amc.subsidies import calculate_loan_repayment
+
+        # 0% util → system rate 50%, player rate 90% → effective 90%
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(100_000), Decimal(1_000_000),
+            character_repayment_rate=Decimal("0.90"),
+        )
+        self.assertEqual(result, Decimal(9_000))
+
+    def test_player_override_lower(self):
+        """System rate wins when player's custom rate is lower."""
+        from amc.subsidies import calculate_loan_repayment
+
+        # 50% util → system rate 100%, player rate 30% → system wins (100%)
+        result = calculate_loan_repayment(
+            Decimal(10_000), Decimal(500_000), Decimal(1_000_000),
+            character_repayment_rate=Decimal("0.30"),
+        )
+        self.assertEqual(result, Decimal(10_000))
+

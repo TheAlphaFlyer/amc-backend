@@ -101,7 +101,7 @@ How to Put Money in the Bank
 
 How ASEAN Loans Works
 <Secondary>Our loans have a flat one-off 10% fee, and you only have to repay them when you make a profit.</>
-<Secondary>The repayment will range from 10% to 80% of your income, depending on the amount of loan you took.</>
+<Secondary>The repayment will range from 50% to 100% of your income, depending on the amount of loan you took.</>
 
 <Bold>Latest Transactions</>
 {transactions_str}

@@ -84,11 +84,18 @@ cargo_names = {
 }
 
 
+# The loan utilisation at which repayment rate reaches 100%.
+# e.g. 0.5 = 100% repayment when debt is ≥50% of loan limit.
+# Set to 1.0 to restore the old linear curve (100% only at full utilisation).
+REPAYMENT_FULL_AT = Decimal("0.5")
+
+
 def calculate_loan_repayment(
     payment, loan_balance, max_loan, character_repayment_rate=None
 ):
     loan_utilisation = loan_balance / max(max_loan, loan_balance)
-    repayment_percentage = Decimal(0.5) + (Decimal(0.5) * loan_utilisation)
+    slope = Decimal("0.5") / REPAYMENT_FULL_AT
+    repayment_percentage = min(Decimal(1), Decimal("0.5") + slope * loan_utilisation)
     if character_repayment_rate is not None:
         repayment_percentage = max(
             repayment_percentage, Decimal(str(character_repayment_rate))
