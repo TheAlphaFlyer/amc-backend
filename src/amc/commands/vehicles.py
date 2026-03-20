@@ -92,7 +92,7 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
     custom = detect_custom_parts(parts)
     incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
 
-    # Recalculate [MOD] tag when checking own vehicle
+    # Recalculate [MODS] tag when checking own vehicle
     if checking_self:
         await refresh_player_name(
             ctx.character, ctx.http_client_mod,

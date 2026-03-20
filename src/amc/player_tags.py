@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 # Compile regexes for stripping prefix tags
 TAG_PATTERNS = [
-    re.compile(r"\[MOD\]\s*", re.IGNORECASE),
+    re.compile(r"\[MODS\]\s*", re.IGNORECASE),
     re.compile(r"\[GOV\d*\]\s*", re.IGNORECASE),
     re.compile(r"\[DOT\]\s*", re.IGNORECASE),
 ]
@@ -25,7 +25,7 @@ def build_display_name(
 ) -> str:
     """Build the definitive display name with all applicable tags.
 
-    Tag order: [MOD] [GOV#] BaseName
+    Tag order: [MODS] [GOV#] BaseName
 
     Args:
         base_name: The player's original name (stripped of any existing tags)
@@ -36,7 +36,7 @@ def build_display_name(
     tags = []
 
     if has_custom_parts:
-        tags.append("[MOD]")
+        tags.append("[MODS]")
 
     if gov_level > 0:
         tags.append(f"[GOV{gov_level}]")
@@ -67,7 +67,7 @@ async def refresh_player_name(
     if has_custom_parts is None:
         # Preserve existing state if not explicitly specified
         current_name = character.custom_name or character.name
-        has_custom_parts = bool(re.search(r"\[MOD\]", current_name, re.IGNORECASE))
+        has_custom_parts = bool(re.search(r"\[MODS\]", current_name, re.IGNORECASE))
 
     # Determine GOV state
     gov_level = 0
