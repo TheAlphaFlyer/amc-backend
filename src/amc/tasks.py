@@ -140,12 +140,15 @@ async def on_vehicle_sold(character, vehicle_name, http_client_mod):
         )
 
 
-def get_welcome_message(last_online, player_name):
-    if not last_online:
+def get_welcome_message(player_name, is_new, last_online=None):
+    if is_new:
         return (
             f"Welcome {player_name}! Use /help to see the available commands on this server. Join the discord at aseanmotorclub.com. Have fun!",
             True,
         )
+    if not last_online:
+        # Existing player but last_online not yet populated — generic greeting
+        return f"Welcome back {player_name}!", False
     sec_since_online = (timezone.now() - last_online).total_seconds()
     if sec_since_online > (3600 * 24 * 7):
         return f"Long time no see! Welcome back {player_name}", False
@@ -647,8 +650,9 @@ Not everyone likes to be roughed up!
                 # Welcome announcement in global chat (doesn't need GUID)
                 try:
                     welcome_message, _is_new = get_welcome_message(
-                        character.last_online if not character_created else None,
                         character.name,
+                        is_new=character_created,
+                        last_online=character.last_online,
                     )
                     if welcome_message:
                         asyncio.create_task(
