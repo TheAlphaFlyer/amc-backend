@@ -13,6 +13,7 @@ from .services import (
     register_player_withdrawal,
     apply_interest_to_bank_accounts,
     get_non_performing_loans,
+    get_character_npl_status,
     register_player_take_loan,
     register_player_repay_loan,
     make_treasury_bank_deposit,
@@ -253,6 +254,39 @@ class NPLTestCase(TestCase):
         with patch("amc.subsidies.transfer_money", new_callable=AsyncMock) as mock_transfer:
             await on_vehicle_sold(character, "Tuscan", None)
             mock_transfer.assert_not_called()
+
+    async def test_get_character_npl_status_no_loan(self):
+        """No loan account should return None."""
+        character = await sync_to_async(CharacterFactory)()
+        result = await get_character_npl_status(character)
+        self.assertIsNone(result)
+
+    async def test_get_character_npl_status_below_threshold(self):
+        """Loan below NPL_MIN_BALANCE should return None."""
+        character = await sync_to_async(CharacterFactory)()
+        await self._create_loan_account(character, balance=100_000)
+        result = await get_character_npl_status(character)
+        self.assertIsNone(result)
+
+    async def test_get_character_npl_status_npl(self):
+        """Loan with no repayments should return is_npl=True."""
+        character = await sync_to_async(CharacterFactory)()
+        await self._create_loan_account(character, balance=1_000_000)
+        result = await get_character_npl_status(character)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["is_npl"])
+        self.assertEqual(result["period_days"], 7)
+        self.assertEqual(result["min_required_repayment"], 100_000)
+        self.assertEqual(result["total_repaid_in_period"], 0)
+
+    async def test_get_character_npl_status_not_npl(self):
+        """Loan with sufficient repayments should return is_npl=False."""
+        character = await sync_to_async(CharacterFactory)()
+        account = await self._create_loan_account(character, balance=1_000_000)
+        await self._create_repayment(account, days_ago=3, amount=150_000)
+        result = await get_character_npl_status(character)
+        self.assertIsNotNone(result)
+        self.assertFalse(result["is_npl"])
 
 
 class TreasuryBankTransferTestCase(TestCase):

@@ -376,6 +376,55 @@ def get_non_performing_loans():
     return results
 
 
+async def get_character_npl_status(character):
+    """
+    Check NPL status for a single character's loan account.
+
+    Returns None if no loan or loan below NPL_MIN_BALANCE.
+    Otherwise returns a dict with:
+      - is_npl: bool
+      - loan_balance: Decimal
+      - period_days: int
+      - repayment_rate: Decimal
+      - total_repaid_in_period: Decimal
+      - min_required_repayment: Decimal
+    """
+    try:
+        account = await Account.objects.aget(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.BANK,
+            character=character,
+        )
+    except Account.DoesNotExist:
+        return None
+
+    if account.balance < NPL_MIN_BALANCE:
+        return None
+
+    period_days = account.min_repayment_period_days or NPL_DEFAULT_PERIOD_DAYS
+    rate = account.min_repayment_rate if account.min_repayment_rate is not None else NPL_DEFAULT_REPAYMENT_RATE
+    cutoff = timezone.now() - timedelta(days=period_days)
+
+    total_repaid = (
+        await LedgerEntry.objects.filter(
+            account=account,
+            credit__gt=0,
+            journal_entry__created_at__gte=cutoff,
+        ).aaggregate(total=Sum("credit"))
+    )["total"] or Decimal(0)
+
+    min_required = account.balance * rate
+
+    return {
+        "is_npl": total_repaid < min_required,
+        "loan_balance": account.balance,
+        "period_days": period_days,
+        "repayment_rate": rate,
+        "total_repaid_in_period": total_repaid,
+        "min_required_repayment": min_required,
+    }
+
+
 async def register_player_repay_loan(amount, character):
     loan_account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,

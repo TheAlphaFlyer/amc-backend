@@ -7,6 +7,7 @@ from amc_finance.services import (
     get_player_bank_balance,
     get_player_loan_balance,
     get_character_max_loan,
+    get_character_npl_status,
     calc_loan_fee,
     player_donation,
     send_fund_to_player,
@@ -29,6 +30,7 @@ async def cmd_bank(ctx: CommandContext):
     balance = await get_player_bank_balance(ctx.character)
     loan_balance = await get_player_loan_balance(ctx.character)
     max_loan, reason = await get_character_max_loan(ctx.character)
+    npl_status = await get_character_npl_status(ctx.character)
 
     transactions = (
         LedgerEntry.objects.filter(
@@ -52,6 +54,31 @@ async def cmd_bank(ctx: CommandContext):
         else Decimal(DEFAULT_SAVING_RATE)
     )
 
+    # Build NPL section if applicable
+    npl_section = ""
+    if npl_status:
+        rate_pct = int(npl_status["repayment_rate"] * 100)
+        if npl_status["is_npl"]:
+            status_line = _(
+                "<Warning>Your loan is behind on its payment plan. Make deliveries to catch up.</>"
+            )
+        else:
+            status_line = _(
+                "<EffectGood>You are meeting your payment plan requirements.</>"
+            )
+        npl_section = _(
+            "\n<Bold>Payment Plan</>"
+            "\n<Secondary>Period: {period_days} days | Required Repayment: {rate_pct}% of balance</>"
+            "\n<Secondary>Repaid This Period:</> <Money>{repaid:,}</> / <Money>{required:,}</> <Secondary>required</>"
+            "\n{status_line}"
+        ).format(
+            period_days=npl_status["period_days"],
+            rate_pct=rate_pct,
+            repaid=int(npl_status["total_repaid_in_period"]),
+            required=int(npl_status["min_required_repayment"]),
+            status_line=status_line,
+        )
+
     await ctx.reply(
         _("""<Title>Your Bank ASEAN Account</>
 
@@ -61,7 +88,7 @@ async def cmd_bank(ctx: CommandContext):
 <Bold>Max Available Loan:</> <Money>{max_loan:,}</>
 <Small>{max_loan_reason}</>
 <Bold>Earnings Saving Rate:</> <Money>{saving_rate_pct:.0f}%</>
-<Small>Use /set_saving_rate [percentage] to automatically set aside your earnings into your account.</>
+<Small>Use /set_saving_rate [percentage] to automatically set aside your earnings into your account.</>{npl_section}
 
 Commands:
 <Highlight>/set_saving_rate [percentage]</> - Automatically set aside your earnings into your account
@@ -85,6 +112,7 @@ How ASEAN Loans Works
             max_loan_reason=reason
             or _("Max available loan depends on your driver+trucking level"),
             saving_rate_pct=saving_rate * 100,
+            npl_section=npl_section,
             transactions_str=transactions_str,
         )
     )

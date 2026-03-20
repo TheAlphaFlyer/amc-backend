@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase, TestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import timedelta
+from decimal import Decimal
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext, CommandRegistry
 from amc.commands.admin import (
@@ -269,6 +270,14 @@ class CommandsTestCase(TestCase):
         mock_bal = 1000
         mock_loan = 500
         mock_max_loan = 5000
+        mock_npl = {
+            "is_npl": True,
+            "loan_balance": 1_000_000,
+            "period_days": 7,
+            "repayment_rate": Decimal("0.10"),
+            "total_repaid_in_period": Decimal(5_000),
+            "min_required_repayment": Decimal(100_000),
+        }
 
         # Create mock transaction ledger entry
         mock_ledger = MagicMock()
@@ -297,6 +306,10 @@ class CommandsTestCase(TestCase):
                 "amc.commands.finance.get_character_max_loan",
                 new=AsyncMock(return_value=(mock_max_loan, "Ok")),
             ),
+            patch(
+                "amc.commands.finance.get_character_npl_status",
+                new=AsyncMock(return_value=mock_npl),
+            ),
             patch("amc_finance.models.LedgerEntry.objects.filter") as mock_filter,
         ):
             mock_filter.return_value.select_related.return_value.order_by.return_value.__getitem__.return_value = mock_slice
@@ -309,6 +322,8 @@ class CommandsTestCase(TestCase):
             self.assertIn("<Bold>Balance:</> <Money>1,000</>", output)
             self.assertIn("Test Tx", output)
             self.assertIn("Daily (IRL) Interest Rate", output)
+            self.assertIn("Payment Plan", output)
+            self.assertIn("behind on its payment plan", output)
 
     async def test_cmd_tp_admin(self):
         self.ctx.player_info["bIsAdmin"] = True
