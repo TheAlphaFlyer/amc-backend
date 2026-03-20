@@ -9,6 +9,7 @@ from amc_finance.services import (
     get_character_max_loan,
     calc_loan_fee,
     player_donation,
+    send_fund_to_player,
 )
 from amc_finance.models import Account, LedgerEntry
 from amc.subsidies import DEFAULT_SAVING_RATE
@@ -488,5 +489,62 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
     )
     await ctx.announce(
         f"{character.name} is now working as a Government Employee (GOV{character.gov_employee_level})!"
+    )
+
+
+@registry.register(
+    "/claim_voucher",
+    description=gettext_lazy("Claim a reward voucher by code"),
+    category="Finance",
+)
+async def cmd_claim_voucher(ctx: CommandContext, code: str):
+    from amc.models import Voucher
+    from django.utils import timezone as tz
+
+    code = code.upper().strip()
+    try:
+        voucher = await Voucher.objects.aget(code=code)
+    except Voucher.DoesNotExist:
+        await ctx.reply(
+            _("<Title>Invalid Code</>\n\nNo voucher found with code: {code}").format(
+                code=code
+            )
+        )
+        return
+
+    if voucher.is_claimed:
+        await ctx.reply(
+            _("<Title>Already Claimed</>\n\nThis voucher has already been claimed.")
+        )
+        return
+
+    # If voucher is tied to a specific player, verify ownership
+    if voucher.player_id is not None and voucher.player_id != ctx.player.pk:
+        await ctx.reply(
+            _("<Title>Not Your Voucher</>\n\nThis voucher belongs to another player.")
+        )
+        return
+
+    # Deposit to bank account
+    await send_fund_to_player(voucher.amount, ctx.character, f"Voucher: {voucher.reason}")
+
+    # Mark as claimed
+    voucher.claimed_by = ctx.character
+    voucher.claimed_at = tz.now()
+    if voucher.player_id is None:
+        voucher.player = ctx.player
+    await voucher.asave(update_fields=["claimed_by", "claimed_at", "player"])
+
+    await ctx.reply(
+        _(
+            "<Title>Voucher Claimed!</>\n\n"
+            "<Bold>Amount:</> <Money>{amount:,}</>\n"
+            "<Bold>Reason:</> {reason}\n"
+            "Deposited to {character}'s bank account"
+        ).format(
+            amount=voucher.amount,
+            reason=voucher.reason,
+            character=ctx.character.name,
+        )
     )
 
