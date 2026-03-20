@@ -862,8 +862,7 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
                 * multiplier
                 + 0.5
             )
-            if bonus > delivery_data["subsidy"]:
-                delivery_data["subsidy"] = bonus
+            delivery_data["subsidy"] += bonus
 
         Delivery.objects.create(job=job, **delivery_data)
         return job

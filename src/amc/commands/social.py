@@ -6,6 +6,7 @@ from amc.game_server import get_players
 from datetime import timedelta
 from django.db.models import F
 from django.utils.translation import gettext as _, gettext_lazy
+from amc.player_tags import strip_all_tags
 
 
 @registry.register(
@@ -14,7 +15,7 @@ from django.utils.translation import gettext as _, gettext_lazy
     category="Social",
 )
 async def cmd_thank(ctx: CommandContext, target_player_name: str):
-    if target_player_name == ctx.character.name:
+    if target_player_name == ctx.character.name or target_player_name == strip_all_tags(ctx.character.name):
         return
 
     players = await get_players(ctx.http_client)
@@ -23,6 +24,7 @@ async def cmd_thank(ctx: CommandContext, target_player_name: str):
             p["character_guid"]
             for pid, p in players
             if p.get("name", "").startswith(target_player_name)
+            or strip_all_tags(p.get("name", "")).startswith(target_player_name)
         ),
         None,
     )

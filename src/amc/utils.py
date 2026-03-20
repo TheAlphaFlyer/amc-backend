@@ -32,6 +32,8 @@ def fuzzy_find_player(
     """
     Finds a player ID by name using fuzzy search.
     Prioritizes exact matches (case-insensitive), then best matches based on similarity.
+    Player tags (e.g. [MODS], [GOV2]) are stripped before matching so users
+    don't need to include them.
 
     Args:
         players: List of tuples (unique_id, player_data_dict)
@@ -40,26 +42,34 @@ def fuzzy_find_player(
     Returns:
         The player's unique_id if found, else None
     """
+    from amc.player_tags import strip_all_tags
+
     if not name_query:
         return None
 
     name_query_lower = name_query.lower()
 
-    # 1. Exact match (case-insensitive)
+    # 1. Exact match (case-insensitive) — check both tagged and untagged names
     for pid, p_data in players:
         p_name = p_data.get("name", "")
         if p_name.lower() == name_query_lower:
             return pid
+        if strip_all_tags(p_name).lower() == name_query_lower:
+            return pid
 
-    # 2. Fuzzy match
+    # 2. Fuzzy match — compare against both tagged and untagged names
     best_pid = None
     best_ratio = 0.0
 
     for pid, p_data in players:
         p_name = p_data.get("name", "")
-        # Basic check to avoid matching wildly different lengths excessively if needed,
-        # but SequenceMatcher handles it well usually.
-        ratio = difflib.SequenceMatcher(None, name_query_lower, p_name.lower()).ratio()
+        ratio_tagged = difflib.SequenceMatcher(
+            None, name_query_lower, p_name.lower()
+        ).ratio()
+        ratio_clean = difflib.SequenceMatcher(
+            None, name_query_lower, strip_all_tags(p_name).lower()
+        ).ratio()
+        ratio = max(ratio_tagged, ratio_clean)
 
         if ratio > best_ratio:
             best_ratio = ratio
