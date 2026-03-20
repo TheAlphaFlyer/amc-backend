@@ -62,6 +62,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.id = 12345
         thread.owner_id = 67890
         thread.send = AsyncMock()
+        thread.join = AsyncMock()
 
         await self.cog.on_thread_create(thread)
 
@@ -83,6 +84,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.id = 12345
         thread.owner_id = 67890
         thread.send = AsyncMock()
+        thread.join = AsyncMock()
 
         await self.cog.on_thread_create(thread)
 
@@ -110,6 +112,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.id = 200
         thread.owner_id = 67890
         thread.send = AsyncMock()
+        thread.join = AsyncMock()
 
         await self.cog.on_thread_create(thread)
 
@@ -154,6 +157,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.id = 200
         thread.owner_id = 67890
         thread.send = AsyncMock()
+        thread.join = AsyncMock()
 
         await self.cog.on_thread_create(thread)
         sub = await TuningWorkshopSubmission.objects.aget(thread_id=200)
@@ -175,6 +179,7 @@ class TuningWorkshopOnThreadCreateTestCase(TestCase):
         thread.id = 200
         thread.owner_id = 22222
         thread.send = AsyncMock()
+        thread.join = AsyncMock()
 
         await self.cog.on_thread_create(thread)
         sub = await TuningWorkshopSubmission.objects.aget(thread_id=200)

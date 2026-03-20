@@ -90,6 +90,7 @@ class TuningWorkshopCog(commands.Cog):
                 text=f"Weekly limit: {self.MAX_POSTS_PER_WEEK} rewardable posts per user"
             )
 
+        await thread.join()
         await thread.send(embed=embed)
 
     @app_commands.command(
