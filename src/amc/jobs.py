@@ -127,6 +127,31 @@ def calculate_treasury_multiplier(
     return 2.0 / (1.0 + math.exp(-sensitivity * (ratio - 1.0)))
 
 
+def weighted_shuffle(templates: list, weight_fn) -> list:
+    """Shuffle templates with weighted probability — higher-weight templates
+    are more likely to appear earlier in the sequence."""
+    weights = [weight_fn(t) for t in templates]
+    result = []
+    remaining = list(zip(templates, weights))
+    while remaining:
+        total = sum(w for _, w in remaining)
+        if total <= 0:
+            # All remaining weights are zero, append in random order
+            items = [t for t, _ in remaining]
+            random.shuffle(items)
+            result.extend(items)
+            break
+        r = random.random() * total
+        cumulative = 0
+        for i, (t, w) in enumerate(remaining):
+            cumulative += w
+            if r <= cumulative:
+                result.append(t)
+                remaining.pop(i)
+                break
+    return result
+
+
 async def monitor_jobs(ctx):
     await cleanup_expired_jobs()
     config = await JobPostingConfig.aget_config()
@@ -156,8 +181,12 @@ async def monitor_jobs(ctx):
     )
     max_active_jobs = max(1, int(base_max_jobs * adaptive_mult * treasury_mult))
 
-    if num_active_jobs >= max_active_jobs:
+    slots_to_fill = max_active_jobs - num_active_jobs
+    if slots_to_fill <= 0:
         return
+
+    # Rate-limit: don't post more than max_posts_per_tick per cron cycle
+    slots_to_fill = min(slots_to_fill, config.max_posts_per_tick)
 
     job_templates = (
         DeliveryJobTemplate.objects.exclude_has_conflicting_active_job()
@@ -168,7 +197,6 @@ async def monitor_jobs(ctx):
             "source_points",
             "destination_points",
         )
-        .order_by("?")
     )
 
     # Filter out templates that conflict with active/future supply chain events
@@ -190,7 +218,28 @@ async def monitor_jobs(ctx):
         if not conflicting:
             filtered_templates.append(template)
 
-    for template in filtered_templates:
+    # Deduplicate templates (M2M prefetch can cause duplicates)
+    seen_ids = set()
+    unique_templates = []
+    for t in filtered_templates:
+        if t.pk not in seen_ids:
+            seen_ids.add(t.pk)
+            unique_templates.append(t)
+
+    # Weighted shuffle: templates with higher probability × success_score
+    # are more likely to be selected first
+    ordered_templates = weighted_shuffle(
+        unique_templates,
+        lambda t: t.job_posting_probability * t.success_score,
+    )
+
+    active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
+
+    posted = 0
+    for template in ordered_templates:
+        if posted >= slots_to_fill:
+            break
+
         cargos = template.cargos.all()
         source_points = template.source_points.all()
         destination_points = template.destination_points.all()
@@ -247,6 +296,9 @@ async def monitor_jobs(ctx):
                 quantity_requested, destination_capacity - destination_amount
             )
 
+        if quantity_requested <= 0:
+            continue
+
         if source_capacity == 0:
             is_source_enough = True
         elif source_amount >= source_capacity * 0.85:
@@ -255,22 +307,6 @@ async def monitor_jobs(ctx):
             is_source_enough = source_amount >= quantity_requested
 
         if not is_destination_empty or not is_source_enough:
-            continue
-
-        # Treasury multiplier influences posting probability
-        chance = (
-            template.job_posting_probability
-            * template.success_score
-            * max(10, num_players)
-            / 2000
-            / (5 + num_active_jobs * 2)
-            * config.posting_rate_multiplier
-            * treasury_mult
-        )
-        if not source_points and not destination_points:
-            chance = chance / (24 * 3)
-
-        if random.random() > chance:
             continue
 
         # Treasury multiplier influences bonus amounts
@@ -286,10 +322,8 @@ async def monitor_jobs(ctx):
         )
         completion_bonus = int(treasury_mult * completion_bonus)
 
-        active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
         if active_term:
             # Check if Ministry has enough budget
-            # Ideally we should strictly check account balance, but current_budget is a good proxy for speed
             if active_term.current_budget < completion_bonus:
                 continue  # Skip this job if budget is exhausted
 
@@ -314,8 +348,6 @@ async def monitor_jobs(ctx):
                 new_job.escrowed_amount = completion_bonus
                 await new_job.asave()
             else:
-                # Failed to escrow (race condition?), delete job or leave as unfunded?
-                # Safest is to delete or mark invalid, but for now let's just log/ignore as it's rare.
                 pass
 
         await new_job.cargos.aadd(*cargos)
@@ -327,7 +359,7 @@ async def monitor_jobs(ctx):
                 ctx["http_client"],
             )
         )
-        break
+        posted += 1
 
 
 async def on_delivery_job_fulfilled(job, http_client):

@@ -2280,6 +2280,10 @@ class JobPostingConfig(models.Model):
         default=0.5,
         help_text="How aggressively spending changes with treasury balance (higher = steeper curve)",
     )
+    max_posts_per_tick = models.PositiveIntegerField(
+        default=3,
+        help_text="Maximum number of new jobs to post per cron tick (rate limit)",
+    )
 
     class Meta:
         verbose_name = "Job Posting Configuration"
