@@ -115,7 +115,7 @@ class ProcessEventTests(TestCase):
         log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
         self.assertEqual(log.payment, 10_000)
-        self.assertEqual(payment, 17_000)
+        self.assertEqual(payment, 10_000)
         self.assertEqual(subsidy, 7_000)
         self.assertEqual(log.player, player)
 
@@ -152,7 +152,7 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.payment, 18_000)
         # subsidy: 2,000 + 18,000 * 0.5 = 11,000
         self.assertEqual(subsidy, 11_000)
-        self.assertEqual(payment, 18_000 + 11_000)
+        self.assertEqual(payment, 18_000)
 
     async def test_ambulance_without_radius_ratio(self, mock_get_treasury, mock_get_rp_mode):
         """Ambulance without radius ratio field (backward compat) — no bonus, only subsidy."""
@@ -185,7 +185,7 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.payment, 10_000)
         # subsidy: 2,000 + 10,000 * 0.5 = 7,000
         self.assertEqual(subsidy, 7_000.0)
-        self.assertEqual(payment, 17_000.0)
+        self.assertEqual(payment, 10_000)
 
     async def test_tow(self, mock_get_treasury, mock_get_rp_mode):
         """Tow with no body damage info (backward compat) — BodyDamage defaults to 1.0, no bonus."""
@@ -212,7 +212,7 @@ class ProcessEventTests(TestCase):
         log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
         self.assertEqual(log.payment, 10_000)
-        self.assertEqual(payment, 22_000)
+        self.assertEqual(payment, 10_000)
         self.assertEqual(subsidy, 12_000)
         self.assertEqual(log.player, player)
 
@@ -243,7 +243,7 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.payment, 15_500)
         # subsidy for non-flipped: 2_000 + 15_500 * 0.5 = 9_750
         self.assertEqual(subsidy, 9_750)
-        self.assertEqual(payment, 15_500 + 9_750)
+        self.assertEqual(payment, 15_500)
 
     async def test_tow_body_damage_partial(self, mock_get_treasury, mock_get_rp_mode):
         """Tow with partial body damage: bonus scales linearly with (1 - BodyDamage)."""
@@ -271,7 +271,7 @@ class ProcessEventTests(TestCase):
         # bonus = int(10_000 * 0.55 * 0.5) = 2_750, total = 12_750
         self.assertEqual(log.payment, 12_750)
         self.assertEqual(subsidy, 2_000 + 12_750 * 0.5)
-        self.assertEqual(payment, 12_750 + subsidy)
+        self.assertEqual(payment, 12_750)
 
     async def test_rp_mode_subsidy(self, mock_get_treasury, mock_get_rp_mode):
         # Verify subsidy calculation when RP mode is ON
@@ -313,7 +313,7 @@ class ProcessEventTests(TestCase):
         )
 
         self.assertEqual(subsidy, 5000)
-        self.assertEqual(payment, 15000)
+        self.assertEqual(payment, 10000)
 
     async def test_job_completion(self, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
@@ -1683,17 +1683,17 @@ class OnPlayerProfitTests(TestCase):
         )
 
         session = MagicMock()
-        # total_payment includes subsidy baked in by process_event
+        # total_subsidy = 5000, base_payment = 10000 (subsidy NOT baked in), contract = 50000
         total_subsidy = 5_000
-        total_payment = 15_000  # 10000 base + 5000 subsidy
+        base_payment = 10_000
         contract_payment = 50_000
 
         await on_player_profit(
-            character, total_subsidy, total_payment, session,
+            character, total_subsidy, base_payment, session,
             contract_payment=contract_payment,
         )
 
-        # reject_ubi zeroes subsidy, so actual_income = (15000 - 5000) + 0 + 50000 = 60000
+        # reject_ubi zeroes subsidy, so actual_income = 10000 + 0 + 50000 = 60000
         mock_subsidise.assert_not_called()
         mock_savings.assert_called_once()
         savings_amount = mock_savings.call_args[0][1]
