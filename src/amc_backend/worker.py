@@ -14,7 +14,8 @@ from necesse.tasks import process_necesse_log  # noqa: E402
 from amc.events import monitor_events, send_event_embeds  # noqa: E402
 from amc.locations import monitor_locations  # noqa: E402
 from amc.characterlocation_stats import refresh_all_vehicle_stats  # noqa: E402
-from amc.webhook import monitor_webhook  # noqa: E402
+from amc.webhook import monitor_webhook, WEBHOOK_SSE_ENABLED  # noqa: E402
+from amc.sse_client import run_sse_listener  # noqa: E402
 from amc.ubi import handout_ubi, TASK_FREQUENCY as UBI_TASK_FREQUENCY  # noqa: E402
 from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
 from amc.jobs import monitor_jobs  # noqa: E402
@@ -31,6 +32,7 @@ REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
 GAME_SERVER_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 bot_task_handle = None
+sse_task_handle = None
 # pyrefly: ignore [unknown-name]
 loop = None
 
@@ -53,7 +55,7 @@ async def run_discord():
 
 
 async def startup(ctx):
-    global bot_task_handle
+    global bot_task_handle, sse_task_handle
     ctx["startup_time"] = timezone.now()
     ctx["http_client"] = aiohttp.ClientSession(
         base_url=settings.GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
@@ -78,8 +80,21 @@ async def startup(ctx):
         # Set Discord client reference for the message queue
         tasks_module._discord_client_ref = discord_client
 
+    if WEBHOOK_SSE_ENABLED:
+        sse_task_handle = asyncio.create_task(run_sse_listener(ctx))
+
 
 async def shutdown(ctx):
+    global sse_task_handle
+
+    if sse_task_handle:
+        sse_task_handle.cancel()
+        try:
+            await sse_task_handle
+        except asyncio.CancelledError:
+            pass
+        sse_task_handle = None
+
     if http_client := ctx.get("http_client"):
         await http_client.close()
 
@@ -120,8 +135,11 @@ class WorkerSettings:
         process_necesse_log,
     ]
     cron_jobs = [
-        # pyrefly: ignore [bad-argument-type]
-        cron(monitor_webhook, second=set(range(0, 60, 4))),
+        # Polling cron — only active when SSE is disabled (default)
+        *([
+            # pyrefly: ignore [bad-argument-type]
+            cron(monitor_webhook, second=set(range(0, 60, 4))),
+        ] if not WEBHOOK_SSE_ENABLED else []),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_locations, second=None),
         # pyrefly: ignore [bad-argument-type]

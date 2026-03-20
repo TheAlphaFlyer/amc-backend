@@ -44,6 +44,7 @@ from amc.models import (
 )
 
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
 PARTY_BONUS_RATE = 0.05  # 5% per extra party member
 
 
