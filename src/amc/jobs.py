@@ -174,11 +174,9 @@ async def monitor_jobs(ctx):
         max_mult=config.max_multiplier,
     )
 
-    # Base formula: 1 job per N players, floor of min_base_jobs
-    # Treasury multiplier influences how many jobs can be active
-    base_max_jobs = max(
-        config.min_base_jobs, 1 + math.ceil(num_players / config.players_per_job)
-    )
+    # Base formula: log2 curve — generous at low player counts, flattens at high
+    # e.g. 0→1, 6→4, 10→4, 20→5, 30→6
+    base_max_jobs = config.min_base_jobs + round(math.log2(1 + num_players))
     max_active_jobs = max(1, int(base_max_jobs * adaptive_mult * treasury_mult))
 
     slots_to_fill = max_active_jobs - num_active_jobs

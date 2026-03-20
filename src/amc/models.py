@@ -2253,18 +2253,18 @@ class JobPostingConfig(models.Model):
         help_text="Minimum adaptive multiplier (scales down job count when success rate is low)",
     )
     max_multiplier = models.FloatField(
-        default=2.0,
+        default=1.5,
         help_text="Maximum adaptive multiplier (scales up job count when success rate is high)",
     )
     # Base job formula
     players_per_job = models.IntegerField(
         default=10,
-        help_text="Base formula: 1 job per N players",
+        help_text="Legacy — unused since log2 curve replaced linear formula",
         validators=[MinValueValidator(1)],
     )
     min_base_jobs = models.IntegerField(
-        default=2,
-        help_text="Minimum number of base active jobs regardless of player count",
+        default=1,
+        help_text="Base offset for log2 job count curve (added to log2(1 + players))",
     )
     # Global posting probability multiplier
     posting_rate_multiplier = models.FloatField(

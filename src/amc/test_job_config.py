@@ -11,9 +11,9 @@ class JobPostingConfigTestCase(TestCase):
         self.assertEqual(config.pk, 1)
         self.assertEqual(config.target_success_rate, 0.50)
         self.assertEqual(config.min_multiplier, 0.5)
-        self.assertEqual(config.max_multiplier, 2.0)
+        self.assertEqual(config.max_multiplier, 1.5)
         self.assertEqual(config.players_per_job, 10)
-        self.assertEqual(config.min_base_jobs, 2)
+        self.assertEqual(config.min_base_jobs, 1)
         self.assertEqual(config.posting_rate_multiplier, 1.0)
 
     async def test_aget_config_returns_existing(self):
