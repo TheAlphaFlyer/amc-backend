@@ -9,20 +9,17 @@ class TuningWorkshopSubmissionAdmin(admin.ModelAdmin):
         "thread_id",
         "author_discord_id",
         "created_at",
-        "reward_at",
         "reaction_count",
-        "processed",
+        "rewarded_reaction_count",
         "skipped",
-        "voucher",
     ]
-    list_filter = ["processed", "skipped"]
+    list_filter = ["skipped"]
     search_fields = ["thread_id", "author_discord_id"]
     readonly_fields = [
         "thread_id",
         "author_discord_id",
         "created_at",
-        "reward_at",
         "reaction_count",
-        "voucher",
+        "rewarded_reaction_count",
     ]
     ordering = ["-created_at"]

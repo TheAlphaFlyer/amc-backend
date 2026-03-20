@@ -3,31 +3,24 @@ from datetime import timedelta
 
 import discord
 from discord import app_commands
-from discord.ext import tasks, commands
+from discord.ext import commands
 from django.utils import timezone
 
-from amc.models import Voucher
+from amc.models import Player, Voucher
 from amc_cogs.models import TuningWorkshopSubmission
 
 logger = logging.getLogger(__name__)
 
 
 class TuningWorkshopCog(commands.Cog):
-    """Monitors #tuning-workshop forum and rewards posts based on reactions after 7 days."""
+    """Monitors #tuning-workshop forum and rewards posts based on reactions (on-demand)."""
 
     FORUM_CHANNEL_ID = 1353368480988008448
     REWARD_PER_REACTION = 100_000
-    REWARD_DELAY_DAYS = 7
     MAX_POSTS_PER_WEEK = 2
 
     def __init__(self, bot):
         self.bot = bot
-
-    async def cog_load(self):
-        self.process_rewards_task.start()
-
-    async def cog_unload(self):
-        self.process_rewards_task.cancel()
 
     @commands.Cog.listener()
     async def on_thread_create(self, thread):
@@ -52,7 +45,6 @@ class TuningWorkshopCog(commands.Cog):
             thread_id=thread.id,
             author_discord_id=author_id,
             created_at=now,
-            reward_at=now + timedelta(days=self.REWARD_DELAY_DAYS),
             skipped=skipped,
         )
 
@@ -72,17 +64,15 @@ class TuningWorkshopCog(commands.Cog):
                 color=discord.Color.orange(),
             )
         else:
-            reward_at = now + timedelta(days=self.REWARD_DELAY_DAYS)
             embed = discord.Embed(
                 title="🔧 Tuning Workshop",
                 description=(
                     "Thanks for your submission! Here's how rewards work:\n\n"
-                    f"💰 You earn **${self.REWARD_PER_REACTION:,}** for each unique reaction from other members.\n"
-                    f"⏰ Rewards are automatically issued **{self.REWARD_DELAY_DAYS} days** after posting "
-                    f"(<t:{int(reward_at.timestamp())}:R>).\n"
-                    "⚡ Want your reward sooner? Use `/claim_reward` in this thread to claim early — "
-                    "but no further reactions will be counted.\n"
-                    "🎟️ You'll receive a voucher code to redeem in-game with `/claim_voucher <code>`."
+                    f"💰 **${self.REWARD_PER_REACTION:,}** per unique reaction from other members\n"
+                    "📈 Rewards **accumulate over time** — there's no deadline!\n"
+                    "⚡ Use `/claim_reward` in this thread whenever you want to cash out\n"
+                    "🔄 You can claim **multiple times** — each claim pays out only new reactions\n"
+                    "🎟️ You'll receive a voucher code to redeem in-game with `/claim_voucher <code>`"
                 ),
                 color=discord.Color.blue(),
             )
@@ -95,10 +85,10 @@ class TuningWorkshopCog(commands.Cog):
 
     @app_commands.command(
         name="claim_reward",
-        description="Claim your tuning workshop reward early",
+        description="Claim your tuning workshop reward",
     )
     async def claim_reward(self, interaction: discord.Interaction):
-        """Let the thread author claim their reward before the 7-day wait."""
+        """Let the thread author claim their accumulated reward."""
         channel = interaction.channel
 
         # Must be in a thread within the tuning workshop forum
@@ -132,13 +122,6 @@ class TuningWorkshopCog(commands.Cog):
             )
             return
 
-        # Already processed or skipped
-        if submission.processed:
-            await interaction.response.send_message(
-                "❌ This submission has already been processed.",
-                ephemeral=True,
-            )
-            return
         if submission.skipped:
             await interaction.response.send_message(
                 "❌ This submission was skipped (weekly limit exceeded).",
@@ -146,7 +129,7 @@ class TuningWorkshopCog(commands.Cog):
             )
             return
 
-        # Count current reactions for the preview
+        # Count current reactions
         try:
             starter_message = await channel.fetch_message(channel.id)
         except (discord.NotFound, discord.HTTPException):
@@ -163,175 +146,65 @@ class TuningWorkshopCog(commands.Cog):
                     continue
                 unique_reactors.add(user.id)
 
-        reaction_count = len(unique_reactors)
-        reward_amount = reaction_count * self.REWARD_PER_REACTION
+        current_count = len(unique_reactors)
+        new_reactions = current_count - submission.rewarded_reaction_count
 
-        if reaction_count == 0:
+        if new_reactions <= 0:
             await interaction.response.send_message(
-                "❌ This post has no reactions from other users yet. "
-                "Wait for some reactions before claiming!",
+                "❌ No new reactions to claim since your last cashout."
+                if submission.rewarded_reaction_count > 0
+                else "❌ This post has no reactions from other users yet.",
                 ephemeral=True,
             )
             return
 
-        # Show confirmation
-        view = ClaimRewardConfirmView(
-            cog=self, submission=submission, timeout=60
-        )
-        embed = discord.Embed(
-            title="⚡ Claim Reward Early?",
-            description=(
-                f"Your post currently has **{reaction_count}** unique reaction{'s' if reaction_count != 1 else ''}.\n\n"
-                f"💰 Reward: **${reward_amount:,}**\n\n"
-                "⚠️ **Warning:** Claiming now means **no further reactions will be counted**. "
-                "The reward amount shown above is final.\n\n"
-                f"The automatic reward would be issued <t:{int(submission.reward_at.timestamp())}:R>."
-            ),
-            color=discord.Color.yellow(),
-        )
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @tasks.loop(hours=1)
-    async def process_rewards_task(self):
-        """Process submissions that have passed their reward_at deadline."""
-        now = timezone.now()
-        pending = TuningWorkshopSubmission.objects.filter(
-            processed=False,
-            skipped=False,
-            reward_at__lte=now,
-        )
-
-        async for submission in pending:
-            try:
-                await self._process_submission(submission)
-            except Exception:
-                logger.exception(
-                    f"Failed to process tuning workshop submission {submission.thread_id}"
-                )
-
-    async def _process_submission(self, submission):
-        """Count reactions and issue voucher for a single submission."""
-        # Fetch the thread
+        # Look up the author's Player record
         try:
-            thread = await self.bot.fetch_channel(submission.thread_id)
-        except discord.NotFound:
-            logger.warning(f"Thread {submission.thread_id} not found, marking processed")
-            submission.processed = True
-            await submission.asave(update_fields=["processed"])
-            return
-        except discord.HTTPException:
-            logger.warning(f"Failed to fetch thread {submission.thread_id}")
-            return
-
-        # Fetch the starter message (same ID as thread)
-        try:
-            starter_message = await thread.fetch_message(thread.id)
-        except (discord.NotFound, discord.HTTPException):
-            logger.warning(
-                f"Starter message for thread {submission.thread_id} not found"
+            player = await Player.objects.aget(
+                discord_user_id=submission.author_discord_id
             )
-            submission.processed = True
-            await submission.asave(update_fields=["processed"])
-            return
-
-        # Count unique reaction users, excluding bot and author
-        unique_reactors = set()
-        for reaction in starter_message.reactions:
-            async for user in reaction.users():
-                if user.bot:
-                    continue
-                if user.id == submission.author_discord_id:
-                    continue
-                unique_reactors.add(user.id)
-
-        reaction_count = len(unique_reactors)
-        submission.reaction_count = reaction_count
-
-        if reaction_count == 0:
-            submission.processed = True
-            await submission.asave(update_fields=["processed", "reaction_count"])
-            await thread.send(
-                embed=discord.Embed(
-                    title="🔧 Tuning Workshop Results",
-                    description="This post received no reactions from other users. No reward issued.",
-                    color=discord.Color.greyple(),
-                )
+        except Player.DoesNotExist:
+            await interaction.response.send_message(
+                "❌ No linked game account found. Make sure your Discord is linked to your in-game account.",
+                ephemeral=True,
             )
             return
 
-        # Create voucher with code (no player — anyone with the code can claim)
-        reward_amount = reaction_count * self.REWARD_PER_REACTION
+        # Create voucher for the delta, tied to the author's player
+        reward_amount = new_reactions * self.REWARD_PER_REACTION
         code = Voucher.generate_code(prefix="TW")
-        voucher = await Voucher.objects.acreate(
+        await Voucher.objects.acreate(
             code=code,
             amount=reward_amount,
-            reason=f"Tuning Workshop: {reaction_count} reactions",
+            reason=f"Tuning Workshop: {new_reactions} new reactions",
+            player=player,
         )
 
         # Update submission
-        submission.voucher = voucher
-        submission.processed = True
-        await submission.asave(update_fields=["processed", "reaction_count", "voucher"])
+        submission.reaction_count = current_count
+        submission.rewarded_reaction_count = current_count
+        await submission.asave(
+            update_fields=["reaction_count", "rewarded_reaction_count"]
+        )
 
-        # Post result embed with the voucher code
+        # Send voucher code ephemerally (only visible to the author)
+        await interaction.response.send_message(
+            f"✅ Voucher issued for **${reward_amount:,}**!\n"
+            f"🎟️ Code: `{code}`\n"
+            f"Use `/claim_voucher {code}` in-game to deposit.",
+            ephemeral=True,
+        )
+
+        # Post a public announcement (without the code)
         embed = discord.Embed(
-            title="🔧 Tuning Workshop Reward",
+            title="🔧 Tuning Workshop Reward Claimed",
             description=(
-                f"This post received **{reaction_count}** unique reaction{'s' if reaction_count != 1 else ''}!\n\n"
-                f"💰 A voucher for **${reward_amount:,}** has been issued.\n"
-                f"Use `/claim_voucher {code}` in-game to deposit it to your bank account."
+                f"**{new_reactions}** new reaction{'s' if new_reactions != 1 else ''} cashed out!\n\n"
+                f"💰 Reward: **${reward_amount:,}**"
             ),
             color=discord.Color.green(),
         )
-        embed.set_footer(text=f"Code: {code}")
-        await thread.send(embed=embed)
-
-    @process_rewards_task.before_loop
-    async def before_process_rewards(self):
-        await self.bot.wait_until_ready()
-
-
-class ClaimRewardConfirmView(discord.ui.View):
-    """Confirmation view for early reward claiming."""
-
-    def __init__(self, cog: TuningWorkshopCog, submission: TuningWorkshopSubmission, timeout: float):
-        super().__init__(timeout=timeout)
-        self.cog = cog
-        self.submission = submission
-
-    @discord.ui.button(label="Confirm & Claim", style=discord.ButtonStyle.green, emoji="✅")
-    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Re-check that submission hasn't been processed in the meantime
-        await self.submission.arefresh_from_db()
-        if self.submission.processed:
-            await interaction.response.edit_message(
-                embed=discord.Embed(
-                    title="❌ Already Processed",
-                    description="This submission has already been processed.",
-                    color=discord.Color.red(),
-                ),
-                view=None,
-            )
-            return
-
-        await interaction.response.edit_message(
-            embed=discord.Embed(
-                title="⏳ Processing...",
-                description="Counting reactions and issuing your voucher.",
-                color=discord.Color.blurple(),
-            ),
-            view=None,
+        embed.set_footer(
+            text=f"Total reactions rewarded: {current_count}"
         )
-
-        await self.cog._process_submission(self.submission)
-
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.grey, emoji="❌")
-    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(
-            embed=discord.Embed(
-                title="Cancelled",
-                description="Your reward will be automatically issued after the waiting period.",
-                color=discord.Color.greyple(),
-            ),
-            view=None,
-        )
+        await channel.send(embed=embed)
