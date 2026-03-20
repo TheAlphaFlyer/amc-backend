@@ -446,3 +446,103 @@ class JobsCog(commands.Cog):
             f"✅ **{param.name}** updated: `{old_value}` → `{value}`",
             ephemeral=True,
         )
+
+    async def template_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[int]]:
+        from amc.models import DeliveryJobTemplate
+
+        templates = DeliveryJobTemplate.objects.filter(
+            enabled=True, rp_mode=False, name__icontains=current
+        ).order_by("name")[:25]
+        return [
+            app_commands.Choice(name=t.name[:100], value=t.pk)
+            async for t in templates
+        ]
+
+    @app_commands.command(
+        name="post_job",
+        description="Force-post a job from a template (bypasses probability/rate limits)",
+    )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    @app_commands.describe(template="Template to create a job from")
+    @app_commands.autocomplete(template=template_autocomplete)
+    async def post_job(self, interaction: discord.Interaction, template: int):
+        import random
+        from datetime import timedelta
+        from amc.models import DeliveryJobTemplate, MinistryTerm, JobPostingConfig
+        from amc.game_server import announce
+        from amc.jobs import calculate_treasury_multiplier
+        from amc_finance.services import (
+            get_treasury_fund_balance,
+            escrow_ministry_funds,
+        )
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            tmpl = await DeliveryJobTemplate.objects.prefetch_related(
+                "cargos", "source_points", "destination_points"
+            ).aget(pk=template)
+        except DeliveryJobTemplate.DoesNotExist:
+            await interaction.followup.send("❌ Template not found.", ephemeral=True)
+            return
+
+        # Treasury multiplier for bonus/duration scaling
+        config = await JobPostingConfig.aget_config()
+        treasury_balance = await get_treasury_fund_balance()
+        treasury_mult = calculate_treasury_multiplier(
+            float(treasury_balance),
+            equilibrium=float(config.treasury_equilibrium),
+            sensitivity=config.treasury_sensitivity,
+        )
+
+        quantity_requested = tmpl.default_quantity
+        bonus_multiplier = round(
+            tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2
+        ) * treasury_mult
+        completion_bonus = int(
+            tmpl.completion_bonus * random.uniform(0.7, 1.3) * treasury_mult
+        )
+        duration_hours = tmpl.duration_hours * max(0.5, min(2.0, treasury_mult))
+
+        active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
+
+        new_job = await DeliveryJob.objects.acreate(
+            name=tmpl.name,
+            quantity_requested=quantity_requested,
+            expired_at=timezone.now() + timedelta(hours=duration_hours),
+            bonus_multiplier=bonus_multiplier,
+            completion_bonus=completion_bonus,
+            description=tmpl.description,
+            rp_mode=False,
+            created_from=tmpl,
+            funding_term=active_term,
+        )
+
+        if active_term:
+            if await escrow_ministry_funds(completion_bonus, new_job):
+                new_job.escrowed_amount = completion_bonus
+                await new_job.asave()
+
+        cargos = [c async for c in tmpl.cargos.all()]
+        source_points = [sp async for sp in tmpl.source_points.all()]
+        destination_points = [dp async for dp in tmpl.destination_points.all()]
+        await new_job.cargos.aadd(*cargos)
+        await new_job.source_points.aadd(*source_points)
+        await new_job.destination_points.aadd(*destination_points)
+
+        try:
+            await announce(
+                f"New job posting! {tmpl.name} - {completion_bonus:,} bonus on completion. See /jobs for more details",
+                self.bot.http_client_game,
+            )
+        except Exception:
+            pass  # Don't fail the command if announce fails
+
+        await interaction.followup.send(
+            f"✅ Posted **{tmpl.name}** (Job #{new_job.id})\n"
+            f"Bonus: {completion_bonus:,} · Duration: {duration_hours:.1f}h · Qty: {quantity_requested}",
+            ephemeral=True,
+        )
+
