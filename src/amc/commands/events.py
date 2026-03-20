@@ -104,15 +104,22 @@ async def cmd_setup_event(ctx: CommandContext, event_id: Optional[int] = None):
                 .aget(pk=event_id)
             )
         else:
-            scheduled_event = (
-                await ScheduledEvent.objects.filter_active_at(ctx.timestamp)
+            events: list[str] = []
+            async for event in (
+                ScheduledEvent.objects.filter(race_setup__isnull=False)
                 .select_related("race_setup")
-                .filter(race_setup__isnull=False)
-                .afirst()
-            )
-            if not scheduled_event:
-                await ctx.reply("There does not seem to be an active event.")
-                return
+                .order_by("-start_time")
+            ):
+                events.append(
+                    f"<Highlight>/setup_event {event.id}</>\n"
+                    f"<Title>#{event.id} {event.name}</>\n"
+                    f"<Small>{event.description_in_game or event.description}</>"
+                )
+            if not events:
+                await ctx.reply("No events with a race setup.")
+            else:
+                await ctx.reply(f"[EVENTS]\n\n{chr(10).join(events)}")
+            return
 
         event_setup = await setup_event(
             ctx.timestamp, ctx.player.unique_id, scheduled_event, ctx.http_client_mod

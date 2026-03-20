@@ -610,28 +610,42 @@ class CommandsTestCase(TestCase):
                 mock_popup.assert_called()
 
     async def test_cmd_setup_event(self):
+        """When called without event_id, lists all events with race setups."""
+        mock_event = MagicMock()
+        mock_event.id = 42
+        mock_event.name = "Sunday Race"
+        mock_event.description = "A fun race"
+        mock_event.description_in_game = ""
+
+        with patch("amc.models.ScheduledEvent.objects.filter") as mock_filter:
+            mock_qs = MagicMock()
+            mock_qs.select_related.return_value.order_by.return_value.__aiter__.return_value = [
+                mock_event
+            ]
+            mock_filter.return_value = mock_qs
+
+            await cmd_setup_event(self.ctx)
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("#42 Sunday Race", output)
+            self.assertIn("/setup_event 42", output)
+            self.assertIn("<Small>A fun race</>", output)
+
+    async def test_cmd_setup_event_with_id(self):
+        """When called with event_id, sets up that event."""
         mock_event = MagicMock()
 
-        with patch("amc.models.ScheduledEvent.objects.select_related"):
-            # Logic is complex, mocking filter chains
-            mock_qs = MagicMock()
-            mock_qs.filter.return_value.afirst = AsyncMock(return_value=mock_event)
-            # Handle active_at shortcut too
-            # Let's mock filter_active_at on manager instead if possible or chain
-            pass
-
-        # Creating a more robust mock for filter chains
         with patch(
-            "amc.models.ScheduledEvent.objects.filter_active_at"
-        ) as mock_filter_active:
-            mock_filter_active.return_value.select_related.return_value.filter.return_value.afirst = AsyncMock(
+            "amc.models.ScheduledEvent.objects.select_related"
+        ) as mock_sr:
+            mock_sr.return_value.filter.return_value.aget = AsyncMock(
                 return_value=mock_event
             )
 
             with patch(
                 "amc.commands.events.setup_event", new=AsyncMock(return_value=True)
             ) as mock_setup:
-                await cmd_setup_event(self.ctx)
+                await cmd_setup_event(self.ctx, event_id=42)
                 mock_setup.assert_called()
 
     async def test_cmd_events_list(self):
