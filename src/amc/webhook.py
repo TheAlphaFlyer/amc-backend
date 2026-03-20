@@ -119,6 +119,7 @@ async def post_discord_delivery_embed(
     subsidy,
     vehicle_key,
     job=None,
+    delivery_id=None,
 ):
     jobs_cog = discord_client.get_cog("JobsCog")
     delivery_source_name = ""
@@ -143,6 +144,7 @@ async def post_discord_delivery_embed(
                     subsidy,
                     vehicle_key,
                     job=job,
+                    delivery_id=delivery_id,
                 ),
                 discord_client.loop,
             ),
@@ -520,6 +522,7 @@ async def handle_cargo_arrived(
                     delivery_subsidy,
                     vehicle_key,
                     job=job,
+                    delivery_id=delivery_obj.id if delivery_obj else None,
                 )
             )
 

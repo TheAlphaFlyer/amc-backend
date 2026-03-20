@@ -127,6 +127,7 @@ class JobsCog(commands.Cog):
         subsidy,
         vehicle_key,
         job=None,
+        delivery_id=None,
     ) -> discord.Embed:
         description = ""
         description += "\n**Payment**: "
@@ -158,8 +159,13 @@ class JobsCog(commands.Cog):
             color=discord.Color.green(),
             timestamp=timezone.now(),
         )
+        footer_parts = []
+        if delivery_id:
+            footer_parts.append(f"Delivery #{delivery_id}")
         if job:
-            embed.set_footer(text=f"Job: {job.name} (#{job.id})")
+            footer_parts.append(f"Job: {job.name} (#{job.id})")
+        if footer_parts:
+            embed.set_footer(text=" · ".join(footer_parts))
 
         return embed
 
