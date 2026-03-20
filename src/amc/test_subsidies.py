@@ -1,9 +1,10 @@
+import asyncio
 from django.test import TestCase
 from django.contrib.gis.geos import Point, Polygon
 from decimal import Decimal
+from unittest.mock import patch, MagicMock, AsyncMock
 from amc.models import SubsidyRule, SubsidyArea, Cargo, DeliveryPoint
 from amc.subsidies import get_subsidy_for_cargo, get_subsidies_text
-from unittest.mock import MagicMock
 
 
 class SubsidyLogicTest(TestCase):
@@ -389,4 +390,167 @@ class CalculateLoanRepaymentTest(TestCase):
             character_repayment_rate=Decimal("0.30"),
         )
         self.assertEqual(result, Decimal(10_000))
+
+
+class RepayLoanNPLExitTest(TestCase):
+    """Tests for NPL exit announcement in repay_loan_for_profit."""
+
+    @patch("amc.subsidies.announce", new_callable=AsyncMock)
+    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    async def test_npl_exit_triggers_announcement(
+        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
+        mock_repay, mock_announce,
+    ):
+        """When player transitions NPL→not-NPL, announce it."""
+        from amc.subsidies import repay_loan_for_profit
+
+        mock_balance.return_value = Decimal(600_000)
+        mock_max_loan.return_value = (1_000_000, None)
+        # First call: was NPL, second call: no longer NPL
+        mock_is_npl.side_effect = [True, False]
+
+        character = MagicMock()
+        character.name = "TestPlayer"
+        character.player.unique_id = 123
+        character.loan_repayment_rate = None
+        character.guid = "test-guid"
+        session = MagicMock()
+
+        await repay_loan_for_profit(character, 10_000, session)
+
+        # Allow fire-and-forget task to run
+        await asyncio.sleep(0.1)
+        mock_announce.assert_called_once()
+        call_msg = mock_announce.call_args[0][0]
+        self.assertIn("TestPlayer", call_msg)
+        self.assertIn("Non-Performing Loan", call_msg)
+        self.assertEqual(mock_announce.call_args[1]["color"], "00FF00")
+
+    @patch("amc.subsidies.announce", new_callable=AsyncMock)
+    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    async def test_no_announcement_when_still_npl(
+        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
+        mock_repay, mock_announce,
+    ):
+        """No announcement when player remains NPL after repayment."""
+        from amc.subsidies import repay_loan_for_profit
+
+        mock_balance.return_value = Decimal(600_000)
+        mock_max_loan.return_value = (1_000_000, None)
+        mock_is_npl.side_effect = [True, True]  # Still NPL
+
+        character = MagicMock()
+        character.name = "StillNPL"
+        character.player.unique_id = 456
+        character.loan_repayment_rate = None
+        character.guid = "test-guid-2"
+        session = MagicMock()
+
+        await repay_loan_for_profit(character, 10_000, session)
+
+        await asyncio.sleep(0.1)
+        mock_announce.assert_not_called()
+
+    @patch("amc.subsidies.announce", new_callable=AsyncMock)
+    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    async def test_no_announcement_when_not_npl_before(
+        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
+        mock_repay, mock_announce,
+    ):
+        """No announcement when player was not NPL before repayment."""
+        from amc.subsidies import repay_loan_for_profit
+
+        mock_balance.return_value = Decimal(600_000)
+        mock_max_loan.return_value = (1_000_000, None)
+        mock_is_npl.return_value = False  # Not NPL at all
+
+        character = MagicMock()
+        character.name = "NeverNPL"
+        character.player.unique_id = 789
+        character.loan_repayment_rate = None
+        character.guid = "test-guid-3"
+        session = MagicMock()
+
+        await repay_loan_for_profit(character, 10_000, session)
+
+        await asyncio.sleep(0.1)
+        mock_announce.assert_not_called()
+        # is_character_npl should only be called once (before check only)
+        self.assertEqual(mock_is_npl.call_count, 1)
+
+    @patch("amc.subsidies.announce", new_callable=AsyncMock)
+    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    async def test_repayment_override_bypasses_calculation(
+        self, mock_is_npl, mock_balance, mock_transfer,
+        mock_repay, mock_announce,
+    ):
+        """repayment_override uses exact amount instead of calculate_loan_repayment."""
+        from amc.subsidies import repay_loan_for_profit
+
+        mock_balance.return_value = Decimal(600_000)
+        mock_is_npl.return_value = False
+
+        character = MagicMock()
+        character.name = "Override"
+        character.player.unique_id = 101
+        character.guid = "test-guid-4"
+        session = MagicMock()
+
+        result = await repay_loan_for_profit(
+            character, 10_000, session, repayment_override=5_000,
+        )
+
+        self.assertEqual(result, 5_000)
+        # transfer_money should use -5000
+        mock_transfer.assert_called_once_with(
+            session, -5_000, "ASEAN Loan Repayment", "101",
+        )
+
+    @patch("amc.subsidies.announce", new_callable=AsyncMock)
+    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
+    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    async def test_game_session_used_for_announce(
+        self, mock_is_npl, mock_balance, mock_transfer,
+        mock_repay, mock_announce,
+    ):
+        """game_session is used for announce instead of mod server session."""
+        from amc.subsidies import repay_loan_for_profit
+
+        mock_balance.return_value = Decimal(600_000)
+        mock_is_npl.side_effect = [True, False]
+
+        character = MagicMock()
+        character.name = "GameSession"
+        character.player.unique_id = 202
+        character.guid = "test-guid-5"
+        mod_session = MagicMock(name="mod_session")
+        game_session = MagicMock(name="game_session")
+
+        await repay_loan_for_profit(
+            character, 10_000, mod_session,
+            repayment_override=5_000,
+            game_session=game_session,
+        )
+
+        await asyncio.sleep(0.1)
+        mock_announce.assert_called_once()
+        # The announce should use game_session, not mod_session
+        self.assertEqual(mock_announce.call_args[0][1], game_session)
 

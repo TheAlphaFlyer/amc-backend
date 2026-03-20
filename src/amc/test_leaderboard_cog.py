@@ -1,5 +1,5 @@
 import discord
-from django.test import TransactionTestCase
+from django.test import TestCase
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import timedelta
 from django.utils import timezone
@@ -17,7 +17,7 @@ from amc.enums import CargoKey
 from psycopg.types.range import Range
 
 
-class LeaderboardCogTestCase(TransactionTestCase):
+class LeaderboardCogTestCase(TestCase):
     def setUp(self):
         # Mock bot instance
         self.bot = MagicMock()

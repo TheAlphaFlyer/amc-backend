@@ -10,8 +10,8 @@ class AdaptiveMultiplierTestCase(TestCase):
     """Tests for the calculate_adaptive_multiplier function."""
 
     def test_multiplier_at_target_rate(self):
-        """80% success rate should give multiplier of 1.0."""
-        multiplier = calculate_adaptive_multiplier(0.80)
+        """50% success rate (target) should give multiplier of 1.0."""
+        multiplier = calculate_adaptive_multiplier(0.50)
         self.assertAlmostEqual(multiplier, 1.0, places=2)
 
     def test_multiplier_at_100_percent(self):
@@ -25,17 +25,17 @@ class AdaptiveMultiplierTestCase(TestCase):
         self.assertAlmostEqual(multiplier, 0.5, places=2)
 
     def test_multiplier_at_40_percent(self):
-        """40% success rate (half of target) should give ~0.75."""
+        """40% success rate (below target) should give ~0.9."""
         multiplier = calculate_adaptive_multiplier(0.40)
-        # 0.5 + (0.40/0.80) * (1.0 - 0.5) = 0.5 + 0.5 * 0.5 = 0.75
-        self.assertAlmostEqual(multiplier, 0.75, places=2)
+        # 0.5 + (0.40/0.50) * (1.0 - 0.5) = 0.5 + 0.8 * 0.5 = 0.9
+        self.assertAlmostEqual(multiplier, 0.9, places=2)
 
     def test_multiplier_at_90_percent(self):
-        """90% success rate should give ~1.5."""
+        """90% success rate should give ~1.8."""
         multiplier = calculate_adaptive_multiplier(0.90)
-        # (0.90 - 0.80) / (1.0 - 0.80) = 0.10 / 0.20 = 0.5
-        # 1.0 + 0.5 * (2.0 - 1.0) = 1.5
-        self.assertAlmostEqual(multiplier, 1.5, places=2)
+        # (0.90 - 0.50) / (1.0 - 0.50) = 0.40 / 0.50 = 0.8
+        # 1.0 + 0.8 * (2.0 - 1.0) = 1.8
+        self.assertAlmostEqual(multiplier, 1.8, places=2)
 
 
 class JobSuccessRateTestCase(TestCase):

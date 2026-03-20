@@ -176,21 +176,21 @@ class WebhookPipelineTests(TestCase):
         )
 
         session = MagicMock()
-        # total_subsidy=5000 (cargo subsidy, never deposited to wallet)
-        # total_payment=15000 (already includes subsidy; game deposited 10000)
-        await on_player_profit(character, 5000, 15000, session)
+        # subsidy=5000 (cargo subsidy, paid separately by system)
+        # base_payment=10000 (what the game deposited into wallet)
+        await on_player_profit(character, 5000, 10000, session)
 
-        # Should confiscate only base_payment (total_payment - total_subsidy = 10000)
+        # Should confiscate base_payment (10000) from wallet
         mock_transfer.assert_awaited_once()
         call_args = mock_transfer.call_args
         self.assertEqual(call_args[0][1], -10000)
 
-        # Ledger should record only base_payment (10000 = real money confiscated)
+        # Ledger should record base_payment (10000 = real money confiscated)
         mock_donation.assert_awaited_once()
         ledger_amount = mock_donation.call_args[0][0]
         self.assertEqual(ledger_amount, 10000)
 
-        # Contribution should track total_payment (15000, including subsidy)
+        # Contribution should track base_payment + subsidy (15000)
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 15000)
 
@@ -211,9 +211,9 @@ class WebhookPipelineTests(TestCase):
         )
 
         session = MagicMock()
-        # total_subsidy=5000, total_payment=15000 (base=10000), contract=3000
+        # subsidy=5000, base_payment=10000 (game wallet deposit), contract=3000
         await on_player_profit(
-            character, 5000, 15000, session, contract_payment=3000
+            character, 5000, 10000, session, contract_payment=3000
         )
 
         # Wallet confiscation = base_payment + contract = 10000 + 3000 = 13000
@@ -224,7 +224,7 @@ class WebhookPipelineTests(TestCase):
         mock_donation.assert_awaited_once()
         self.assertEqual(mock_donation.call_args[0][0], 10000)
 
-        # Contribution tracks total_payment (15000), excludes contract
+        # Contribution tracks base_payment + subsidy (15000), excludes contract
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 15000)
 
@@ -294,7 +294,7 @@ class JobBonusRedirectionTests(TestCase):
 
 
 class ExpireGovEmployeesTests(TestCase):
-    @patch("amc.gov_employee.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_expire_deactivates_expired_roles(self, mock_set_name):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
