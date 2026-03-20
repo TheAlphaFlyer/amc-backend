@@ -75,12 +75,12 @@ async def on_player_profit(
         subsidy = 0
 
     if character.is_gov_employee:
+        from amc.gov_employee import redirect_income_to_treasury
+
         # Gov employees: confiscate wallet deposits, redirect to treasury.
         # Contract payment is burned — confiscated but NOT sent to treasury.
         wallet_confiscation = base_payment + contract_payment
         if wallet_confiscation > 0:
-            from amc.gov_employee import redirect_income_to_treasury
-
             await transfer_money(
                 session,
                 int(-wallet_confiscation),
@@ -89,15 +89,34 @@ async def on_player_profit(
             )
             if base_payment > 0:
                 # Ledger: real earnings confiscated (excludes burned contracts)
-                # Contribution: includes subsidy credit for gov level progression
                 await redirect_income_to_treasury(
                     base_payment,
                     character,
                     "Government Service – Earnings",
                     http_client=http_client,
                     session=session,
-                    contribution=base_payment + subsidy,
                 )
+
+        # Subsidy contribution (e.g. depot restock):
+        # Send subsidy to wallet, then confiscate it back for visible transactions.
+        # amount=0: no treasury donation (the subsidy came FROM the treasury).
+        # contribution=subsidy: counts toward gov level progression.
+        if subsidy > 0:
+            await subsidise_player(subsidy, character, session)
+            await transfer_money(
+                session,
+                int(-subsidy),
+                "Government Service",
+                str(character.player.unique_id),
+            )
+            await redirect_income_to_treasury(
+                0,
+                character,
+                "Government Service – Subsidy",
+                http_client=http_client,
+                session=session,
+                contribution=subsidy,
+            )
         return
 
     if subsidy != 0:

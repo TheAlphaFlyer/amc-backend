@@ -1776,3 +1776,100 @@ class OnPlayerProfitTests(TestCase):
             "Loan repayment income should be subsidy only, not double-counted"
         )
 
+    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_gov_employee_subsidy_only_contribution(
+        self, mock_subsidise, mock_repay_loan, mock_savings,
+        mock_redirect, mock_transfer,
+    ):
+        """Gov employee with subsidy-only profit (depot restock).
+
+        The subsidy should be sent to wallet, confiscated back, and recorded
+        as a gov contribution — but NOT as a treasury donation (since the
+        money came from the treasury in the first place).
+        """
+        from amc.webhook import on_player_profit
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, reject_ubi=False,
+            gov_employee_until=timezone.now() + timedelta(hours=24),
+        )
+
+        session = MagicMock()
+        await on_player_profit(character, 10_000, 0, session)
+
+        # Subsidy should be paid to wallet
+        mock_subsidise.assert_called_once_with(10_000, character, session)
+
+        # Then confiscated back
+        mock_transfer.assert_called_once_with(
+            session, -10_000, "Government Service",
+            str(character.player.unique_id),
+        )
+
+        # Contribution tracked with amount=0 (no donation) and contribution=10_000
+        mock_redirect.assert_called_once_with(
+            0, character, "Government Service – Subsidy",
+            http_client=None, session=session, contribution=10_000,
+        )
+
+        # Non-gov paths should NOT be called
+        mock_repay_loan.assert_not_called()
+        mock_savings.assert_not_called()
+
+    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
+    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    async def test_gov_employee_base_plus_subsidy_contribution(
+        self, mock_subsidise, mock_repay_loan, mock_savings,
+        mock_redirect, mock_transfer,
+    ):
+        """Gov employee with both base_payment and subsidy.
+
+        base_payment is confiscated and donated to treasury.
+        subsidy is sent to wallet, confiscated, and counted as contribution only.
+        """
+        from amc.webhook import on_player_profit
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, reject_ubi=False,
+            gov_employee_until=timezone.now() + timedelta(hours=24),
+        )
+
+        session = MagicMock()
+        await on_player_profit(character, 5_000, 10_000, session)
+
+        # Two transfer_money calls:
+        # 1. -10_000 for base_payment confiscation
+        # 2. -5_000 for subsidy confiscation
+        calls = mock_transfer.call_args_list
+        self.assertEqual(len(calls), 2)
+        # Base confiscation
+        self.assertEqual(calls[0].args[1], -10_000)
+        # Subsidy confiscation
+        self.assertEqual(calls[1].args[1], -5_000)
+
+        # Two redirect_income_to_treasury calls:
+        redirect_calls = mock_redirect.call_args_list
+        self.assertEqual(len(redirect_calls), 2)
+        # 1. Earnings: amount=10_000 (real money → treasury donation)
+        self.assertEqual(redirect_calls[0].args[0], 10_000)
+        self.assertEqual(redirect_calls[0].args[2], "Government Service – Earnings")
+        # 2. Subsidy: amount=0 (no donation), contribution=5_000
+        self.assertEqual(redirect_calls[1].args[0], 0)
+        self.assertEqual(redirect_calls[1].args[2], "Government Service – Subsidy")
+        self.assertEqual(redirect_calls[1].kwargs["contribution"], 5_000)
+
+        # Subsidy paid to wallet
+        mock_subsidise.assert_called_once_with(5_000, character, session)
+
+        # Non-gov paths should NOT be called
+        mock_repay_loan.assert_not_called()
+        mock_savings.assert_not_called()

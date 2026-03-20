@@ -914,13 +914,14 @@ class PartyShareGovEmployeeTest(TestCase):
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
 
-            # Gov: confiscates base_payment from wallet, no subsidy
-            mock_subsidise.assert_not_called()
+            # Gov: confiscates base_payment + subsidy separately
+            mock_subsidise.assert_called_once_with(250, gov_char, session)
             mock_repay.assert_not_called()
             mock_savings.assert_not_called()
-            mock_transfer.assert_called_once()
-            confiscation_amount = mock_transfer.call_args[0][1]
-            self.assertEqual(confiscation_amount, -5000)
+            # Two transfer_money calls: base confiscation (-5000) + subsidy confiscation (-250)
+            self.assertEqual(mock_transfer.call_count, 2)
+            self.assertEqual(mock_transfer.call_args_list[0].args[1], -5000)
+            self.assertEqual(mock_transfer.call_args_list[1].args[1], -250)
 
         # Test civilian path
         with (
@@ -961,15 +962,17 @@ class PartyShareGovEmployeeTest(TestCase):
         with (
             patch("amc.webhook.transfer_money", new_callable=AsyncMock),
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
+            patch("amc.webhook.subsidise_player", new_callable=AsyncMock),
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
 
-            mock_redirect.assert_called_once()
-            ledger_amount = mock_redirect.call_args[0][0]
-            self.assertEqual(ledger_amount, 10000)
-            # contribution = base_payment + subsidy = 10000 + 500 = 10500
-            contribution = mock_redirect.call_args[1].get("contribution", mock_redirect.call_args[0][0])
-            self.assertEqual(contribution, 10500)
+            # Two redirect calls: earnings + subsidy contribution
+            self.assertEqual(mock_redirect.call_count, 2)
+            # 1. Earnings: amount=10000 (real money → treasury donation)
+            self.assertEqual(mock_redirect.call_args_list[0].args[0], 10000)
+            # 2. Subsidy: amount=0 (no donation), contribution=500
+            self.assertEqual(mock_redirect.call_args_list[1].args[0], 0)
+            self.assertEqual(mock_redirect.call_args_list[1].kwargs["contribution"], 500)
 
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
@@ -1527,19 +1530,30 @@ class PartyShareContractTest(TestCase):
         with (
             patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
+            patch("amc.webhook.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
         ):
             await on_player_profit(
                 gov_char, share_subsidy, share_base, session,
                 contract_payment=share_contract,
             )
 
-            # wallet_confiscation = 5000 + 25000 = 30000
-            mock_transfer.assert_called_once()
-            self.assertEqual(mock_transfer.call_args[0][1], -30000)
+            # Two transfer_money calls:
+            # 1. wallet_confiscation = 5000 + 25000 = -30000
+            # 2. subsidy confiscation = -250
+            self.assertEqual(mock_transfer.call_count, 2)
+            self.assertEqual(mock_transfer.call_args_list[0].args[1], -30000)
+            self.assertEqual(mock_transfer.call_args_list[1].args[1], -250)
 
-            # Only base_payment goes to treasury (contract is burned)
-            mock_redirect.assert_called_once()
-            self.assertEqual(mock_redirect.call_args[0][0], 5000)
+            # Two redirect calls: earnings + subsidy contribution
+            self.assertEqual(mock_redirect.call_count, 2)
+            # 1. Earnings: amount=5000 (base_payment → treasury)
+            self.assertEqual(mock_redirect.call_args_list[0].args[0], 5000)
+            # 2. Subsidy: amount=0 (no donation), contribution=250
+            self.assertEqual(mock_redirect.call_args_list[1].args[0], 0)
+            self.assertEqual(mock_redirect.call_args_list[1].kwargs["contribution"], 250)
+
+            # Subsidy paid to wallet before confiscation
+            mock_subsidise.assert_called_once_with(250, gov_char, session)
 
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
