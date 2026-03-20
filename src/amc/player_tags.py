@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 # Compile regexes for stripping prefix tags
 TAG_PATTERNS = [
     re.compile(r"\[MODS\]\s*", re.IGNORECASE),
+    re.compile(r"\[MOD\]\s*", re.IGNORECASE),  # legacy, auto-heals to [MODS]
     re.compile(r"\[GOV\d*\]\s*", re.IGNORECASE),
     re.compile(r"\[DOT\]\s*", re.IGNORECASE),
 ]
@@ -67,7 +68,7 @@ async def refresh_player_name(
     if has_custom_parts is None:
         # Preserve existing state if not explicitly specified
         current_name = character.custom_name or character.name
-        has_custom_parts = bool(re.search(r"\[MODS\]", current_name, re.IGNORECASE))
+        has_custom_parts = bool(re.search(r"\[MODS?\]", current_name, re.IGNORECASE))
 
     # Determine GOV state
     gov_level = 0
