@@ -2452,3 +2452,52 @@ class SupplyChainContribution(models.Model):
         blank=True,
         related_name="supply_chain_contributions",
     )
+
+
+@final
+class Voucher(models.Model):
+    """A claimable reward voucher with a unique code.
+
+    Vouchers can be created with or without a player. When player is null,
+    anyone with the code can claim it. The code is used in-game via
+    /claim_voucher <code>.
+    """
+
+    code = models.CharField(max_length=10, unique=True, db_index=True)
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, null=True, blank=True, related_name="vouchers"
+    )
+    amount = models.PositiveIntegerField()
+    reason = models.CharField(max_length=200)
+    claimed_by = models.ForeignKey(
+        Character,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="claimed_vouchers",
+    )
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    if TYPE_CHECKING:
+        objects: ClassVar[models.Manager["Voucher"]]
+
+    @staticmethod
+    def generate_code(prefix: str = "V") -> str:
+        """Generate a unique voucher code like 'V-A3F8K2'."""
+        import secrets
+        import string
+
+        chars = string.ascii_uppercase + string.digits
+        suffix = "".join(secrets.choice(chars) for _ in range(6))
+        return f"{prefix}-{suffix}"
+
+    @property
+    def is_claimed(self):
+        return self.claimed_at is not None
+
+    @override
+    def __str__(self):
+        status = "claimed" if self.is_claimed else "unclaimed"
+        return f"Voucher {self.code} - {self.amount:,} ({status})"
+
