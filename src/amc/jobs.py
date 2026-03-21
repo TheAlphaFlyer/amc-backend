@@ -234,6 +234,10 @@ async def monitor_jobs(ctx):
     active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
 
     posted = 0
+    # Track source amounts already claimed by jobs posted in this tick
+    # to prevent multiple jobs from depleting the same source storage
+    reserved_source: dict[tuple[int, int], int] = {}  # (cargo_id, dp_id) -> reserved qty
+
     for template in ordered_templates:
         if posted >= slots_to_fill:
             break
@@ -256,8 +260,9 @@ async def monitor_jobs(ctx):
             (storage.amount, storage.capacity_normalized or 0)
             async for storage in destination_storages
         ]
-        source_storage_capacities = [
-            (storage.amount, storage.capacity_normalized or 0)
+        # Collect source storages with their IDs for reservation tracking
+        source_storage_entries = [
+            (storage.cargo_id, storage.delivery_point_id, storage.amount, storage.capacity_normalized or 0)
             async for storage in source_storages
         ]
         destination_amount = sum(
@@ -266,9 +271,13 @@ async def monitor_jobs(ctx):
         destination_capacity = sum(
             [capacity for amount, capacity in destination_storage_capacities]
         )
-        source_amount = sum([amount for amount, capacity in source_storage_capacities])
+        # Subtract amounts already reserved by earlier jobs in this tick
+        source_amount = sum(
+            max(0, amount - reserved_source.get((cargo_id, dp_id), 0))
+            for cargo_id, dp_id, amount, capacity in source_storage_entries
+        )
         source_capacity = sum(
-            [capacity for amount, capacity in source_storage_capacities]
+            capacity for cargo_id, dp_id, amount, capacity in source_storage_entries
         )
 
         quantity_requested = template.default_quantity
@@ -358,6 +367,11 @@ async def monitor_jobs(ctx):
             )
         )
         posted += 1
+
+        # Reserve source amounts so subsequent jobs see reduced availability
+        for cargo_id, dp_id, amount, capacity in source_storage_entries:
+            key = (cargo_id, dp_id)
+            reserved_source[key] = reserved_source.get(key, 0) + quantity_requested
 
 
 async def on_delivery_job_fulfilled(job, http_client):
