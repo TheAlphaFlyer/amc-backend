@@ -19,7 +19,6 @@ from amc.models import (
     DeliveryPoint,
     SupplyChainContribution,
     SupplyChainEvent,
-    SupplyChainObjective,
 )
 from amc.supply_chain import (
     check_and_record_contribution,
