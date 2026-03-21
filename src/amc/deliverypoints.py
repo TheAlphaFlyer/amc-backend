@@ -168,7 +168,9 @@ async def monitor_deliverypoints(ctx):
 
     # Batch save data field updates
     if dps_to_update_data:
-        await DeliveryPoint.objects.abulk_update(dps_to_update_data, ["data"])
+        await DeliveryPoint.objects.abulk_update(
+            dps_to_update_data, ["data", "last_updated"]
+        )
 
     # Batch upsert all storage records
     if storage_upserts:
