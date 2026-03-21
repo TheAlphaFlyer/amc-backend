@@ -10,11 +10,59 @@ from amc.models import (
     DeliveryPoint,
     SupplyChainContribution,
     SupplyChainEvent,
+    SupplyChainEventTemplate,
     SupplyChainObjective,
 )
 from amc_finance.services import send_fund_to_player
 
 logger = logging.getLogger(__name__)
+
+
+async def create_event_from_template(
+    template: SupplyChainEventTemplate,
+    duration_hours: float | None = None,
+) -> SupplyChainEvent:
+    """
+    Instantiate a SupplyChainEvent from a template, creating objectives
+    with resolved cargo and delivery point M2M relations.
+    """
+    from datetime import timedelta
+
+    now = timezone.now()
+    duration = timedelta(hours=duration_hours or template.duration_hours)
+
+    event = await SupplyChainEvent.objects.acreate(
+        name=template.name,
+        description=template.description,
+        start_at=now,
+        end_at=now + duration,
+        reward_per_item=template.reward_per_item,
+    )
+
+    async for obj_tmpl in template.objectives.prefetch_related(
+        "cargos", "destination_points", "source_points"
+    ):
+        objective = await SupplyChainObjective.objects.acreate(
+            event=event,
+            ceiling=obj_tmpl.ceiling,
+            reward_weight=obj_tmpl.reward_weight,
+            is_primary=obj_tmpl.is_primary,
+        )
+
+        # Copy M2M relations
+        cargos = [c async for c in obj_tmpl.cargos.all()]
+        if cargos:
+            await objective.cargos.aadd(*cargos)
+
+        dest_points = [dp async for dp in obj_tmpl.destination_points.all()]
+        if dest_points:
+            await objective.destination_points.aadd(*dest_points)
+
+        src_points = [sp async for sp in obj_tmpl.source_points.all()]
+        if src_points:
+            await objective.source_points.aadd(*src_points)
+
+    return event
 
 
 async def check_and_record_contribution(

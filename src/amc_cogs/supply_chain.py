@@ -1,9 +1,14 @@
 import logging
+from datetime import timedelta
 
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
+from django.conf import settings
 from django.db.models import Sum
-from amc.models import SupplyChainEvent, SupplyChainContribution
+from django.utils import timezone
+
+from amc.models import SupplyChainEvent, SupplyChainEventTemplate, SupplyChainContribution
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +59,6 @@ class SupplyChainCog(commands.Cog):
     async def _build_event_embed(self, event: SupplyChainEvent) -> discord.Embed:
         """Build the progress embed for a supply chain event."""
         import math
-        from django.utils import timezone
 
         now = timezone.now()
         remaining = event.end_at - now
@@ -118,8 +122,9 @@ class SupplyChainCog(commands.Cog):
         return embed
 
     def _get_channel_id(self):
-        from django.conf import settings
         return getattr(settings, "DISCORD_JOBS_CHANNEL_ID", 0)
+
+    # ── Commands ─────────────────────────────────────────────────────
 
     @discord.app_commands.command(
         name="event_status", description="Show active supply chain event progress"
@@ -134,6 +139,83 @@ class SupplyChainCog(commands.Cog):
 
         embed = await self._build_event_embed(event)
         await interaction.response.send_message(embed=embed)
+
+    async def template_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[int]]:
+        templates = SupplyChainEventTemplate.objects.filter(
+            enabled=True, name__icontains=current
+        ).order_by("name")[:25]
+        return [
+            app_commands.Choice(name=t.name[:100], value=t.pk)
+            async for t in templates
+        ]
+
+    @app_commands.command(
+        name="post_event",
+        description="Create a supply chain event from a template",
+    )
+    @app_commands.checks.has_any_role(settings.DISCORD_ADMIN_ROLE_ID)
+    @app_commands.describe(
+        template="Event template to use",
+        duration_hours="Override duration in hours (optional)",
+    )
+    @app_commands.autocomplete(template=template_autocomplete)
+    async def post_event(
+        self,
+        interaction: discord.Interaction,
+        template: int,
+        duration_hours: float | None = None,
+    ):
+        from amc.supply_chain import create_event_from_template
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            tmpl = await SupplyChainEventTemplate.objects.aget(pk=template)
+        except SupplyChainEventTemplate.DoesNotExist:
+            await interaction.followup.send(
+                "❌ Template not found.", ephemeral=True
+            )
+            return
+
+        event = await create_event_from_template(tmpl, duration_hours)
+
+        # Create Discord scheduled event
+        guild = interaction.guild
+        if guild:
+            try:
+                scheduled_event = await guild.create_scheduled_event(
+                    name=f"📦 {event.name}",
+                    description=event.description or "Community supply chain event!",
+                    start_time=event.start_at + timedelta(seconds=10),
+                    end_time=event.end_at,
+                    entity_type=discord.EntityType.external,
+                    location="Motor Town",
+                )
+                logger.info(
+                    f"Created Discord scheduled event {scheduled_event.id} "
+                    f"for supply chain event {event.name}"
+                )
+            except Exception:
+                logger.exception("Failed to create Discord scheduled event")
+
+        # Post live progress embed
+        try:
+            await self._update_event_embed(event)
+        except Exception:
+            logger.exception("Failed to post event embed")
+
+        actual_duration = duration_hours or tmpl.duration_hours
+        obj_count = await event.objectives.acount()
+
+        await interaction.followup.send(
+            f"✅ Created **{event.name}** (Event #{event.id})\n"
+            f"Reward: {event.reward_per_item:,}/item · "
+            f"Duration: {actual_duration:.0f}h · "
+            f"Objectives: {obj_count}",
+            ephemeral=True,
+        )
 
 
 def _progress_bar(percent: int, length: int = 10) -> str:

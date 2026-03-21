@@ -33,6 +33,8 @@ from .models import (
     SupplyChainEvent,
     SupplyChainObjective,
     SupplyChainContribution,
+    SupplyChainEventTemplate,
+    SupplyChainObjectiveTemplate,
 )
 
 
@@ -299,3 +301,43 @@ class SupplyChainContributionFactory(DjangoModelFactory):
     cargo_key = "C::Stone"
     quantity = LazyAttribute(lambda _: random.randint(1, 50))
     timestamp = LazyAttribute(lambda _: timezone.now())
+
+
+class SupplyChainEventTemplateFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SupplyChainEventTemplate
+
+    name = Faker("bs")
+    reward_per_item = 10_000
+    duration_hours = 24.0
+    enabled = True
+
+
+class SupplyChainObjectiveTemplateFactory(DjangoModelFactory):
+    class Meta:  # type: ignore[misc]
+        model = SupplyChainObjectiveTemplate
+
+    template = SubFactory("amc.factories.SupplyChainEventTemplateFactory")
+    reward_weight = 10
+    is_primary = False
+
+    @factory.post_generation
+    def cargos(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).cargos.add(*extracted)
+
+    @factory.post_generation
+    def destination_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).destination_points.add(*extracted)
+
+    @factory.post_generation
+    def source_points(self, create, extracted, **kwargs):
+        if not create:
+            return
+        if extracted:
+            cast(Any, self).source_points.add(*extracted)

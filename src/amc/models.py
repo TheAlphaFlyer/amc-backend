@@ -2461,6 +2461,51 @@ class SupplyChainContribution(models.Model):
     )
 
 
+class SupplyChainEventTemplate(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    reward_per_item = models.PositiveBigIntegerField(default=10_000)
+    duration_hours = models.FloatField(default=24.0)
+    enabled = models.BooleanField(default=True)
+
+    if TYPE_CHECKING:
+        objectives: models.Manager["SupplyChainObjectiveTemplate"]
+
+    def __str__(self):
+        return self.name
+
+
+@final
+class SupplyChainObjectiveTemplate(models.Model):
+    template = models.ForeignKey(
+        SupplyChainEventTemplate, on_delete=models.CASCADE, related_name="objectives"
+    )
+    cargos = models.ManyToManyField(
+        Cargo, related_name="sc_event_template_objectives", blank=True
+    )
+    destination_points = models.ManyToManyField(
+        DeliveryPoint, related_name="sc_objective_templates_in", blank=True
+    )
+    source_points = models.ManyToManyField(
+        DeliveryPoint, related_name="sc_objective_templates_out", blank=True
+    )
+    ceiling = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Max rewardable quantity. Null = uncapped.",
+    )
+    reward_weight = models.PositiveIntegerField(
+        default=10, help_text="Relative weight for reward pool share (e.g. 40 for 40%)"
+    )
+    is_primary = models.BooleanField(
+        default=False, help_text="Primary objectives define the main event goal"
+    )
+
+    def __str__(self):
+        cargo_names = ", ".join(c.label for c in self.cargos.all()[:3])
+        return f"{self.template.name} — {cargo_names or 'any cargo'}"
+
+
 @final
 class Voucher(models.Model):
     """A claimable reward voucher with a unique code.

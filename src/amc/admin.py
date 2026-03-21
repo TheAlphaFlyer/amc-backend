@@ -71,6 +71,8 @@ from .models import (
     SupplyChainEvent,
     SupplyChainObjective,
     SupplyChainContribution,
+    SupplyChainEventTemplate,
+    SupplyChainObjectiveTemplate,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1138,3 +1140,25 @@ class SupplyChainContributionAdmin(admin.ModelAdmin):
     search_fields = ["character__name", "cargo_key"]
     autocomplete_fields = ["character", "delivery"]
     readonly_fields = ["objective", "character", "delivery"]
+
+
+# ── Supply Chain Event Templates ─────────────────────────────────────
+
+
+class SupplyChainObjectiveTemplateInline(admin.TabularInline):
+    model = SupplyChainObjectiveTemplate
+    extra = 1
+    filter_horizontal = ["cargos", "destination_points", "source_points"]
+
+
+@admin.register(SupplyChainEventTemplate)
+class SupplyChainEventTemplateAdmin(admin.ModelAdmin):
+    list_display = [
+        "name",
+        "reward_per_item",
+        "duration_hours",
+        "enabled",
+    ]
+    list_filter = ["enabled"]
+    search_fields = ["name"]
+    inlines = [SupplyChainObjectiveTemplateInline]

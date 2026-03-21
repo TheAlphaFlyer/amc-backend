@@ -11,14 +11,19 @@ from amc.factories import (
     CharacterFactory,
     SupplyChainEventFactory,
     SupplyChainObjectiveFactory,
+    SupplyChainEventTemplateFactory,
+    SupplyChainObjectiveTemplateFactory,
 )
 from amc.models import (
     Cargo,
     DeliveryPoint,
     SupplyChainContribution,
+    SupplyChainEvent,
+    SupplyChainObjective,
 )
 from amc.supply_chain import (
     check_and_record_contribution,
+    create_event_from_template,
     distribute_event_rewards,
     get_conflicting_cargo_keys,
     monitor_supply_chain_events,
@@ -683,3 +688,136 @@ class ConflictingCargoKeysTests(TestCase):
         """When no events exist, conflict set is empty."""
         conflicts = await get_conflicting_cargo_keys()
         self.assertEqual(len(conflicts), 0)
+
+
+# ── Template Instantiation Tests ─────────────────────────────────────
+
+
+class TemplateInstantiationTests(TestCase):
+    """Tests for creating supply chain events from templates."""
+
+    async def test_basic_template_creates_event(self):
+        """Template instantiation creates a SupplyChainEvent with correct fields."""
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(
+            name="Steel Rush",
+            description="Export steel",
+            reward_per_item=10_000,
+            duration_hours=48.0,
+        )
+
+        event = await create_event_from_template(tmpl)
+
+        self.assertEqual(event.name, "Steel Rush")
+        self.assertEqual(event.description, "Export steel")
+        self.assertEqual(event.reward_per_item, 10_000)
+        self.assertFalse(event.rewards_distributed)
+
+        # Check duration (approximately 48 hours)
+        duration = (event.end_at - event.start_at).total_seconds() / 3600
+        self.assertAlmostEqual(duration, 48.0, delta=0.1)
+
+    async def test_objectives_created_from_template(self):
+        """Event objectives mirror the template objectives."""
+        cargo = await Cargo.objects.acreate(key="C::Steel", label="Steel")
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Test")
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=tmpl,
+            cargos=[cargo],
+            ceiling=200,
+            reward_weight=60,
+            is_primary=True,
+        )
+
+        event = await create_event_from_template(tmpl)
+
+        objectives = [o async for o in event.objectives.all()]
+        self.assertEqual(len(objectives), 1)
+
+        obj = objectives[0]
+        self.assertEqual(obj.ceiling, 200)
+        self.assertEqual(obj.reward_weight, 60)
+        self.assertTrue(obj.is_primary)
+        self.assertEqual(obj.quantity_fulfilled, 0)
+
+        cargo_keys = [c.key async for c in obj.cargos.all()]
+        self.assertIn("C::Steel", cargo_keys)
+
+    async def test_multiple_objectives(self):
+        """Template with multiple objectives creates matching event objectives."""
+        cargo1 = await Cargo.objects.acreate(key="C::Coal", label="Coal")
+        cargo2 = await Cargo.objects.acreate(key="C::Iron", label="Iron Ore")
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Multi")
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=tmpl, cargos=[cargo1], ceiling=100, reward_weight=40, is_primary=True,
+        )
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=tmpl, cargos=[cargo2], ceiling=300, reward_weight=60, is_primary=False,
+        )
+
+        event = await create_event_from_template(tmpl)
+
+        objectives = [o async for o in event.objectives.all()]
+        self.assertEqual(len(objectives), 2)
+
+        primaries = [o for o in objectives if o.is_primary]
+        self.assertEqual(len(primaries), 1)
+
+    async def test_destination_points_copied(self):
+        """DeliveryPoint M2M relations are copied from template to event objective."""
+        dest = await DeliveryPoint.objects.acreate(
+            guid="dp-test-1", name="Test Point", coord=Point(0, 0, 0)
+        )
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Dest Test")
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=tmpl, destination_points=[dest], is_primary=True,
+        )
+
+        event = await create_event_from_template(tmpl)
+        obj = await event.objectives.afirst()
+        dest_pks = [dp.pk async for dp in obj.destination_points.all()]
+        self.assertIn(dest.pk, dest_pks)
+
+    async def test_source_points_copied(self):
+        """Source point M2M relations are copied from template to event objective."""
+        src = await DeliveryPoint.objects.acreate(
+            guid="dp-src-1", name="Source Point", coord=Point(0, 0, 0)
+        )
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Src Test")
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=tmpl, source_points=[src], is_primary=True,
+        )
+
+        event = await create_event_from_template(tmpl)
+        obj = await event.objectives.afirst()
+        src_pks = [dp.pk async for dp in obj.source_points.all()]
+        self.assertIn(src.pk, src_pks)
+
+    async def test_duration_override(self):
+        """Duration override replaces template's default duration."""
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(
+            duration_hours=24.0,
+        )
+
+        event = await create_event_from_template(tmpl, duration_hours=12.0)
+
+        duration = (event.end_at - event.start_at).total_seconds() / 3600
+        self.assertAlmostEqual(duration, 12.0, delta=0.1)
+
+    async def test_template_with_no_objectives(self):
+        """Template with no objectives creates event with zero objectives."""
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Empty")
+
+        event = await create_event_from_template(tmpl)
+
+        count = await event.objectives.acount()
+        self.assertEqual(count, 0)
+
+    async def test_created_event_is_active(self):
+        """Newly created event from template should be active."""
+        tmpl = await sync_to_async(SupplyChainEventTemplateFactory)()
+
+        event = await create_event_from_template(tmpl)
+
+        self.assertTrue(event.is_active)
+        active_events = SupplyChainEvent.objects.filter_active()
+        self.assertTrue(await active_events.filter(pk=event.pk).aexists())
