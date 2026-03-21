@@ -40,7 +40,6 @@ from amc.models import (
     Character,
     MinistryTerm,
     SubsidyRule,
-    ShortcutZone,
 )
 
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
@@ -743,12 +742,10 @@ async def process_events(
         total_contract_payment = 0
 
         is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
-        used_shortcut = False
-        if character.last_location is not None:
-            used_shortcut = await ShortcutZone.objects.filter(
-                active=True,
-                polygon__covers=character.last_location,
-            ).aexists()
+        used_shortcut = (
+            character.shortcut_zone_entered_at is not None
+            and character.shortcut_zone_entered_at > timezone.now() - timedelta(hours=1)
+        )
 
         for event in es:
             try:
@@ -786,11 +783,18 @@ async def process_events(
         )
         if party_result is not None:
             player_profits.extend(party_result)
+            if used_shortcut:
+                await Character.objects.filter(pk=character.pk).aupdate(
+                    shortcut_zone_entered_at=None
+                )
             continue
 
         # Solo path: shortcut zones zero out subsidy
         if used_shortcut:
             total_subsidy = 0
+            await Character.objects.filter(pk=character.pk).aupdate(
+                shortcut_zone_entered_at=None
+            )
 
         player_profits.append((character, total_subsidy, total_base_payment, total_contract_payment))
 

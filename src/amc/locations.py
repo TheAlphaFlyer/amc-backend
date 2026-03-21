@@ -92,7 +92,12 @@ Any delivery completed while having passed through this area will <Highlight>NOT
 
 
 async def _check_shortcut_zones(character, old_location, new_location, ctx):
-    """Warn players when they approach or enter a ShortcutZone."""
+    """Warn players when they approach or enter a ShortcutZone.
+
+    Also maintains ``character.shortcut_zone_entered_at`` — a timestamp set on
+    zone entry, used by webhook processing to deny subsidies.  The timestamp
+    auto-expires after 1 hour so the penalty doesn't stick forever.
+    """
     player = character.player
     http_client_mod = ctx.get("http_client_mod")
     if http_client_mod is None:
@@ -100,6 +105,8 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
 
     old_2d = Point(old_location.x, old_location.y, srid=0)
     new_2d = Point(new_location.x, new_location.y, srid=0)
+
+    currently_inside_any = False
 
     async for zone in ShortcutZone.objects.filter(active=True):
         zone_geom = zone.polygon.clone()
@@ -124,13 +131,21 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
         was_outside_polygon = distance_old > 0
         is_inside_polygon = distance_new == 0
 
+        if is_inside_polygon:
+            currently_inside_any = True
+
         if was_outside_polygon and is_inside_polygon:
+            character.shortcut_zone_entered_at = timezone.now()
             await show_popup(
                 http_client_mod,
                 SHORTCUT_ZONE_ENTRY_MESSAGE,
                 player_id=player.unique_id,
             )
             await asyncio.sleep(0.1)
+
+    # Clear the timestamp when the player is confirmed outside ALL zones
+    if character.shortcut_zone_entered_at and not currently_inside_any:
+        character.shortcut_zone_entered_at = None
 
 
 async def _check_pois_and_portals(character, old_location, new_location, ctx):
@@ -238,5 +253,7 @@ async def monitor_locations(ctx):
     # Bulk update cached locations on Character
     if characters_to_update:
         await Character.objects.abulk_update(
-            characters_to_update, ["last_location", "last_vehicle_key", "last_online"]
+            characters_to_update,
+            ["last_location", "last_vehicle_key", "last_online", "shortcut_zone_entered_at"],
         )
+

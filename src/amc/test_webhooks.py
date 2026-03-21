@@ -21,7 +21,6 @@ from amc.models import (
     Delivery,
     SubsidyRule,
     Cargo,
-    ShortcutZone,
 )
 from decimal import Decimal
 from django.utils import timezone
@@ -619,29 +618,17 @@ class ExtraWebhookTests(TestCase):
     async def test_shortcut_usage(
         self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        # Test that subsidy is zeroed if shortcut was used
+        # Test that subsidy is zeroed if shortcut_zone_entered_at is recent
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, guid="test-char-shortcut"
+            player=player, guid="test-char-shortcut",
+            shortcut_zone_entered_at=timezone.now(),
         )
         await CharacterLocation.objects.acreate(
             character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
-        )
-
-        # Create a ShortcutZone polygon covering the test point
-        zone_polygon = Point(359285, 892222, srid=3857).buffer(10000)
-        await ShortcutZone.objects.acreate(
-            name="Test Shortcut Zone",
-            polygon=zone_polygon,
-            active=True,
-        )
-        await CharacterLocation.objects.acreate(
-            character=character,
-            location=Point(359285, 892222, -3519),
-            timestamp=timezone.now(),
         )
 
         await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
@@ -667,42 +654,27 @@ class ExtraWebhookTests(TestCase):
             },
         }
 
-        # get_subsidy_for_cargo usually returns some subsidy.
-        # Let's ensure it would have a subsidy usually.
-        payment, subsidy, _ = await process_event(event, player, character)
-
-        # With shortcut used, subsidy should be 0 and payment should not include it
-        self.assertEqual(subsidy, 0)
-        # The logic in process_events (plural) is:
-        # if used_shortcut:
-        #   total_payment -= total_subsidy
-        #   total_subsidy = 0
-
-        # Let's test via process_events to see the zeroing
-        await CharacterLocation.objects.all().adelete()
+        # Test via process_events to verify the timestamp-based zeroing
         await PlayerStatusLog.objects.acreate(
             character=character,
             timespan=(timezone.now() - timedelta(minutes=5), timezone.now()),
         )
-        await CharacterLocation.objects.acreate(
-            character=character,
-            location=Point(359285, 892222, -3519),
-            timestamp=timezone.now(),
-        )
 
-        # We need mock_get_rp_mode for process_events
         player_profits = []
         with patch(
             "amc.webhook.on_player_profits", new_callable=AsyncMock
         ) as mock_profits:
             await process_events([event], http_client_mod=MagicMock())
-            # Yield to background tasks if any
             await asyncio.sleep(0)
             player_profits = mock_profits.call_args[0][0]
 
         # player_profits format: (character, total_subsidy, total_payment, contract_payment)
         char, total_subsidy, total_payment, _ = player_profits[0]
         self.assertEqual(total_subsidy, 0)
+
+        # Timestamp should be cleared after consumption
+        await character.arefresh_from_db()
+        self.assertIsNone(character.shortcut_zone_entered_at)
 
     async def test_cargo_dumped(
         self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode

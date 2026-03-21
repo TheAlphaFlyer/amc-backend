@@ -257,6 +257,9 @@ class Character(models.Model):
     last_location = models.PointField(srid=0, dim=3, null=True, blank=True)
     last_vehicle_key = models.CharField(max_length=100, null=True, blank=True)
     last_online = models.DateTimeField(null=True, blank=True)
+    # Set to timezone.now() by _check_shortcut_zones on zone entry,
+    # consumed/cleared by process_events; auto-expires after 1 hour.
+    shortcut_zone_entered_at = models.DateTimeField(null=True, blank=True)
 
     total_donations = models.PositiveBigIntegerField(default=0)
 
