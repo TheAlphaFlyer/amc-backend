@@ -126,6 +126,10 @@ async def on_vehicle_sold(character, vehicle_name, http_client_mod):
         if sale_proceeds <= 0:
             return
 
+        # Eagerly load the player relation to avoid SynchronousOnlyOperation
+        # when repay_loan_for_profit accesses character.player.unique_id
+        character = await Character.objects.select_related("player").aget(pk=character.pk)
+
         loan_balance = await get_player_loan_balance(character)
         if loan_balance <= 0:
             return
