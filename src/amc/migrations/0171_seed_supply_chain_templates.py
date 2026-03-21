@@ -31,7 +31,7 @@ def seed_templates(apps, schema_editor):
                     "is_primary": True,
                 },
                 {
-                    "cargo_keys": ["Coal", "IronOre"],
+                    "cargo_keys": ["Coal", "IronOre", "Limestone", "LimestoneRock", "Fuel", "WoodPlank_14ft_5t"],
                     "dest_names": [],
                     "src_names": [],
                     "ceiling": 500,
@@ -239,7 +239,7 @@ def seed_templates(apps, schema_editor):
                     "is_primary": True,
                 },
                 {
-                    "cargo_keys": ["Coal", "IronOre"],
+                    "cargo_keys": ["Coal", "IronOre", "Limestone", "LimestoneRock", "Fuel", "WoodPlank_14ft_5t"],
                     "dest_names": [],
                     "src_names": [],
                     "ceiling": 500,
