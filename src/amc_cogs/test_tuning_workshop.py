@@ -121,7 +121,7 @@ class ClaimRewardCommandTestCase(TestCase):
         self.bot.user.id = 999999
         self.cog = TuningWorkshopCog(self.bot)
 
-    def _make_interaction(self, thread_id, user_id, reactions=None):
+    def _make_interaction(self, thread_id, user_id, reactions=None, history=None):
         interaction = AsyncMock()
         thread = MagicMock(spec=discord.Thread)
         thread.parent_id = TuningWorkshopCog.FORUM_CHANNEL_ID
@@ -133,8 +133,14 @@ class ClaimRewardCommandTestCase(TestCase):
 
         if reactions is not None:
             starter_message = MagicMock()
+            starter_message.id = thread_id  # Starter message ID == thread ID
             starter_message.reactions = reactions
             thread.fetch_message = AsyncMock(return_value=starter_message)
+
+        # Mock channel.history() as an async iterator
+        thread.history = MagicMock(
+            return_value=AsyncIterator(history or [])
+        )
 
         return interaction
 
@@ -312,6 +318,137 @@ class ClaimRewardCommandTestCase(TestCase):
 
         voucher = await Voucher.objects.afirst()
         self.assertEqual(voucher.amount, 100_000)  # Only 1 valid reactor
+
+    async def test_claim_counts_reactions_on_image_messages(self):
+        """Reactions on author's image messages in the thread are counted."""
+        now = timezone.now()
+        await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345, author_discord_id=67890, created_at=now,
+        )
+
+        # Starter message: 1 reactor
+        user1 = MagicMock(id=11111, bot=False)
+        starter_reaction = MagicMock()
+        starter_reaction.users = MagicMock(return_value=AsyncIterator([user1]))
+
+        # Author's image reply: 1 different reactor
+        user2 = MagicMock(id=22222, bot=False)
+        image_reaction = MagicMock()
+        image_reaction.users = MagicMock(return_value=AsyncIterator([user2]))
+
+        image_attachment = MagicMock()
+        image_attachment.content_type = "image/png"
+
+        image_msg = MagicMock()
+        image_msg.id = 99999
+        image_msg.author = MagicMock(id=67890)
+        image_msg.attachments = [image_attachment]
+        image_msg.reactions = [image_reaction]
+
+        interaction = self._make_interaction(
+            12345, 67890, reactions=[starter_reaction], history=[image_msg],
+        )
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        voucher = await Voucher.objects.afirst()
+        self.assertEqual(voucher.amount, 200_000)  # 2 unique reactors
+
+    async def test_claim_ignores_non_image_messages(self):
+        """Reactions on author's text-only replies are NOT counted."""
+        now = timezone.now()
+        await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345, author_discord_id=67890, created_at=now,
+        )
+
+        # Starter message: no reactions
+        # Author's text-only reply: has reactions but no image
+        user1 = MagicMock(id=11111, bot=False)
+        text_reaction = MagicMock()
+        text_reaction.users = MagicMock(return_value=AsyncIterator([user1]))
+
+        text_msg = MagicMock()
+        text_msg.id = 99999
+        text_msg.author = MagicMock(id=67890)
+        text_msg.attachments = []  # No attachments
+        text_msg.reactions = [text_reaction]
+
+        interaction = self._make_interaction(
+            12345, 67890, reactions=[], history=[text_msg],
+        )
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn("no reactions", interaction.response.send_message.call_args[0][0])
+        self.assertEqual(await Voucher.objects.acount(), 0)
+
+    async def test_claim_ignores_other_users_image_messages(self):
+        """Reactions on other users' image messages are NOT counted."""
+        now = timezone.now()
+        await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345, author_discord_id=67890, created_at=now,
+        )
+
+        # Another user's image message with reactions
+        user1 = MagicMock(id=11111, bot=False)
+        other_reaction = MagicMock()
+        other_reaction.users = MagicMock(return_value=AsyncIterator([user1]))
+
+        image_attachment = MagicMock()
+        image_attachment.content_type = "image/jpeg"
+
+        other_msg = MagicMock()
+        other_msg.id = 99999
+        other_msg.author = MagicMock(id=55555)  # Different user
+        other_msg.attachments = [image_attachment]
+        other_msg.reactions = [other_reaction]
+
+        interaction = self._make_interaction(
+            12345, 67890, reactions=[], history=[other_msg],
+        )
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        self.assertIn("no reactions", interaction.response.send_message.call_args[0][0])
+        self.assertEqual(await Voucher.objects.acount(), 0)
+
+    async def test_claim_deduplicates_across_messages(self):
+        """Same user reacting on starter and image message counts once."""
+        now = timezone.now()
+        await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345, author_discord_id=67890, created_at=now,
+        )
+
+        # Same user reacts on both starter and image reply
+        same_user = MagicMock(id=11111, bot=False)
+
+        starter_reaction = MagicMock()
+        starter_reaction.users = MagicMock(return_value=AsyncIterator([same_user]))
+
+        image_reaction = MagicMock()
+        image_reaction.users = MagicMock(return_value=AsyncIterator([same_user]))
+
+        image_attachment = MagicMock()
+        image_attachment.content_type = "image/png"
+
+        image_msg = MagicMock()
+        image_msg.id = 99999
+        image_msg.author = MagicMock(id=67890)
+        image_msg.attachments = [image_attachment]
+        image_msg.reactions = [image_reaction]
+
+        interaction = self._make_interaction(
+            12345, 67890, reactions=[starter_reaction], history=[image_msg],
+        )
+
+        await self.cog.claim_reward.callback(self.cog, interaction)
+
+        voucher = await Voucher.objects.afirst()
+        self.assertEqual(voucher.amount, 100_000)  # Deduplicated: 1 unique reactor
 
 
 class ClaimVoucherCommandTestCase(TestCase):

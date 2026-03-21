@@ -129,22 +129,16 @@ class TuningWorkshopCog(commands.Cog):
             )
             return
 
-        # Count current reactions
-        try:
-            starter_message = await channel.fetch_message(channel.id)
-        except (discord.NotFound, discord.HTTPException):
+        # Count current reactions across starter + author's image messages
+        unique_reactors = await self._count_unique_reactors(
+            channel, submission.author_discord_id
+        )
+        if unique_reactors is None:
             await interaction.response.send_message(
-                "❌ Could not fetch the original post to count reactions.",
+                "❌ Could not fetch messages to count reactions.",
                 ephemeral=True,
             )
             return
-
-        unique_reactors = set()
-        for reaction in starter_message.reactions:
-            async for user in reaction.users():
-                if user.bot or user.id == submission.author_discord_id:
-                    continue
-                unique_reactors.add(user.id)
 
         current_count = len(unique_reactors)
         new_reactions = current_count - submission.rewarded_reaction_count
@@ -208,3 +202,42 @@ class TuningWorkshopCog(commands.Cog):
             text=f"Total reactions rewarded: {current_count}"
         )
         await channel.send(embed=embed)
+
+    async def _count_unique_reactors(self, channel, author_id):
+        """Count unique reactors across the starter message and author's image messages.
+
+        Returns a set of unique reactor user IDs, or None if the starter message
+        could not be fetched.
+        """
+        try:
+            starter_message = await channel.fetch_message(channel.id)
+        except (discord.NotFound, discord.HTTPException):
+            return None
+
+        unique_reactors = set()
+
+        # Collect reactions from starter message
+        for reaction in starter_message.reactions:
+            async for user in reaction.users():
+                if user.bot or user.id == author_id:
+                    continue
+                unique_reactors.add(user.id)
+
+        # Collect reactions from author's image messages in the thread
+        async for message in channel.history(limit=None):
+            if message.id == starter_message.id:
+                continue  # Already counted
+            if message.author.id != author_id:
+                continue
+            if not any(
+                a.content_type and a.content_type.startswith("image/")
+                for a in message.attachments
+            ):
+                continue
+            for reaction in message.reactions:
+                async for user in reaction.users():
+                    if user.bot or user.id == author_id:
+                        continue
+                    unique_reactors.add(user.id)
+
+        return unique_reactors
