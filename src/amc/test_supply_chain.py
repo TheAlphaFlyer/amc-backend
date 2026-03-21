@@ -820,3 +820,194 @@ class TemplateInstantiationTests(TestCase):
         self.assertTrue(event.is_active)
         active_events = SupplyChainEvent.objects.filter_active()
         self.assertTrue(await active_events.filter(pk=event.pk).aexists())
+
+
+# ── End-to-End Lifecycle Tests ───────────────────────────────────────
+
+
+@patch("amc.supply_chain.send_fund_to_player", new_callable=AsyncMock)
+class EndToEndLifecycleTests(TestCase):
+    """Full lifecycle: template → create event → deliver → distribute rewards."""
+
+    async def _setup_steel_rush(self):
+        """Set up a Steel Rush-style template with two objectives."""
+        self.coal = await Cargo.objects.acreate(key="C::Coal", label="Coal")
+        self.steel = await Cargo.objects.acreate(key="C::Steel", label="Steel Coil")
+        self.mine = await DeliveryPoint.objects.acreate(
+            guid="mine-1", name="Coal Mine", coord=Point(0, 0, 0)
+        )
+        self.mill = await DeliveryPoint.objects.acreate(
+            guid="mill-1", name="Steel Mill", coord=Point(100, 100, 0)
+        )
+        self.harbor = await DeliveryPoint.objects.acreate(
+            guid="harbor-1", name="Harbor", coord=Point(200, 200, 0)
+        )
+
+        self.tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(
+            name="Steel Rush", reward_per_item=10_000, duration_hours=48.0,
+        )
+        # Primary: Steel Coil → Harbor (60% weight)
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=self.tmpl,
+            cargos=[self.steel],
+            destination_points=[self.harbor],
+            ceiling=100,
+            reward_weight=60,
+            is_primary=True,
+        )
+        # Secondary: Coal → Steel Mill (40% weight)
+        await sync_to_async(SupplyChainObjectiveTemplateFactory)(
+            template=self.tmpl,
+            cargos=[self.coal],
+            destination_points=[self.mill],
+            ceiling=500,
+            reward_weight=40,
+            is_primary=False,
+        )
+
+    async def test_template_to_contribution_lifecycle(self, mock_send):
+        """Event from template correctly matches deliveries through check_and_record_contribution."""
+        await self._setup_steel_rush()
+        _, char = await _make_player_and_char("Trucker")
+
+        # Instantiate event from template
+        event = await create_event_from_template(self.tmpl)
+        self.assertEqual(await event.objectives.acount(), 2)
+
+        # Deliver steel coils to harbor — should match primary objective
+        recorded = await check_and_record_contribution(
+            delivery=None,
+            character=char,
+            cargo_key="C::Steel",
+            quantity=10,
+            destination_point=self.harbor,
+            source_point=self.mill,
+        )
+        self.assertEqual(recorded, 10)
+        self.assertEqual(await SupplyChainContribution.objects.acount(), 1)
+
+        # Deliver coal to steel mill — should match secondary objective
+        recorded = await check_and_record_contribution(
+            delivery=None,
+            character=char,
+            cargo_key="C::Coal",
+            quantity=20,
+            destination_point=self.mill,
+            source_point=self.mine,
+        )
+        self.assertEqual(recorded, 20)
+        self.assertEqual(await SupplyChainContribution.objects.acount(), 2)
+
+    async def test_wrong_destination_no_match_from_template(self, mock_send):
+        """Delivery to wrong destination doesn't match template-created objectives."""
+        await self._setup_steel_rush()
+        _, char = await _make_player_and_char("Trucker")
+        _event = await create_event_from_template(self.tmpl)
+
+        # Deliver steel coil to the MILL (not the harbor) — shouldn't match primary
+        recorded = await check_and_record_contribution(
+            delivery=None,
+            character=char,
+            cargo_key="C::Steel",
+            quantity=10,
+            destination_point=self.mill,
+            source_point=self.mine,
+        )
+        self.assertEqual(recorded, 0)
+
+    async def test_full_lifecycle_template_to_payout(self, mock_send):
+        """Full lifecycle: template → event → deliveries → end → distribute rewards."""
+        await self._setup_steel_rush()
+        _, alice = await _make_player_and_char("Alice")
+        _, bob = await _make_player_and_char("Bob")
+
+        # Instantiate event
+        event = await create_event_from_template(self.tmpl)
+
+        # Alice delivers 60 steel coils to harbor (primary)
+        await check_and_record_contribution(
+            delivery=None, character=alice, cargo_key="C::Steel",
+            quantity=60, destination_point=self.harbor, source_point=self.mill,
+        )
+        # Bob delivers 40 steel coils to harbor (primary)
+        await check_and_record_contribution(
+            delivery=None, character=bob, cargo_key="C::Steel",
+            quantity=40, destination_point=self.harbor, source_point=self.mill,
+        )
+        # Alice delivers 100 coal to mill (secondary)
+        await check_and_record_contribution(
+            delivery=None, character=alice, cargo_key="C::Coal",
+            quantity=100, destination_point=self.mill, source_point=self.mine,
+        )
+
+        # Fast-forward event to ended
+        event.start_at = timezone.now() - timedelta(hours=49)
+        event.end_at = timezone.now() - timedelta(hours=1)
+        await event.asave(update_fields=["start_at", "end_at"])
+
+        # Distribute
+        await distribute_event_rewards(event)
+
+        await event.arefresh_from_db()
+        self.assertTrue(event.rewards_distributed)
+
+        # Primary pool = 10K × 100 (60+40 capped at ceiling=100) = 1M
+        # Total weight = 60 + 40 = 100
+        # Obj1 (primary, 60%): 600K → Alice 60/100 = 360K, Bob 40/100 = 240K
+        # Obj2 (secondary, 40%): 400K → Alice gets all = 400K
+        rewards = {}
+        for call in mock_send.call_args_list:
+            amount, char_obj = call[0][0], call[0][1]
+            rewards[char_obj.name] = rewards.get(char_obj.name, 0) + amount
+
+        self.assertEqual(rewards["Alice"], 360_000 + 400_000)  # 760K
+        self.assertEqual(rewards["Bob"], 240_000)
+
+    async def test_ceiling_enforcement_through_lifecycle(self, mock_send):
+        """Primary ceiling caps contributions even through the full lifecycle."""
+        await self._setup_steel_rush()
+        _, trucker = await _make_player_and_char("Trucker")
+
+        event = await create_event_from_template(self.tmpl)
+
+        # Primary ceiling is 100 — deliver 120 steel coils
+        await check_and_record_contribution(
+            delivery=None, character=trucker, cargo_key="C::Steel",
+            quantity=80, destination_point=self.harbor, source_point=self.mill,
+        )
+        await check_and_record_contribution(
+            delivery=None, character=trucker, cargo_key="C::Steel",
+            quantity=40, destination_point=self.harbor, source_point=self.mill,
+        )
+
+        # Only 100 should be recorded (80 + 20, not 80 + 40)
+        total_contributed = 0
+        async for c in SupplyChainContribution.objects.filter(
+            objective__event=event, objective__is_primary=True
+        ):
+            total_contributed += c.quantity
+        self.assertEqual(total_contributed, 100)
+
+        # Verify objective quantity_fulfilled
+        primary = await event.objectives.filter(is_primary=True).afirst()
+        await primary.arefresh_from_db()
+        self.assertEqual(primary.quantity_fulfilled, 100)
+
+    async def test_concurrent_events_from_templates(self, mock_send):
+        """Two template-created events can run concurrently without interference."""
+        await self._setup_steel_rush()
+        _, char = await _make_player_and_char("Trucker")
+
+        # Create two events from the same template
+        _event1 = await create_event_from_template(self.tmpl)
+        _event2 = await create_event_from_template(self.tmpl)
+
+        # Deliver steel coils — should match BOTH events' primary objectives
+        recorded = await check_and_record_contribution(
+            delivery=None, character=char, cargo_key="C::Steel",
+            quantity=10, destination_point=self.harbor, source_point=self.mill,
+        )
+
+        # Should create 2 contributions (one per event)
+        self.assertEqual(await SupplyChainContribution.objects.acount(), 2)
+        self.assertGreater(recorded, 0)
