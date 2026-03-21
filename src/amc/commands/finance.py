@@ -172,7 +172,7 @@ async def cmd_withdraw(ctx: CommandContext, amount: str, verification_code: str 
         (amount_int, ctx.character.guid), verification_code
     )
 
-    if amount_int > 1_000_000 and not verified:
+    if amount_int >= 1_000_000 and not verified:
         await ctx.reply(
             _("Confirm large withdrawal: /withdraw {amount} {code_gen}").format(
                 amount=amount, code_gen=code_gen.upper()
