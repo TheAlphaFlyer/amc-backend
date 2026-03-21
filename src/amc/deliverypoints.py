@@ -1,4 +1,6 @@
 import re
+
+from django.utils import timezone
 from django.contrib.gis.geos import Point
 from amc.models import Cargo, DeliveryPoint, DeliveryPointStorage, DeliveryJobTemplate
 from amc.game_server import get_deliverypoints
@@ -168,6 +170,9 @@ async def monitor_deliverypoints(ctx):
 
     # Batch save data field updates
     if dps_to_update_data:
+        now = timezone.now()
+        for dp in dps_to_update_data:
+            dp.last_updated = now
         await DeliveryPoint.objects.abulk_update(
             dps_to_update_data, ["data", "last_updated"]
         )
