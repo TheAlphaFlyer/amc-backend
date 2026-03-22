@@ -205,3 +205,123 @@ class SourceReservationTestCase(TestCase):
             expired_at__gte=timezone.now(),
         ).acount()
         self.assertEqual(job_count, 2, "Jobs with independent sources should both post")
+
+
+class CrossTickConflictTestCase(TestCase):
+    """Verify that subsequent cron ticks don't create conflicting jobs."""
+
+    def setUp(self):
+        self.source = DeliveryPointFactory(name="Source Farm")
+        self.dest = DeliveryPointFactory(name="Destination")
+        self.wheat = Cargo.objects.create(key="C::Wheat", label="Wheat")
+
+        self.template = _make_template(
+            self.wheat, self.source, self.dest, quantity=50, name="Wheat Haul"
+        )
+
+        DeliveryPointStorage.objects.create(
+            delivery_point=self.source,
+            cargo=self.wheat,
+            cargo_key="C::Wheat",
+            kind=DeliveryPointStorage.Kind.OUTPUT,
+            amount=100,
+            capacity=100,
+        )
+        DeliveryPointStorage.objects.create(
+            delivery_point=self.dest,
+            cargo=self.wheat,
+            cargo_key="C::Wheat",
+            kind=DeliveryPointStorage.Kind.INPUT,
+            amount=0,
+            capacity=100,
+        )
+
+        JobPostingConfig.objects.update_or_create(
+            pk=1,
+            defaults={
+                "min_base_jobs": 10,
+                "max_posts_per_tick": 10,
+                "target_success_rate": 0.5,
+                "min_multiplier": 1.0,
+                "max_multiplier": 2.0,
+                "treasury_equilibrium": 50_000_000,
+                "treasury_sensitivity": 0.5,
+            },
+        )
+
+    @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
+    @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
+    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(_PATCHES["announce"], new_callable=AsyncMock)
+    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    async def test_second_tick_no_duplicate_from_same_template(
+        self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
+    ):
+        """A second cron tick should not re-post a job from the same template
+        while the first is still active (exclude_has_conflicting_active_job)."""
+        ctx = {"http_client": AsyncMock()}
+
+        # First tick — should post 1 job
+        await monitor_jobs(ctx)
+        count_after_first = await DeliveryJob.objects.filter(
+            fulfilled_at__isnull=True,
+            expired_at__gte=timezone.now(),
+        ).acount()
+        self.assertEqual(count_after_first, 1)
+
+        # Second tick — same template still has an active job → skip
+        await monitor_jobs(ctx)
+        count_after_second = await DeliveryJob.objects.filter(
+            fulfilled_at__isnull=True,
+            expired_at__gte=timezone.now(),
+        ).acount()
+        self.assertEqual(count_after_second, 1, "Second tick should not duplicate the same template's job")
+
+    @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
+    @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
+    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(_PATCHES["announce"], new_callable=AsyncMock)
+    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    async def test_second_tick_skipped_when_source_depleted(
+        self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
+    ):
+        """A different template sharing the same source+cargo should also be
+        blocked by exclude_has_conflicting_active_job across ticks."""
+        dest_b = await sync_to_async(DeliveryPointFactory)(name="Destination B")
+        await DeliveryPointStorage.objects.acreate(
+            delivery_point=dest_b,
+            cargo=self.wheat,
+            cargo_key="C::Wheat",
+            kind=DeliveryPointStorage.Kind.INPUT,
+            amount=0,
+            capacity=100,
+        )
+        # Second template shares the same cargo + source, different destination
+        await sync_to_async(_make_template)(
+            self.wheat, self.source, dest_b, quantity=50, name="Wheat to B"
+        )
+
+        ctx = {"http_client": AsyncMock()}
+
+        # First tick — posts 1 job (source=60, only enough for one via reservation)
+        await DeliveryPointStorage.objects.filter(
+            delivery_point=self.source, cargo=self.wheat,
+        ).aupdate(amount=60)
+        await monitor_jobs(ctx)
+        count_after_first = await DeliveryJob.objects.filter(
+            fulfilled_at__isnull=True,
+            expired_at__gte=timezone.now(),
+        ).acount()
+        self.assertEqual(count_after_first, 1, "First tick: only 1 job fits in 60 source")
+
+        # Second tick — the remaining template shares source_points with the
+        # active job, so exclude_has_conflicting_active_job blocks it
+        await monitor_jobs(ctx)
+        count_after_second = await DeliveryJob.objects.filter(
+            fulfilled_at__isnull=True,
+            expired_at__gte=timezone.now(),
+        ).acount()
+        self.assertEqual(
+            count_after_second, 1,
+            "Second tick should not post conflicting job sharing same source + cargo",
+        )
