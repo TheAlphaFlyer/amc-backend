@@ -263,6 +263,9 @@ class Character(models.Model):
 
     total_donations = models.PositiveBigIntegerField(default=0)
 
+    # Credit score: 0–200, default 100 (neutral). Affects loan fees.
+    credit_score = models.IntegerField(default=100)
+
     # Government Employee
     gov_employee_until = models.DateTimeField(null=True, blank=True)
     gov_employee_level = models.PositiveIntegerField(default=0)

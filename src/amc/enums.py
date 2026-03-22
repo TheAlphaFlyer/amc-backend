@@ -101,6 +101,7 @@ class VehicleKey(models.TextChoices):
     Stella = "Stella", "Stella"
     Koma = "Koma", "Koma"
     Trophy_Taxi = "Trophy_Taxi", "Trophy Taxi"
+    Trophy_Air = "Trophy_Air", "Trophy Air"
     Elisa = "Elisa", "Elisa"
     Taxi_01 = "Taxi_01", "Elisa Taxi"
     Duke = "Duke", "Duke"

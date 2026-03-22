@@ -221,7 +221,7 @@ async def register_player_withdrawal(amount, character, player):
 LOAN_INTEREST_RATES = [0.1, 0.2, 0.3]
 
 
-def calc_loan_fee(amount, character, max_loan):
+def calc_loan_fee(amount, character, max_loan, credit_score=100):
     threshold = Decimal(0)
     fee = Decimal(0)
     for i, interest_rate in enumerate(LOAN_INTEREST_RATES, start=1):
@@ -236,12 +236,22 @@ def calc_loan_fee(amount, character, max_loan):
 
     if amount > threshold:
         fee += (Decimal(amount) - threshold) * Decimal(interest_rate)
-    return int(fee)
+
+    # Credit score multiplier (piecewise linear):
+    #   Score 0→100: multiplier 2.0→1.0
+    #   Score 100→200: multiplier 1.0→0.5
+    clamped_score = max(0, min(200, credit_score))
+    if clamped_score <= 100:
+        fee_multiplier = 2.0 - clamped_score / 100
+    else:
+        fee_multiplier = 1.0 - 0.5 * (clamped_score - 100) / 100
+    fee = int(fee * Decimal(str(fee_multiplier)))
+    return fee
 
 
 async def register_player_take_loan(amount, character):
     max_loan, _ = await get_character_max_loan(character)
-    fee = calc_loan_fee(amount, character, max_loan)
+    fee = calc_loan_fee(amount, character, max_loan, credit_score=character.credit_score)
     principal = Decimal(amount) + Decimal(fee)
 
     loan_account, _ = await Account.objects.aget_or_create(
@@ -431,6 +441,148 @@ async def is_character_npl(character) -> bool:
     if status is None:
         return False
     return bool(status["is_npl"])
+
+
+# --- Credit Score ---
+
+CREDIT_SCORE_MET = 10       # +10 per period when obligations met
+CREDIT_SCORE_EXCEEDED = 15  # +15 per period when repaid ≥ 200% of required
+CREDIT_SCORE_MISSED = -30   # −30 per period when in NPL
+CREDIT_SCORE_MIN = 0
+CREDIT_SCORE_MAX = 200
+CREDIT_SCORE_MIN_BALANCE = 100_000  # minimum loan balance for credit score evaluation
+CREDIT_UTILIZATION_HIGH = Decimal("0.70")   # >70% utilization: -5 per period
+CREDIT_UTILIZATION_VERY_HIGH = Decimal("0.90")  # >90% utilization: -10 per period
+CREDIT_UTILIZATION_HIGH_PENALTY = -5
+CREDIT_UTILIZATION_VERY_HIGH_PENALTY = -10
+
+
+def get_credit_score_label(score):
+    """Human-readable label for a credit score."""
+    if score >= 171:
+        return "Excellent"
+    if score >= 131:
+        return "Very Good"
+    if score >= 101:
+        return "Good"
+    if score == 100:
+        return "Neutral"
+    if score >= 71:
+        return "Fair"
+    if score >= 41:
+        return "Poor"
+    return "Very Poor"
+
+
+async def evaluate_credit_scores(ctx=None):
+    """Daily cron: evaluate credit scores for all qualifying loan accounts.
+
+    Each account is scored at most once per NPL period (default 7 days).
+    Uses the same repayment window as NPL detection.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    now = timezone.now()
+
+    accounts = await sync_to_async(
+        lambda: list(
+            Account.objects.filter(
+                account_type=Account.AccountType.ASSET,
+                book=Account.Book.BANK,
+                character__isnull=False,
+                balance__gte=CREDIT_SCORE_MIN_BALANCE,
+            ).select_related("character")
+        )
+    )()
+
+    updated_characters = []
+    updated_accounts = []
+
+    for account in accounts:
+        period_days = account.min_repayment_period_days or NPL_DEFAULT_PERIOD_DAYS
+
+        # Only evaluate once per period
+        if (
+            account.last_credit_score_evaluated_at is not None
+            and (now - account.last_credit_score_evaluated_at).days < period_days
+        ):
+            continue
+
+        rate = (
+            account.min_repayment_rate
+            if account.min_repayment_rate is not None
+            else NPL_DEFAULT_REPAYMENT_RATE
+        )
+        cutoff = now - timedelta(days=period_days)
+
+        total_repaid = await sync_to_async(
+            lambda: (
+                LedgerEntry.objects.filter(
+                    account=account,
+                    credit__gt=0,
+                    journal_entry__created_at__gte=cutoff,
+                ).aggregate(total=Sum("credit"))["total"]
+            ) or Decimal(0)
+        )()
+
+        min_required = account.balance * rate
+        character = account.character
+
+        if total_repaid < min_required:
+            # Missed obligations (NPL)
+            delta = CREDIT_SCORE_MISSED
+        elif total_repaid >= min_required * 2:
+            # Exceeded obligations
+            delta = CREDIT_SCORE_EXCEEDED
+        else:
+            # Met obligations
+            delta = CREDIT_SCORE_MET
+
+        # Credit utilization penalty
+        try:
+            max_loan, _ = await get_character_max_loan(character)
+            if max_loan > 0:
+                utilization = account.balance / Decimal(max_loan)
+                if utilization > CREDIT_UTILIZATION_VERY_HIGH:
+                    delta += CREDIT_UTILIZATION_VERY_HIGH_PENALTY
+                elif utilization > CREDIT_UTILIZATION_HIGH:
+                    delta += CREDIT_UTILIZATION_HIGH_PENALTY
+        except Exception:
+            pass  # Skip utilization check if max_loan lookup fails
+
+        old_score = character.credit_score
+        character.credit_score = max(
+            CREDIT_SCORE_MIN,
+            min(CREDIT_SCORE_MAX, character.credit_score + delta),
+        )
+
+        if character.credit_score != old_score:
+            updated_characters.append(character)
+            logger.info(
+                f"Credit score: {character.name} {old_score} → {character.credit_score} (delta={delta:+d})"
+            )
+
+        account.last_credit_score_evaluated_at = now
+        updated_accounts.append(account)
+
+    # Bulk save
+    if updated_characters:
+        from amc.models import Character
+        await sync_to_async(
+            lambda: Character.objects.bulk_update(updated_characters, ["credit_score"])
+        )()
+    if updated_accounts:
+        await sync_to_async(
+            lambda: Account.objects.bulk_update(
+                updated_accounts, ["last_credit_score_evaluated_at"]
+            )
+        )()
+
+    logger.info(
+        f"Credit score evaluation: {len(updated_characters)} scores updated, "
+        f"{len(updated_accounts)} accounts evaluated"
+    )
 
 
 async def register_player_repay_loan(amount, character):

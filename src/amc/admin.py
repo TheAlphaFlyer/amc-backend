@@ -73,6 +73,7 @@ from .models import (
     SupplyChainContribution,
     SupplyChainEventTemplate,
     SupplyChainObjectiveTemplate,
+    VehicleDecal,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -843,6 +844,16 @@ class WorldTextAdmin(admin.ModelAdmin):
 @admin.register(WorldObject)
 class WorldObjectAdmin(admin.ModelAdmin):
     list_display = ["id", "asset_path"]
+
+
+@admin.register(VehicleDecal)
+class VehicleDecalAdmin(admin.ModelAdmin):
+    list_display = ["name", "player", "vehicle_key", "private", "price"]
+    list_select_related = ["player"]
+    search_fields = ["name", "hash", "vehicle_key", "player__unique_id"]
+    list_filter = ["private", "vehicle_key"]
+    autocomplete_fields = ["player"]
+    readonly_fields = ["hash"]
 
 
 @admin.register(JobPostingConfig)

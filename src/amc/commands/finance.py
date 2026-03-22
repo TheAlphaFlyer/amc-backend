@@ -9,6 +9,7 @@ from amc_finance.services import (
     get_character_max_loan,
     get_character_npl_status,
     calc_loan_fee,
+    get_credit_score_label,
     player_donation,
     send_fund_to_player,
 )
@@ -87,6 +88,8 @@ async def cmd_bank(ctx: CommandContext):
 <Bold>Loans:</> <Money>{loan_balance:,}</>
 <Bold>Max Available Loan:</> <Money>{max_loan:,}</>
 <Small>{max_loan_reason}</>
+<Bold>Credit Score:</> {credit_score} ({credit_label})
+<Small>Your credit score affects loan fees. Timely repayments improve it.</>
 <Bold>Earnings Saving Rate:</> <Money>{saving_rate_pct:.0f}%</>
 <Small>Use /set_saving_rate [percentage] to automatically set aside your earnings into your account.</>{npl_section}
 
@@ -112,6 +115,8 @@ How ASEAN Loans Works
             max_loan_reason=reason
             or _("Max available loan depends on your driver+trucking level"),
             saving_rate_pct=saving_rate * 100,
+            credit_score=ctx.character.credit_score,
+            credit_label=get_credit_score_label(ctx.character.credit_score),
             npl_section=npl_section,
             transactions_str=transactions_str,
         )
@@ -207,11 +212,19 @@ async def cmd_loan(ctx: CommandContext, amount: str, verification_code: str = ""
     )
 
     if not verified:
-        fee = calc_loan_fee(amount_int, ctx.character, max_loan)
+        fee = calc_loan_fee(amount_int, ctx.character, max_loan, credit_score=ctx.character.credit_score)
+        credit_label = get_credit_score_label(ctx.character.credit_score)
+        # Calculate fee adjustment percentage vs neutral (score=100)
+        base_fee = calc_loan_fee(amount_int, ctx.character, max_loan, credit_score=100)
+        if base_fee > 0:
+            fee_pct = int(((fee - base_fee) / base_fee) * 100)
+            fee_adj = f" ({fee_pct:+d}% from credit)" if fee_pct != 0 else ""
+        else:
+            fee_adj = ""
         await ctx.reply(
             _(
-                "<Title>Loan</>\nFee: {fee}\nConfirm: /loan {amount} {code_expected}"
-            ).format(fee=fee, amount=amount, code_expected=code_expected.upper())
+                "<Title>Loan</Title>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
+            ).format(fee=fee, fee_adj=fee_adj, credit_label=credit_label, amount=amount, code_expected=code_expected.upper())
         )
         return
 

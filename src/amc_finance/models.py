@@ -42,6 +42,10 @@ class Account(models.Model):
         null=True, blank=True,
         help_text="Repayment period in days (e.g. 7 = weekly). NULL = use global default.",
     )
+    last_credit_score_evaluated_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When this loan was last evaluated for credit scoring.",
+    )
 
     def __str__(self):
         if self.character:
