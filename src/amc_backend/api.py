@@ -60,3 +60,6 @@ api.add_router("/commands/", "amc.api.routes.commands_list_router")
 
 # Bot Events (SSE for Discord bot)
 api.add_router("/bot_events/", "amc.api.bot_events.router")
+
+# Dashboard auth (Discord Activity + Steam Login)
+api.add_router("/auth/", "amc.api.auth_routes.auth_router")

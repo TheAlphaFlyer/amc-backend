@@ -365,4 +365,12 @@ These admins help with the day to day running of the community
 """
 
 
+# Dashboard Discord Activity (separate app from the bot)
+DASHBOARD_DISCORD_CLIENT_ID = os.environ.get("DASHBOARD_DISCORD_CLIENT_ID")
+DASHBOARD_DISCORD_CLIENT_SECRET = os.environ.get("DASHBOARD_DISCORD_CLIENT_SECRET")
+
+# Dashboard JWT
+DASHBOARD_JWT_EXPIRY_HOURS = int(os.environ.get("DASHBOARD_JWT_EXPIRY_HOURS", "24"))
+
+
 ADMINS = [("Admin", os.environ.get("ADMIN_EMAIL"))]
