@@ -501,9 +501,10 @@ class JobsCog(commands.Cog):
         bonus_multiplier = round(
             tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2
         ) * treasury_mult
-        completion_bonus = int(
-            tmpl.completion_bonus * random.uniform(0.7, 1.3) * treasury_mult
-        )
+        base_bonus = tmpl.completion_bonus
+        # Treasury health × random variance, clamped to [0.5x, 2.0x]
+        scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
+        completion_bonus = int(base_bonus * scaling_factor)
         duration_hours = tmpl.duration_hours * max(0.5, min(2.0, treasury_mult))
 
         active_term = await MinistryTerm.objects.filter(is_active=True).afirst()

@@ -321,13 +321,14 @@ async def monitor_jobs(ctx):
             template.bonus_multiplier * random.uniform(0.8, 1.2), 2
         )
         bonus_multiplier = bonus_multiplier * treasury_mult
-        completion_bonus = int(
+        base_bonus = int(
             template.completion_bonus
             * quantity_requested
             / template.default_quantity
-            * random.uniform(0.7, 1.3)
         )
-        completion_bonus = int(treasury_mult * completion_bonus)
+        # Treasury health × random variance, clamped to [0.5x, 2.0x]
+        scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
+        completion_bonus = int(base_bonus * scaling_factor)
 
         if active_term:
             # Check if Ministry has enough budget

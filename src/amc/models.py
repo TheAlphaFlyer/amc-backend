@@ -2279,7 +2279,7 @@ class JobPostingConfig(models.Model):
     )
     # Treasury-driven equilibrium params
     treasury_equilibrium = models.PositiveBigIntegerField(
-        default=50_000_000,
+        default=100_000_000,
         help_text="Treasury balance at which spending is 'normal' (multiplier = 1.0)",
     )
     treasury_sensitivity = models.FloatField(

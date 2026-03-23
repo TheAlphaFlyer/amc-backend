@@ -88,3 +88,55 @@ class TreasuryMultiplierTestCase(SimpleTestCase):
         )
         self.assertGreater(at_double, 1.2)
         self.assertLess(at_double, 2.0)
+
+    def test_clamped_scaling_factor_floor(self):
+        """When treasury is near-broke, combined factor should not go below 0.5."""
+        # Near-zero balance with high sensitivity → very low multiplier
+        treasury_mult = calculate_treasury_multiplier(
+            0, equilibrium=100_000_000, sensitivity=2.0
+        )
+        # Worst-case random roll (0.7)
+        combined = treasury_mult * 0.7
+        self.assertLess(combined, 0.5, "Pre-clamp value should be below 0.5")
+        clamped = max(0.5, min(2.0, combined))
+        self.assertEqual(clamped, 0.5)
+
+    def test_clamped_scaling_factor_ceiling(self):
+        """When treasury is very rich, combined factor should not exceed 2.0."""
+        # Very high balance → treasury_mult approaches 2.0
+        treasury_mult = calculate_treasury_multiplier(
+            1_000_000_000, equilibrium=100_000_000, sensitivity=0.5
+        )
+        # Best-case random roll (1.3)
+        combined = treasury_mult * 1.3
+        clamped = max(0.5, min(2.0, combined))
+        self.assertEqual(clamped, 2.0)
+
+    def test_bonus_within_expected_range(self):
+        """Final completion bonus should always be within [base * 0.5, base * 2.0]."""
+        import random as rng
+
+        base_bonus = 100_000
+        rng.seed(42)  # Deterministic for reproducibility
+
+        for _ in range(1000):
+            # Random treasury balance between 0 and 500M
+            balance = rng.randint(0, 500_000_000)
+            treasury_mult = calculate_treasury_multiplier(
+                balance, equilibrium=100_000_000, sensitivity=0.5
+            )
+            scaling_factor = max(
+                0.5, min(2.0, treasury_mult * rng.uniform(0.7, 1.3))
+            )
+            completion_bonus = int(base_bonus * scaling_factor)
+            self.assertGreaterEqual(
+                completion_bonus,
+                int(base_bonus * 0.5),
+                f"Bonus {completion_bonus} below floor at balance {balance}",
+            )
+            self.assertLessEqual(
+                completion_bonus,
+                int(base_bonus * 2.0),
+                f"Bonus {completion_bonus} above ceiling at balance {balance}",
+            )
+
