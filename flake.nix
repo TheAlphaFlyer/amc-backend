@@ -635,6 +635,7 @@
             description = "Type check Python code with Pyrefly";
             entry = "pyrefly check";
             files = "\\.py$";
+            excludes = [ "migrations/" ];
             language = "system";
             pass_filenames = true;
           };
