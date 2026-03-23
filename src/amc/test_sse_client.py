@@ -1,11 +1,17 @@
 """Tests for the SSE client module."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from amc.sse_client import parse_sse_event, _debounced_flush
+from amc.sse_client import (
+    parse_sse_event,
+    _flush_loop,
+    FLUSH_DEBOUNCE_SECONDS,
+    FLUSH_MAX_BATCH_SIZE,
+)
 
 
 class TestParseSSEEvent:
@@ -66,37 +72,194 @@ class TestParseSSEEvent:
         assert json.loads(data) == {"key": "value"}
 
 
-@pytest.mark.asyncio
-async def test_debounced_flush_calls_process_events():
-    buffer = [
-        {"hook": "ServerCargoArrived", "timestamp": 1, "data": {}},
-        {"hook": "ServerPassengerArrived", "timestamp": 2, "data": {}},
-    ]
-    with patch("amc.webhook.process_events", new_callable=AsyncMock) as mock_process:
-        await _debounced_flush(buffer, None, None, None)
-
-    mock_process.assert_awaited_once()
-    args = mock_process.call_args
-    assert len(args[0][0]) == 2
-    assert buffer == []  # Buffer should be cleared
+def _make_event(i=0):
+    return {"hook": f"Event{i}", "data": {}, "timestamp": 1000 + i}
 
 
 @pytest.mark.asyncio
-async def test_debounced_flush_empty_buffer():
-    buffer = []
-    with patch("amc.webhook.process_events", new_callable=AsyncMock) as mock_process:
-        await _debounced_flush(buffer, None, None, None)
-    mock_process.assert_not_awaited()
+async def test_debounce_flushes_after_silence():
+    """Events arriving close together should be batched into a single flush."""
+    mock_process = AsyncMock()
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        # Push 3 events 50ms apart
+        for i in range(3):
+            buffer.append(_make_event(i))
+            signal.set()
+            await asyncio.sleep(0.05)
+
+        # Wait for debounce to expire
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+
+        assert mock_process.call_count == 1
+        assert len(mock_process.call_args[0][0]) == 3
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 @pytest.mark.asyncio
-async def test_debounced_flush_handles_exception(caplog):
-    buffer = [{"hook": "test", "timestamp": 1, "data": {}}]
-    with patch(
-        "amc.webhook.process_events",
-        new_callable=AsyncMock,
-        side_effect=ValueError("test error"),
-    ):
-        # Should not raise — errors are caught and logged
-        await _debounced_flush(buffer, None, None, None)
-    assert buffer == []  # Buffer still cleared even on error
+async def test_ceiling_forces_flush_during_burst():
+    """Events arriving continuously should still flush at the ceiling."""
+    mock_process = AsyncMock()
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        # Push events every 200ms for 3 seconds (past the 2s ceiling)
+        for i in range(15):
+            buffer.append(_make_event(i))
+            signal.set()
+            await asyncio.sleep(0.2)
+
+        # Wait for any final debounce
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+
+        # Should have flushed more than once (ceiling forces flush mid-burst)
+        assert mock_process.call_count >= 2
+
+        # All events must have been processed
+        total_events = sum(
+            len(call_args[0][0]) for call_args in mock_process.call_args_list
+        )
+        assert total_events == 15
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_batch_cap_forces_immediate_flush():
+    """Pushing >= FLUSH_MAX_BATCH_SIZE events at once should flush immediately."""
+    mock_process = AsyncMock()
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        # Push exactly FLUSH_MAX_BATCH_SIZE events at once
+        for i in range(FLUSH_MAX_BATCH_SIZE):
+            buffer.append(_make_event(i))
+        signal.set()
+
+        # Give just a tiny bit of time for the loop to process
+        await asyncio.sleep(0.1)
+
+        assert mock_process.call_count == 1
+        assert len(mock_process.call_args[0][0]) == FLUSH_MAX_BATCH_SIZE
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_empty_buffer_no_flush():
+    """Signal without events in the buffer should not call process_events."""
+    mock_process = AsyncMock()
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        signal.set()
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+
+        assert mock_process.call_count == 0
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_multiple_separate_batches():
+    """Separate bursts with silence between them should result in separate flushes."""
+    mock_process = AsyncMock()
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        # First burst
+        buffer.append(_make_event(0))
+        signal.set()
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+        assert mock_process.call_count == 1
+        assert len(mock_process.call_args[0][0]) == 1
+
+        # Second burst
+        buffer.append(_make_event(1))
+        buffer.append(_make_event(2))
+        signal.set()
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+        assert mock_process.call_count == 2
+        assert len(mock_process.call_args[0][0]) == 2
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_flush_handles_process_exception(caplog):
+    """Errors in process_events should be caught, buffer still cleared."""
+    mock_process = AsyncMock(side_effect=ValueError("test error"))
+    buffer: list[dict] = []
+    signal = asyncio.Event()
+
+    with patch("amc.webhook.process_events", mock_process):
+        task = asyncio.create_task(
+            _flush_loop(buffer, signal, None, None, None)
+        )
+
+        buffer.append(_make_event(0))
+        signal.set()
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+
+        # process_events was called (and raised), but loop continues
+        assert mock_process.call_count == 1
+        assert buffer == []  # Buffer was drained before the call
+
+        # Push another event — loop should still be alive
+        buffer.append(_make_event(1))
+        signal.set()
+        await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
+        assert mock_process.call_count == 2
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass

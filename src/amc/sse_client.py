@@ -17,6 +17,12 @@ logger = logging.getLogger("amc.sse")
 # Debounce: flush buffered events after this much silence
 FLUSH_DEBOUNCE_SECONDS = 0.5
 
+# Force-flush even if events keep arriving (prevents indefinite delay during bursts)
+FLUSH_MAX_WAIT_SECONDS = 2.0
+
+# Force-flush when buffer reaches this many events
+FLUSH_MAX_BATCH_SIZE = 50
+
 # Reconnect backoff bounds
 INITIAL_BACKOFF = 1
 MAX_BACKOFF = 30
@@ -42,6 +48,53 @@ def parse_sse_event(raw_lines: list[str]) -> tuple[str | None, str | None]:
     if data_parts:
         return event_id, "\n".join(data_parts)
     return None, None
+
+
+async def _flush_loop(event_buffer, event_signal, http_client, http_client_mod, discord_client):
+    """Dedicated flush loop with debounce, max-wait ceiling, and batch cap.
+
+    Waits for events to arrive (via event_signal), then enters a
+    debounce+ceiling wait before flushing the buffer to process_events().
+    """
+    from amc.webhook import process_events
+
+    loop = asyncio.get_event_loop()
+
+    while True:
+        # Wait until at least one event arrives
+        await event_signal.wait()
+        event_signal.clear()
+
+        first_event_time = loop.time()
+
+        # Debounce loop: wait for silence or hit ceiling/cap
+        while True:
+            elapsed = loop.time() - first_event_time
+            remaining_ceiling = FLUSH_MAX_WAIT_SECONDS - elapsed
+
+            # Force-flush: ceiling or batch cap hit
+            if remaining_ceiling <= 0 or len(event_buffer) >= FLUSH_MAX_BATCH_SIZE:
+                break
+
+            wait_time = min(FLUSH_DEBOUNCE_SECONDS, remaining_ceiling)
+            try:
+                await asyncio.wait_for(event_signal.wait(), timeout=wait_time)
+                event_signal.clear()  # New event arrived — loop again for debounce
+            except asyncio.TimeoutError:
+                break  # Silence — flush now
+
+        if not event_buffer:
+            continue
+
+        # Atomic drain
+        events = list(event_buffer)
+        event_buffer.clear()
+
+        logger.info("SSE flushing %d events", len(events))
+        try:
+            await process_events(events, http_client, http_client_mod, discord_client)
+        except Exception:
+            logger.exception("SSE: error processing %d events", len(events))
 
 
 async def run_sse_listener(ctx):
@@ -98,42 +151,58 @@ async def run_sse_listener(ctx):
                     logger.info("SSE connected")
                     backoff = INITIAL_BACKOFF  # Reset on successful connect
 
-                    event_buffer = []
+                    event_buffer: list[dict] = []
                     current_lines: list[str] = []
-                    flush_task: asyncio.Task | None = None
+                    event_signal = asyncio.Event()
 
-                    async for raw_line in resp.content:
-                        line = raw_line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+                    flush_task = asyncio.create_task(
+                        _flush_loop(
+                            event_buffer, event_signal,
+                            http_client, http_client_mod, discord_client,
+                        )
+                    )
 
-                        if line == "":
-                            # Blank line = end of SSE event block
-                            if current_lines:
-                                event_id, data = parse_sse_event(current_lines)
-                                current_lines = []
-                                if data:
-                                    if event_id:
-                                        last_event_id = event_id
-                                    try:
-                                        event_obj = json.loads(data)
-                                        event_buffer.append(event_obj)
-                                    except json.JSONDecodeError:
-                                        logger.warning(
-                                            "SSE: invalid JSON data: %s", data[:200]
-                                        )
+                    try:
+                        async for raw_line in resp.content:
+                            line = raw_line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
 
-                                    # Schedule a flush after debounce
-                                    if flush_task and not flush_task.done():
-                                        flush_task.cancel()
-                                    flush_task = asyncio.create_task(
-                                        _debounced_flush(
-                                            event_buffer,
-                                            http_client,
-                                            http_client_mod,
-                                            discord_client,
-                                        )
-                                    )
-                        else:
-                            current_lines.append(line)
+                            if line == "":
+                                # Blank line = end of SSE event block
+                                if current_lines:
+                                    event_id, data = parse_sse_event(current_lines)
+                                    current_lines = []
+                                    if data:
+                                        if event_id:
+                                            last_event_id = event_id
+                                        try:
+                                            event_obj = json.loads(data)
+                                            event_buffer.append(event_obj)
+                                        except json.JSONDecodeError:
+                                            logger.warning(
+                                                "SSE: invalid JSON data: %s", data[:200]
+                                            )
+
+                                        # Signal the flush loop
+                                        event_signal.set()
+                            else:
+                                current_lines.append(line)
+                    finally:
+                        flush_task.cancel()
+                        try:
+                            await flush_task
+                        except asyncio.CancelledError:
+                            pass
+
+                        # Flush any remaining events before reconnecting
+                        if event_buffer:
+                            from amc.webhook import process_events
+                            remaining = list(event_buffer)
+                            event_buffer.clear()
+                            logger.info("SSE flushing %d remaining events before reconnect", len(remaining))
+                            try:
+                                await process_events(remaining, http_client, http_client_mod, discord_client)
+                            except Exception:
+                                logger.exception("SSE: error flushing remaining events")
 
             # If we get here, the response stream ended cleanly
             logger.info("SSE stream ended, reconnecting in %ss", backoff)
@@ -150,23 +219,3 @@ async def run_sse_listener(ctx):
 
         await asyncio.sleep(backoff)
         backoff = min(backoff * 2, MAX_BACKOFF)
-
-
-async def _debounced_flush(event_buffer, http_client, http_client_mod, discord_client):
-    """Wait for the debounce period, then flush all buffered events."""
-    from amc.webhook import process_events
-
-    await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS)
-
-    if not event_buffer:
-        return
-
-    # Drain the buffer
-    events = list(event_buffer)
-    event_buffer.clear()
-
-    logger.info("SSE flushing %d events", len(events))
-    try:
-        await process_events(events, http_client, http_client_mod, discord_client)
-    except Exception:
-        logger.exception("SSE: error processing %d events", len(events))
