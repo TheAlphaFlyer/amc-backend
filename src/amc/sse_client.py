@@ -116,13 +116,25 @@ async def run_sse_listener(ctx):
     last_event_id = "0"
     backoff = INITIAL_BACKOFF
 
+    # sock_read=90: detect dead connections if the mod server hangs after
+    # accepting TCP but stops sending data/heartbeats.  The C++ mod should
+    # send SSE comments as keepalives; 90s is generous enough to avoid
+    # false positives during quiet periods.
     timeout = aiohttp.ClientTimeout(
         total=None,  # No total timeout — SSE is long-lived
         sock_connect=10,
-        sock_read=None,  # No read timeout — server may be quiet
+        sock_read=90,
     )
 
+    # Minimum connection duration (seconds) to consider a session "healthy".
+    # If a connection lasted this long, the disconnect is likely a server
+    # restart rather than a persistent error, so we reset backoff.
+    HEALTHY_SESSION_SECONDS = 60
+
+    loop = asyncio.get_event_loop()
+
     while True:
+        connected_at = loop.time()
         try:
             async with aiohttp.ClientSession(
                 base_url=base_url, timeout=timeout
@@ -149,6 +161,7 @@ async def run_sse_listener(ctx):
                         continue
 
                     logger.info("SSE connected")
+                    connected_at = loop.time()
                     backoff = INITIAL_BACKOFF  # Reset on successful connect
 
                     event_buffer: list[dict] = []
@@ -204,14 +217,27 @@ async def run_sse_listener(ctx):
                             except Exception:
                                 logger.exception("SSE: error flushing remaining events")
 
-            # If we get here, the response stream ended cleanly
-            logger.info("SSE stream ended, reconnecting in %ss", backoff)
+            # Stream ended cleanly (server closed the connection)
+            session_duration = loop.time() - connected_at
+            if session_duration >= HEALTHY_SESSION_SECONDS:
+                # Long-lived session — likely a server restart, reconnect fast
+                logger.info(
+                    "SSE stream ended after %.0fs (healthy session), reconnecting immediately",
+                    session_duration,
+                )
+                backoff = INITIAL_BACKOFF
+                continue  # skip the sleep at the bottom
+            else:
+                logger.info("SSE stream ended after %.0fs, retrying in %ss", session_duration, backoff)
 
         except asyncio.CancelledError:
             logger.info("SSE listener shutting down")
             return
 
-        except (aiohttp.ClientError, OSError) as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            session_duration = loop.time() - connected_at
+            if session_duration >= HEALTHY_SESSION_SECONDS:
+                backoff = INITIAL_BACKOFF
             logger.warning("SSE connection error: %s, retrying in %ss", e, backoff)
 
         except Exception:
