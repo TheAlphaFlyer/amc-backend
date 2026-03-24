@@ -218,7 +218,11 @@ async def get_webhook_events(session):
 
 
 async def get_webhook_events2(session):
-    async with session.get("/events", timeout=FAST_TIMEOUT) as resp:
+    from django.core.cache import cache
+
+    since_seq = cache.get("webhook:last_processed_seq", 0)
+    url = f"/events?since={since_seq}" if since_seq else "/events"
+    async with session.get(url, timeout=FAST_TIMEOUT) as resp:
         data = await resp.json()
         return data["events"]
 

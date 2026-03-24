@@ -24,6 +24,7 @@ from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
 )
+from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
 from amc.models import (
     Player,
@@ -671,9 +672,30 @@ async def split_party_payment(
     return result
 
 
+LAST_SEQ_CACHE_KEY = "webhook:last_processed_seq"
+
+
 async def process_events(
     events, http_client=None, http_client_mod=None, discord_client=None
 ):
+    # ── Seq-based deduplication ──
+    # Filter out events we've already processed, using the monotonic _seq
+    # assigned by the C++ EventManager.
+    last_processed = cache.get(LAST_SEQ_CACHE_KEY, 0)
+    new_events = []
+    max_seq = last_processed
+    for event in events:
+        seq = event.get("_seq")
+        if seq is not None:
+            if seq <= last_processed:
+                continue  # Already processed
+            max_seq = max(max_seq, seq)
+        new_events.append(event)
+    events = new_events
+
+    if not events:
+        return
+
     # Pre-process events to simplify keys
     for event in events:
         player_id = event["data"].get("CharacterGuid", "")
@@ -791,6 +813,10 @@ async def process_events(
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
 
+    # Persist high-water mark after successful processing
+    if max_seq > last_processed:
+        cache.set(LAST_SEQ_CACHE_KEY, max_seq, timeout=None)
+
 
 async def process_cargo_log(cargo, player, character, timestamp):
     sender_coord_raw = cargo["Net_SenderAbsoluteLocation"]
@@ -849,7 +875,7 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
             # portion_of_payment = (quantity_to_add / delivery_data['quantity']) * delivery_data['payment']
             # but usually quantity_to_add == delivery_data['quantity']
 
-            multiplier = max(0, job.bonus_multiplier - 1)
+            multiplier = max(0, job.bonus_multiplier)
             bonus = int(
                 delivery_data["payment"]
                 * (quantity_to_add / delivery_data["quantity"])

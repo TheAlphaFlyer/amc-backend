@@ -189,6 +189,8 @@ async def run_sse_listener(ctx):
                                             last_event_id = event_id
                                         try:
                                             event_obj = json.loads(data)
+                                            if event_id:
+                                                event_obj["_seq"] = int(event_id)
                                             event_buffer.append(event_obj)
                                         except json.JSONDecodeError:
                                             logger.warning(

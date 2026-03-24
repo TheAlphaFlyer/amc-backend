@@ -1900,3 +1900,140 @@ class OnPlayerProfitTests(TestCase):
         # Non-gov paths should NOT be called
         mock_repay_loan.assert_not_called()
         mock_savings.assert_not_called()
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class SeqDeduplicationTests(TestCase):
+    """Tests for _seq-based idempotency in process_events."""
+
+    def _make_cargo_event(self, character_guid, seq=None):
+        event = {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character_guid),
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "oranges",
+                        "Net_Payment": 1000,
+                        "Net_Weight": 10.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100, "Y": 100, "Z": 0},
+                    }
+                ],
+            },
+        }
+        if seq is not None:
+            event["_seq"] = seq
+        return event
+
+    async def test_seq_dedup_skips_already_processed(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events with _seq <= last_processed should be skipped."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 5, timeout=None)
+
+        events = [
+            self._make_cargo_event(character.guid, seq=3),  # skip
+            self._make_cargo_event(character.guid, seq=5),  # skip (==)
+            self._make_cargo_event(character.guid, seq=6),  # process
+            self._make_cargo_event(character.guid, seq=7),  # process
+        ]
+
+        await process_events(events)
+
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark should be updated to 7
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 7)
+
+        cache.delete("webhook:last_processed_seq")
+
+    async def test_seq_dedup_backward_compat_no_seq(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events without _seq should always pass through (old mod compat)."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 99, timeout=None)
+
+        # No _seq field — should not be filtered
+        events = [
+            self._make_cargo_event(character.guid),
+            self._make_cargo_event(character.guid),
+        ]
+
+        await process_events(events)
+
+        # Both events processed despite high-water mark
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark unchanged (no _seq to update it)
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 99)
+
+        cache.delete("webhook:last_processed_seq")
+
+    async def test_seq_dedup_mixed_old_and_new(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Mix of events with and without _seq: old events pass through, new events are filtered."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 10, timeout=None)
+
+        events = [
+            self._make_cargo_event(character.guid, seq=8),   # skip (old)
+            self._make_cargo_event(character.guid),           # pass (no _seq)
+            self._make_cargo_event(character.guid, seq=11),  # process (new)
+        ]
+
+        await process_events(events)
+
+        # 2 events processed: the no-seq one + seq=11
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark updated to 11
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 11)
+
+        cache.delete("webhook:last_processed_seq")
+

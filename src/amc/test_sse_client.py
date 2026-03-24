@@ -14,6 +14,17 @@ from amc.sse_client import (
 )
 
 
+def _parse_and_build_event(lines):
+    """Helper: parse SSE lines and build event dict with _seq injection (mirrors sse_client logic)."""
+    event_id, data = parse_sse_event(lines)
+    if data:
+        event_obj = json.loads(data)
+        if event_id:
+            event_obj["_seq"] = int(event_id)
+        return event_obj
+    return None
+
+
 class TestParseSSEEvent:
     def test_simple_event(self):
         lines = ["id: 42", "data: {\"hook\":\"ServerCargoArrived\",\"timestamp\":1234}"]
@@ -263,3 +274,21 @@ async def test_flush_handles_process_exception(caplog):
             await task
         except asyncio.CancelledError:
             pass
+
+
+class TestSeqInjection:
+    """Tests that _seq is injected from SSE id: field."""
+
+    def test_seq_injected_from_event_id(self):
+        lines = ["id: 42", 'data: {"hook":"ServerCargoArrived","timestamp":1234}']
+        event = _parse_and_build_event(lines)
+        assert event is not None
+        assert event["_seq"] == 42
+        assert event["hook"] == "ServerCargoArrived"
+
+    def test_no_seq_when_no_event_id(self):
+        lines = ['data: {"hook":"ServerPassengerArrived","timestamp":5678}']
+        event = _parse_and_build_event(lines)
+        assert event is not None
+        assert "_seq" not in event
+
