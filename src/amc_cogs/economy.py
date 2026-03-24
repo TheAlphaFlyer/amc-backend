@@ -42,6 +42,7 @@ from amc_finance.services import (
     get_character_max_loan,
     make_treasury_bank_deposit,
     get_non_performing_loans,
+    get_crossover_accounts,
 )
 from amc.subsidies import DEFAULT_SAVING_RATE
 from amc.save_file import decrypt, encrypt
@@ -107,6 +108,7 @@ class EconomyCog(commands.Cog):
         self.daily_gov_employee_summary_task.start()
         self.npl_warning_task.start()
         self.npl_collections_board_task.start()
+        self.crossover_warning_task.start()
 
     @tasks.loop(time=dt_time(hour=2, minute=0, tzinfo=dt_timezone.utc))
     async def daily_top_haulers_task(self):
@@ -968,6 +970,45 @@ The purpose of this transfer is to return funds from the bank to the government 
 
         if warned:
             logger.info(f"Sent {warned} NPL warning DMs")
+
+    @tasks.loop(time=dt_time(hour=4, minute=0, tzinfo=dt_timezone.utc))
+    async def crossover_warning_task(self):
+        """Daily DM to players whose wealth tax exceeds their interest."""
+        logger = logging.getLogger("amc.crossover")
+        crossover_accounts = await sync_to_async(get_crossover_accounts)()
+        warned = 0
+        for account in crossover_accounts:
+            character = account.character
+            if character.crossover_warning_sent_at is not None:
+                if timezone.now() < character.crossover_warning_sent_at + timedelta(days=30):
+                    continue
+            player = character.player
+            if not player or not player.discord_user_id:
+                continue
+            try:
+                user = await self.bot.fetch_user(player.discord_user_id)
+                await user.send(
+                    f"📊 **Financial Advisory from the Bank of ASEAN**\n\n"
+                    f"Your bank account for **{character.name}** has reached a point where your "
+                    f"hourly **wealth tax exceeds your interest earnings**.\n\n"
+                    f"**Current Balance:** ${account.balance:,.0f}\n"
+                    f"**Hourly Interest:** +${account.hourly_interest:,}\n"
+                    f"**Hourly Wealth Tax:** -${account.hourly_tax:,}\n"
+                    f"**Net Hourly Change:** -${account.net_hourly_loss:,}\n\n"
+                    f"Your balance is now decreasing every hour you remain offline.\n"
+                    f"Log back in — even briefly — to reset your tax clock and resume earning full interest."
+                )
+                warned += 1
+            except discord.Forbidden:
+                logger.info(f"Cannot DM user {player.discord_user_id} (DMs disabled)")
+            except Exception:
+                logger.exception(f"Failed to send crossover warning to {player.discord_user_id}")
+                continue
+            character.crossover_warning_sent_at = timezone.now()
+            await character.asave(update_fields=["crossover_warning_sent_at"])
+
+        if warned:
+            logger.info(f"Sent {warned} crossover warning DMs")
 
     @tasks.loop(time=dt_time(hour=8, minute=30, tzinfo=dt_timezone.utc))
     async def npl_collections_board_task(self):

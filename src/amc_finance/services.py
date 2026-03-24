@@ -886,6 +886,71 @@ def calculate_wealth_tax(balance: int, hours_offline: float) -> int:
     return max(int(tax), 0)
 
 
+def calculate_hourly_interest(balance: int, hours_offline: float) -> int:
+    """Calculate one hourly tick of interest for an offline player.
+
+    Mirrors calculate_wealth_tax — a pure function that returns the integer
+    interest amount for a given balance and offline duration.
+    """
+    if balance <= 0 or hours_offline <= 0:
+        return 0
+
+    rate = INTEREST_RATE
+
+    if hours_offline <= 1:
+        rate = ONLINE_INTEREST_MULTIPLIER * rate
+    else:
+        decay = 1.0 / (1.0 + INTEREST_DECAY_K * math.log10(hours_offline))
+        rate *= decay
+
+    excess = max(0, balance - INTEREST_THRESHOLD)
+    balance_multiplier = math.exp(-excess / INTEREST_SCALE)
+
+    amount = balance * rate * balance_multiplier / 24
+    return max(int(amount), 0)
+
+
+def get_crossover_accounts():
+    """Return bank accounts where hourly wealth tax exceeds hourly interest.
+
+    Each account in the result list is annotated with:
+    - hours_offline
+    - hourly_tax
+    - hourly_interest
+    - net_hourly_loss  (tax - interest)
+    """
+    now = timezone.now()
+    accounts = list(
+        Account.objects.filter(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character__isnull=False,
+            character__guid__isnull=False,
+            balance__gt=WEALTH_TAX_EXEMPT,
+        ).select_related("character", "character__player")
+    )
+
+    results = []
+    for account in accounts:
+        last_online_ts = account.character.last_online
+        if last_online_ts is None:
+            hours_offline = 365 * 24.0
+        else:
+            hours_offline = (now - last_online_ts).total_seconds() / 3600
+
+        tax = calculate_wealth_tax(int(account.balance), hours_offline)
+        interest = calculate_hourly_interest(int(account.balance), hours_offline)
+
+        if tax > interest:
+            account.hours_offline = hours_offline
+            account.hourly_tax = tax
+            account.hourly_interest = interest
+            account.net_hourly_loss = tax - interest
+            results.append(account)
+
+    return results
+
+
 def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
     """Create all interest journal entries in a single transaction."""
     if not entries_to_create:

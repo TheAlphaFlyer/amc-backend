@@ -559,3 +559,78 @@ class TreasuryBankTransferTestCase(TestCase):
         await make_treasury_bank_deposit(100_000, "Small deposit")
         with self.assertRaises(ValueError):
             await make_treasury_bank_withdrawal(200_000, "Over-withdrawal")
+
+
+class CrossoverTestCase(TestCase):
+    async def test_calculate_hourly_interest_basic(self):
+        """Interest should be positive for a non-zero balance."""
+        from .services import calculate_hourly_interest
+        interest = calculate_hourly_interest(10_000_000, 24)
+        self.assertGreater(interest, 0)
+
+    async def test_calculate_hourly_interest_zero_balance(self):
+        """Zero balance should return zero interest."""
+        from .services import calculate_hourly_interest
+        self.assertEqual(calculate_hourly_interest(0, 100), 0)
+
+    async def test_calculate_hourly_interest_decays_offline(self):
+        """Interest should decay with longer offline time."""
+        from .services import calculate_hourly_interest
+        interest_1d = calculate_hourly_interest(10_000_000, 24)
+        interest_30d = calculate_hourly_interest(10_000_000, 30 * 24)
+        self.assertGreater(interest_1d, interest_30d)
+
+    async def test_crossover_detected_for_long_offline(self):
+        """A character offline 60+ days with $10M should be in crossover."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(days=60)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=10_000_000,
+        )
+
+        from .services import get_crossover_accounts
+        accounts = await sync_to_async(get_crossover_accounts)()
+        char_ids = [a.character_id for a in accounts]
+        self.assertIn(character.id, char_ids)
+
+    async def test_no_crossover_for_active_player(self):
+        """A recently online player should NOT be in crossover."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(hours=2)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=10_000_000,
+        )
+
+        from .services import get_crossover_accounts
+        accounts = await sync_to_async(get_crossover_accounts)()
+        char_ids = [a.character_id for a in accounts]
+        self.assertNotIn(character.id, char_ids)
+
+    async def test_no_crossover_for_low_balance(self):
+        """A low balance ($600K) player shouldn't cross over even at 30 days."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(days=30)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=600_000,
+        )
+
+        from .services import get_crossover_accounts
+        accounts = await sync_to_async(get_crossover_accounts)()
+        char_ids = [a.character_id for a in accounts]
+        self.assertNotIn(character.id, char_ids)
+

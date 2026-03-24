@@ -271,6 +271,9 @@ class Character(models.Model):
     gov_employee_level = models.PositiveIntegerField(default=0)
     gov_employee_contributions = models.PositiveBigIntegerField(default=0)
 
+    # Wealth tax crossover DM — sent once when tax > interest, 30-day cooldown
+    crossover_warning_sent_at = models.DateTimeField(null=True, blank=True)
+
     objects: ClassVar[CharacterManager] = CharacterManager()
 
     if TYPE_CHECKING:
