@@ -20,11 +20,13 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from .api import api
+from .api_v1 import api_v1
 from amc.views import login_with_token
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/login/token/", login_with_token, name="token_login_api"),
+    path("api/v1/", api_v1.urls),
     path("api/", api.urls),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
 ]
