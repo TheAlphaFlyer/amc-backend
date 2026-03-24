@@ -1056,17 +1056,18 @@ async def apply_interest_to_bank_accounts(
     )
 
 
-def _bulk_create_wealth_tax_entries(entries_to_create, revenue_account, now):
+def _bulk_create_wealth_tax_entries(entries_to_create, reserves_account, now):
     """Create all wealth tax journal entries in a single transaction.
 
     Each entry debits the character's LIABILITY account (reducing balance)
-    and credits the Wealth Tax Revenue account.
+    and credits the Sovereign Reserves ASSET account.
+    Balance override via F-expression ensures reserves increase.
     """
     if not entries_to_create:
         return
 
     with transaction.atomic():
-        total_revenue = Decimal(0)
+        total_tax = Decimal(0)
         for account, amount in entries_to_create:
             je = JournalEntry.objects.create(
                 date=now,
@@ -1080,20 +1081,21 @@ def _bulk_create_wealth_tax_entries(entries_to_create, revenue_account, now):
                 debit=amount,
                 credit=0,
             )
-            # Credit the revenue account
+            # Credit the reserves account (keeps journal balanced: total debits = total credits)
             LedgerEntry.objects.create(
                 journal_entry=je,
-                account=revenue_account,
+                account=reserves_account,
                 debit=0,
                 credit=amount,
             )
             account.balance = cast(Any, F("balance") - amount)
             account.save(update_fields=["balance"])
-            total_revenue += amount
+            total_tax += amount
 
-        # Update revenue balance once (REVENUE: credit increases balance)
-        revenue_account.balance = cast(Any, F("balance") + total_revenue)
-        revenue_account.save(update_fields=["balance"])
+        # Override: force-increase reserves (credit normally decreases ASSET,
+        # but we treat this as an inflow to the sovereign fund)
+        reserves_account.balance = cast(Any, F("balance") + total_tax)
+        reserves_account.save(update_fields=["balance"])
 
 
 async def apply_wealth_tax(ctx):
