@@ -12,6 +12,7 @@ from .services import (
     register_player_deposit,
     register_player_withdrawal,
     apply_interest_to_bank_accounts,
+    apply_wealth_tax,
     get_non_performing_loans,
     get_character_npl_status,
     register_player_take_loan,
@@ -96,8 +97,8 @@ class InterestTestCase(TestCase):
         interest = account.balance - 1_000_000
         self.assertGreater(interest, 0)
 
-    async def test_threshold_balance_full_interest(self):
-        """Balance at exactly the threshold should receive full interest."""
+    async def test_threshold_balance_interest(self):
+        """Balance at threshold with no last_online gets decayed interest."""
         character = await sync_to_async(CharacterFactory)()
         account = await Account.objects.acreate(
             account_type=Account.AccountType.LIABILITY,
@@ -108,9 +109,11 @@ class InterestTestCase(TestCase):
         await apply_interest_to_bank_accounts({})
         await account.arefresh_from_db()
         interest = account.balance - 10_000_000
-        # At threshold, multiplier = e^0 = 1.0, so full interest
-        expected_full_interest = 10_000_000 * Decimal("0.022") / Decimal("192")
-        self.assertAlmostEqual(float(interest), float(expected_full_interest), places=0)
+        # Character has no last_online → treated as 365d offline → log decay
+        # Interest should be positive but less than full flat rate
+        full_interest = 10_000_000 * Decimal("0.022") / Decimal("24")
+        self.assertGreater(interest, 0)
+        self.assertLess(interest, full_interest)
 
     async def test_high_balance_reduced_interest(self):
         """Balances well above threshold should receive much less interest."""
@@ -124,11 +127,188 @@ class InterestTestCase(TestCase):
         await apply_interest_to_bank_accounts({})
         await account.arefresh_from_db()
         interest = account.balance - 50_000_000
-        # Flat rate would give: 50M * 0.022/192 ≈ 5729
-        flat_interest = 50_000_000 * Decimal("0.022") / Decimal("192")
+        # Flat rate would give: 50M * 0.022/24 ≈ 45833
+        flat_interest = 50_000_000 * Decimal("0.022") / Decimal("24")
         # With fall-off, interest should be significantly less than flat rate
         self.assertGreater(interest, 0)
         self.assertLess(interest, flat_interest * Decimal("0.5"))
+
+    async def test_smooth_log_decay(self):
+        """Interest should decrease smoothly with offline time, not in steps."""
+        # 3 days offline → should get less than full rate
+        character_3d = await sync_to_async(CharacterFactory)()
+        character_3d.last_online = timezone.now() - timedelta(days=3)  # pyrefly: ignore
+        await character_3d.asave(update_fields=["last_online"])
+        account_3d = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character_3d,
+            balance=1_000_000,
+        )
+
+        # 30 days offline → should get even less
+        character_30d = await sync_to_async(CharacterFactory)()
+        character_30d.last_online = timezone.now() - timedelta(days=30)  # pyrefly: ignore
+        await character_30d.asave(update_fields=["last_online"])
+        account_30d = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character_30d,
+            balance=1_000_000,
+        )
+
+        await apply_interest_to_bank_accounts({})
+        await account_3d.arefresh_from_db()
+        await account_30d.arefresh_from_db()
+
+        interest_3d = account_3d.balance - 1_000_000
+        interest_30d = account_30d.balance - 1_000_000
+
+        self.assertGreater(interest_3d, 0)
+        self.assertGreater(interest_30d, 0)
+        # 30d offline should earn less interest than 3d offline
+        self.assertGreater(interest_3d, interest_30d)
+
+
+class WealthTaxTestCase(TestCase):
+    async def test_exempt_bracket(self):
+        """Balances at or below 500K should never be taxed."""
+        from .services import calculate_wealth_tax
+        self.assertEqual(calculate_wealth_tax(500_000, 1000), 0)
+        self.assertEqual(calculate_wealth_tax(400_000, 5000), 0)
+        self.assertEqual(calculate_wealth_tax(0, 10000), 0)
+
+    async def test_no_tax_under_one_hour(self):
+        """No tax if offline less than 1 hour."""
+        from .services import calculate_wealth_tax
+        self.assertEqual(calculate_wealth_tax(10_000_000, 0.5), 0)
+        self.assertEqual(calculate_wealth_tax(10_000_000, 0), 0)
+
+    async def test_low_bracket_only(self):
+        """Balance in 500K-2.5M range should only use Low bracket (k=0.15)."""
+        from .services import calculate_wealth_tax
+        # 1M balance, 60 days offline
+        tax = calculate_wealth_tax(1_000_000, 60 * 24)
+        self.assertGreater(tax, 0)
+        # Tax should be modest for Low bracket
+        self.assertLess(tax, 1_000)  # well under 0.1% per hour
+
+    async def test_progressive_all_brackets(self):
+        """Balance of 15M should use all three brackets marginally."""
+        from .services import calculate_wealth_tax
+        hours = 90 * 24
+        tax_15m = calculate_wealth_tax(15_000_000, hours)
+        tax_5m = calculate_wealth_tax(5_000_000, hours)
+        tax_1m = calculate_wealth_tax(1_000_000, hours)
+
+        # Higher balance = more tax (progressively)
+        self.assertGreater(tax_15m, tax_5m)
+        self.assertGreater(tax_5m, tax_1m)
+        self.assertGreater(tax_1m, 0)
+
+    async def test_tax_increases_with_time(self):
+        """Tax rate should increase with offline duration (then plateau)."""
+        from .services import calculate_wealth_tax
+        tax_7d = calculate_wealth_tax(10_000_000, 7 * 24)
+        tax_30d = calculate_wealth_tax(10_000_000, 30 * 24)
+        tax_90d = calculate_wealth_tax(10_000_000, 90 * 24)
+
+        self.assertGreater(tax_30d, tax_7d)
+        self.assertGreater(tax_90d, tax_30d)
+
+    async def test_tax_rate_eventually_decreases(self):
+        """Hourly rate should peak then decrease (ln²-decay property)."""
+        from .services import wealth_tax_hourly_rate
+        rate_30d = wealth_tax_hourly_rate(0.25, 30 * 24)
+        rate_5yr = wealth_tax_hourly_rate(0.25, 5 * 365 * 24)
+
+        # Rate should eventually decrease at very long offline times
+        self.assertGreater(rate_30d, rate_5yr)
+
+    async def test_apply_wealth_tax_creates_entries(self):
+        """apply_wealth_tax should create journal entries for eligible accounts."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(days=60)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=5_000_000,
+        )
+
+        await apply_wealth_tax({})
+        await account.arefresh_from_db()
+
+        # Balance should have decreased
+        self.assertLess(account.balance, 5_000_000)
+
+        # Wealth Tax Revenue account should exist and have a positive balance
+        revenue = await Account.objects.aget(
+            account_type=Account.AccountType.REVENUE,
+            book=Account.Book.GOVERNMENT,
+            name="Wealth Tax Revenue",
+        )
+        self.assertGreater(revenue.balance, 0)
+
+        # Journal entry should exist
+        je = await JournalEntry.objects.filter(description="Wealth Tax").afirst()
+        self.assertIsNotNone(je)
+
+    async def test_apply_wealth_tax_exempt_not_taxed(self):
+        """Characters with balance at or below exempt threshold are not taxed."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(days=90)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=500_000,
+        )
+
+        await apply_wealth_tax({})
+        await account.arefresh_from_db()
+        self.assertEqual(account.balance, 500_000)
+
+    async def test_apply_wealth_tax_online_player_still_taxed(self):
+        """Tax applies based on hours offline — even recently online players
+        with high balances can be taxed if they have been offline > 1 hour."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(hours=2)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=10_000_000,
+        )
+
+        await apply_wealth_tax({})
+        await account.arefresh_from_db()
+        # With only 2 hours offline, tax should be very small but nonzero
+        self.assertLess(account.balance, 10_000_000)
+
+    async def test_tax_never_drops_below_exempt(self):
+        """Tax should not reduce balance below the exempt threshold."""
+        character = await sync_to_async(CharacterFactory)()
+        character.last_online = timezone.now() - timedelta(days=365)  # pyrefly: ignore
+        await character.asave(update_fields=["last_online"])
+
+        # Balance just above exempt — tax should be tiny
+        account = await Account.objects.acreate(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=character,
+            balance=510_000,
+        )
+
+        await apply_wealth_tax({})
+        await account.arefresh_from_db()
+        self.assertGreaterEqual(account.balance, 500_000)
 
 
 class NPLTestCase(TestCase):

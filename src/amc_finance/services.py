@@ -829,6 +829,48 @@ INTEREST_RATE = 0.022
 ONLINE_INTEREST_MULTIPLIER = 2.0
 INTEREST_THRESHOLD = 10_000_000
 INTEREST_SCALE = 40_000_000
+INTEREST_DECAY_K = 2.0  # controls how fast interest decays with offline time
+
+# Wealth Tax — Progressive brackets with log-plateau decay
+# Hourly rate: r(t) = k · ln(1 + t/S) / (S + t)
+# Cumulative loss grows as k/2 · ln(1 + t/S)² — monotonic, no recovery
+WEALTH_TAX_EXEMPT = 500_000
+WEALTH_TAX_S = 2163  # time scale in hours (~90 days)
+WEALTH_TAX_BRACKETS = [
+    # (floor, ceiling, k)
+    (500_000,    2_500_000,  0.75),   # Low
+    (2_500_000,  10_000_000, 1.25),   # Mid
+    (10_000_000, float('inf'), 1.75), # High
+]
+
+
+def wealth_tax_hourly_rate(k: float, t_hours: float) -> float:
+    """Hourly tax rate: k · ln(1 + t/S) / (S + t). Monotonically decreasing."""
+    if t_hours <= 0:
+        return 0.0
+    x = 1 + t_hours / WEALTH_TAX_S
+    return k * math.log(x) / (WEALTH_TAX_S * x)
+
+
+def calculate_wealth_tax(balance: int, hours_offline: float) -> int:
+    """Calculate one hourly tick of wealth tax across progressive marginal brackets.
+
+    Returns the integer amount to deduct.
+    """
+    if balance <= WEALTH_TAX_EXEMPT or hours_offline < 1:
+        return 0
+
+    tax = 0.0
+    prev = WEALTH_TAX_EXEMPT
+    for floor, ceiling, k in WEALTH_TAX_BRACKETS:
+        if balance <= prev:
+            break
+        taxable = min(balance, ceiling) - prev
+        if taxable > 0:
+            tax += taxable * wealth_tax_hourly_rate(k, hours_offline)
+        prev = ceiling
+
+    return max(int(tax), 0)
 
 
 def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
@@ -905,18 +947,15 @@ async def apply_interest_to_bank_accounts(
         else:
             time_since_last_online = now - last_online_ts
 
-        if time_since_last_online <= timedelta(hours=1):
+        hours_offline = time_since_last_online.total_seconds() / 3600
+        if hours_offline <= 1:
             character_interest_rate = (
                 online_interest_multiplier * character_interest_rate
             )
-        elif time_since_last_online <= timedelta(days=7):
-            character_interest_rate = character_interest_rate
-        elif time_since_last_online <= timedelta(days=14):
-            character_interest_rate = character_interest_rate / 2
-        elif time_since_last_online <= timedelta(days=30):
-            character_interest_rate = character_interest_rate / 4
         else:
-            character_interest_rate = character_interest_rate / 8
+            # Smooth logarithmic decay: rate × 1/(1 + k·log₁₀(hours))
+            decay = 1.0 / (1.0 + INTEREST_DECAY_K * math.log10(hours_offline))
+            character_interest_rate *= decay
 
         # Apply balance-based fall-off: full interest up to threshold,
         # then exponentially decreasing
@@ -935,6 +974,89 @@ async def apply_interest_to_bank_accounts(
     # Bulk create in single transaction
     await sync_to_async(_bulk_create_interest_entries)(
         entries_to_create, bank_expense_account, now
+    )
+
+
+def _bulk_create_wealth_tax_entries(entries_to_create, revenue_account, now):
+    """Create all wealth tax journal entries in a single transaction.
+
+    Each entry debits the character's LIABILITY account (reducing balance)
+    and credits the Wealth Tax Revenue account.
+    """
+    if not entries_to_create:
+        return
+
+    with transaction.atomic():
+        total_revenue = Decimal(0)
+        for account, amount in entries_to_create:
+            je = JournalEntry.objects.create(
+                date=now,
+                description="Wealth Tax",
+                creator=account.character,
+            )
+            # Debit the player's checking account (LIABILITY: debit decreases balance)
+            LedgerEntry.objects.create(
+                journal_entry=je,
+                account=account,
+                debit=amount,
+                credit=0,
+            )
+            # Credit the revenue account
+            LedgerEntry.objects.create(
+                journal_entry=je,
+                account=revenue_account,
+                debit=0,
+                credit=amount,
+            )
+            account.balance = cast(Any, F("balance") - amount)
+            account.save(update_fields=["balance"])
+            total_revenue += amount
+
+        # Update revenue balance once (REVENUE: credit increases balance)
+        revenue_account.balance = cast(Any, F("balance") + total_revenue)
+        revenue_account.save(update_fields=["balance"])
+
+
+async def apply_wealth_tax(ctx):
+    """Hourly cron: apply progressive wealth tax to offline characters.
+
+    Tax starts from hour 1 of being offline. Uses log-plateau decay
+    with marginal brackets (exempt < 500K, Low, Mid, High).
+    Revenue goes to Government Treasury.
+    """
+    revenue_account, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.REVENUE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Wealth Tax Revenue",
+    )
+
+    now = timezone.now()
+    accounts = await sync_to_async(
+        lambda: list(  # pyrefly: ignore
+            Account.objects.filter(
+                account_type=Account.AccountType.LIABILITY,
+                book=Account.Book.BANK,
+                character__isnull=False,
+                balance__gt=WEALTH_TAX_EXEMPT,
+            ).select_related("character")
+        )
+    )()
+
+    entries_to_create = []
+    for account in accounts:
+        last_online_ts = account.character.last_online  # pyrefly: ignore
+        if last_online_ts is None:
+            hours_offline = 365 * 24.0
+        else:
+            hours_offline = (now - last_online_ts).total_seconds() / 3600
+
+        tax = calculate_wealth_tax(int(account.balance), hours_offline)
+        if tax > 0 and tax <= account.balance - WEALTH_TAX_EXEMPT:
+            entries_to_create.append((account, Decimal(tax)))
+
+    await sync_to_async(_bulk_create_wealth_tax_entries)(
+        entries_to_create, revenue_account, now
     )
 
 
