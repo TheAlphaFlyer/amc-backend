@@ -13,6 +13,7 @@ from .services import (
     register_player_withdrawal,
     apply_interest_to_bank_accounts,
     apply_wealth_tax,
+    transfer_nirc,
     get_non_performing_loans,
     get_character_npl_status,
     register_player_take_loan,
@@ -244,13 +245,13 @@ class WealthTaxTestCase(TestCase):
         # Balance should have decreased
         self.assertLess(account.balance, 5_000_000)
 
-        # Wealth Tax Revenue account should exist and have a positive balance
-        revenue = await Account.objects.aget(
-            account_type=Account.AccountType.REVENUE,
+        # Sovereign Reserves account should exist and have a positive balance
+        reserves = await Account.objects.aget(
+            account_type=Account.AccountType.ASSET,
             book=Account.Book.GOVERNMENT,
-            name="Wealth Tax Revenue",
+            name="Sovereign Reserves",
         )
-        self.assertGreater(revenue.balance, 0)
+        self.assertGreater(reserves.balance, 0)
 
         # Journal entry should exist
         je = await JournalEntry.objects.filter(description="Wealth Tax").afirst()
@@ -310,6 +311,59 @@ class WealthTaxTestCase(TestCase):
         await account.arefresh_from_db()
         self.assertGreaterEqual(account.balance, 500_000)
 
+
+class NIRCTransferTestCase(TestCase):
+    async def test_transfer_nirc_moves_funds(self):
+        """NIRC should transfer a daily portion of Sovereign Reserves to Treasury Fund."""
+        reserves = await Account.objects.acreate(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.GOVERNMENT,
+            character=None,
+            name="Sovereign Reserves",
+            balance=365_000_000,  # 365M → daily drip = 365M * 0.05/365 = 50,000
+        )
+        treasury = await Account.objects.acreate(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.GOVERNMENT,
+            character=None,
+            name="Treasury Fund",
+            balance=100_000_000,
+        )
+
+        await transfer_nirc({})
+
+        await reserves.arefresh_from_db()
+        await treasury.arefresh_from_db()
+
+        # Reserves should decrease, treasury should increase
+        self.assertLess(reserves.balance, 365_000_000)
+        self.assertGreater(treasury.balance, 100_000_000)
+
+        # Journal entry should exist
+        je = await JournalEntry.objects.filter(description="NIRC Transfer").afirst()
+        self.assertIsNotNone(je)
+
+    async def test_transfer_nirc_empty_reserves(self):
+        """NIRC should do nothing when reserves are empty."""
+        await Account.objects.acreate(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.GOVERNMENT,
+            character=None,
+            name="Sovereign Reserves",
+            balance=0,
+        )
+        treasury = await Account.objects.acreate(
+            account_type=Account.AccountType.ASSET,
+            book=Account.Book.GOVERNMENT,
+            character=None,
+            name="Treasury Fund",
+            balance=100_000_000,
+        )
+
+        await transfer_nirc({})
+
+        await treasury.arefresh_from_db()
+        self.assertEqual(treasury.balance, 100_000_000)
 
 class NPLTestCase(TestCase):
     async def _create_loan_account(self, character, balance=1_000_000):

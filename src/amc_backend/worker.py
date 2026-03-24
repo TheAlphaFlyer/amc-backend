@@ -24,7 +24,7 @@ from amc.gov_employee import expire_gov_employees  # noqa: E402
 from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
-from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, evaluate_credit_scores  # noqa: E402
+from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, evaluate_credit_scores, transfer_nirc  # noqa: E402
 
 REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
 
@@ -150,6 +150,8 @@ class WorkerSettings:
         cron(apply_wealth_tax, hour=None, minute=0, second=30),
         # pyrefly: ignore [bad-argument-type]
         cron(evaluate_credit_scores, hour=0, minute=15, second=0),
+        # pyrefly: ignore [bad-argument-type]
+        cron(transfer_nirc, hour=0, minute=5, second=0),  # daily NIRC drip
         # cron(monitor_events_main, second=None),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_events_event, second=None),

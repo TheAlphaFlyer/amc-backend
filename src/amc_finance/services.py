@@ -125,6 +125,16 @@ async def get_treasury_fund_balance():
     return treasury_fund.balance
 
 
+async def get_sovereign_reserves_balance():
+    reserves, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Sovereign Reserves",
+    )
+    return reserves.balance
+
+
 async def get_character_total_donations(character, start_time):
     aggregates = await (
         LedgerEntry.objects.filter_character_donations(character)
@@ -843,6 +853,9 @@ WEALTH_TAX_BRACKETS = [
     (10_000_000, float('inf'), 1.75), # High
 ]
 
+# Sovereign Reserves — NIRC (Net Investment Returns Contribution)
+NIRC_MONTHLY_RATE = 0.05  # 5% of reserves per month drips to operating treasury
+
 
 def wealth_tax_hourly_rate(k: float, t_hours: float) -> float:
     """Hourly tax rate: k · ln(1 + t/S) / (S + t). Monotonically decreasing."""
@@ -930,6 +943,7 @@ async def apply_interest_to_bank_accounts(
                 account_type=Account.AccountType.LIABILITY,
                 book=Account.Book.BANK,
                 character__isnull=False,
+                character__guid__isnull=False,
                 balance__gt=0,
             ).select_related("character")
         )
@@ -1022,13 +1036,13 @@ async def apply_wealth_tax(ctx):
 
     Tax starts from hour 1 of being offline. Uses log-plateau decay
     with marginal brackets (exempt < 500K, Low, Mid, High).
-    Revenue goes to Government Treasury.
+    Revenue goes to Sovereign Reserves (locked, not operating treasury).
     """
-    revenue_account, _ = await Account.objects.aget_or_create(
-        account_type=Account.AccountType.REVENUE,
+    reserves_account, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
         book=Account.Book.GOVERNMENT,
         character=None,
-        name="Wealth Tax Revenue",
+        name="Sovereign Reserves",
     )
 
     now = timezone.now()
@@ -1038,6 +1052,7 @@ async def apply_wealth_tax(ctx):
                 account_type=Account.AccountType.LIABILITY,
                 book=Account.Book.BANK,
                 character__isnull=False,
+                character__guid__isnull=False,
                 balance__gt=WEALTH_TAX_EXEMPT,
             ).select_related("character")
         )
@@ -1056,7 +1071,56 @@ async def apply_wealth_tax(ctx):
             entries_to_create.append((account, Decimal(tax)))
 
     await sync_to_async(_bulk_create_wealth_tax_entries)(
-        entries_to_create, revenue_account, now
+        entries_to_create, reserves_account, now
+    )
+
+
+async def transfer_nirc(ctx):
+    """Daily cron: transfer NIRC (Net Investment Returns Contribution)
+    from Sovereign Reserves to Operating Treasury.
+
+    Transfers NIRC_ANNUAL_RATE / 365 of reserves balance daily.
+    """
+    reserves, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Sovereign Reserves",
+    )
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+
+    if reserves.balance <= 0:
+        return
+
+    daily_rate = Decimal(str(NIRC_MONTHLY_RATE)) / 30
+    amount = int(reserves.balance * daily_rate)
+    if amount <= 0:
+        return
+
+    amount_decimal = Decimal(amount)
+    now = timezone.now()
+
+    await sync_to_async(create_journal_entry, thread_sensitive=True)(
+        now,
+        "NIRC Transfer",
+        None,
+        [
+            {
+                "account": reserves,
+                "debit": 0,
+                "credit": amount_decimal,  # Credit reduces ASSET
+            },
+            {
+                "account": treasury_fund,
+                "debit": amount_decimal,  # Debit increases ASSET
+                "credit": 0,
+            },
+        ],
     )
 
 

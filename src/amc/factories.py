@@ -44,6 +44,7 @@ class CharacterFactory(DjangoModelFactory):
 
     player = SubFactory("amc.factories.PlayerFactory", characters=None)
     name = Faker("user_name")
+    guid = LazyAttribute(lambda _: uuid.uuid4().hex)
 
 
 class PlayerFactory(DjangoModelFactory):
