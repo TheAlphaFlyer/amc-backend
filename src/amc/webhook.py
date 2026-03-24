@@ -223,6 +223,7 @@ async def handle_contract_signed(event, player, timestamp):
     await ServerSignContractLog.objects.acreate(
         timestamp=timestamp,
         player=player,
+        guid=event["data"].get("ContractGuid"),  # None for old mod, set for new mod
         cargo_key=contract["Item"],
         amount=contract["Amount"],
         payment=contract["CompletionPayment"]["BaseValue"],
@@ -231,39 +232,28 @@ async def handle_contract_signed(event, player, timestamp):
 
 
 async def handle_contract_delivered(event, player, timestamp):
-    contract = event.get("data")
-    if not contract:
-        # Is this possible? logic suggests it handles cases where contract data is missing
-        # but guid is present? Or maybe contract IS 'data'?
-        # Original code: contract = event['data']; if contract: ... else: try ...
-        # Wait, event['data'] is a dict. So contract IS the data dict apparently?
-        # "ServerContractCargoDelivered" data IS the contract?
-        # Let's assume yes based on original code usage.
-        pass
-
-    # If contract (event['data']) is present and has Item/Amount etc it's a "full" update
-    # If not, it might just be an update with GUID?
-
-    guid = event["data"].get("ContractGuid")
+    data = event.get("data", {})
+    guid = data.get("ContractGuid")
     if not guid:
         raise ValueError("Missing ContractGuid")
 
-    defaults = {}
-    if contract and "Item" in contract:
-        defaults = {
-            "timestamp": timestamp,
-            "player": player,
-            "cargo_key": contract["Item"],
-            "amount": contract["Amount"],
-            "payment": contract["CompletionPayment"],
-            "cost": contract.get("Cost", 0),
-            "data": contract,
-        }
-        log, _created = await ServerSignContractLog.objects.aget_or_create(
+    if "Item" in data:
+        # Old mod: contract data included in each delivery event.
+        # Create log if it doesn't exist (fallback for missing ServerSignContract).
+        log, _ = await ServerSignContractLog.objects.aget_or_create(
             guid=guid,
-            defaults=defaults,
+            defaults={
+                "timestamp": timestamp,
+                "player": player,
+                "cargo_key": data["Item"],
+                "amount": data["Amount"],
+                "payment": data["CompletionPayment"],
+                "cost": data.get("Cost", 0),
+                "data": data,
+            },
         )
     else:
+        # New mod: guid-only, log already exists from ServerSignContract hook.
         try:
             log = await ServerSignContractLog.objects.aget(guid=guid)
         except ServerSignContractLog.DoesNotExist:

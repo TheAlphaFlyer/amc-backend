@@ -438,6 +438,61 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 2)
         self.assertTrue(log.delivered)
 
+    async def test_contract_new_mod_flow(self, mock_get_treasury, mock_get_rp_mode):
+        """New mod: ServerSignContract sends guid, ServerContractCargoDelivered sends guid-only."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        # Step 1: Sign contract (new mod includes ContractGuid)
+        sign_event = {
+            "hook": "ServerSignContract",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "new_mod_guid_456",
+                "Contract": {
+                    "Item": "gravel",
+                    "Amount": 3,
+                    "CompletionPayment": {"BaseValue": 75000},
+                    "Cost": {"BaseValue": 2000},
+                },
+            },
+        }
+        await process_event(sign_event, player, character)
+
+        log = await ServerSignContractLog.objects.aget(guid="new_mod_guid_456")
+        self.assertEqual(log.cargo_key, "gravel")
+        self.assertEqual(log.amount, 3)
+        self.assertEqual(log.payment, 75000)
+
+        # Step 2: Deliver cargo (new mod sends guid-only, no Item/Amount)
+        deliver_event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "new_mod_guid_456",
+            },
+        }
+
+        # Deliveries 1, 2 — not complete yet
+        for i in range(2):
+            _, _, contract_pay = await process_event(deliver_event, player, character)
+            self.assertEqual(contract_pay, 0)
+
+        await log.arefresh_from_db()
+        self.assertEqual(log.finished_amount, 2)
+        self.assertFalse(log.delivered)
+
+        # Delivery 3 — completion
+        _, _, contract_pay = await process_event(deliver_event, player, character)
+        self.assertEqual(contract_pay, 75000)
+
+        await log.arefresh_from_db()
+        self.assertEqual(log.finished_amount, 3)
+        self.assertTrue(log.delivered)
+
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
