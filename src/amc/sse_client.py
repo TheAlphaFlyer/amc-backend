@@ -113,7 +113,9 @@ async def run_sse_listener(ctx):
     http_client_mod = ctx.get("http_client_mod")
     discord_client = ctx.get("discord_client")
 
-    last_event_id = "0"
+    from django.core.cache import cache
+    from amc.webhook import LAST_SEQ_CACHE_KEY
+    last_event_id = str(cache.get(LAST_SEQ_CACHE_KEY, 0))
     backoff = INITIAL_BACKOFF
 
     # sock_read=90: detect dead connections if the mod server hangs after
