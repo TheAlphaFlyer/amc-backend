@@ -1060,8 +1060,8 @@ def _bulk_create_wealth_tax_entries(entries_to_create, reserves_account, now):
     """Create all wealth tax journal entries in a single transaction.
 
     Each entry debits the character's LIABILITY account (reducing balance)
-    and credits the Sovereign Reserves ASSET account.
-    Balance override via F-expression ensures reserves increase.
+    and debits the Sovereign Reserves ASSET account (increasing balance).
+    Standard double-entry: ASSET balance += debit - credit.
     """
     if not entries_to_create:
         return
@@ -1081,19 +1081,18 @@ def _bulk_create_wealth_tax_entries(entries_to_create, reserves_account, now):
                 debit=amount,
                 credit=0,
             )
-            # Credit the reserves account (keeps journal balanced: total debits = total credits)
+            # Debit the reserves account (ASSET: debit increases balance)
             LedgerEntry.objects.create(
                 journal_entry=je,
                 account=reserves_account,
-                debit=0,
-                credit=amount,
+                debit=amount,
+                credit=0,
             )
             account.balance = cast(Any, F("balance") - amount)
             account.save(update_fields=["balance"])
             total_tax += amount
 
-        # Override: force-increase reserves (credit normally decreases ASSET,
-        # but we treat this as an inflow to the sovereign fund)
+        # Standard ASSET debit: balance += debit - credit = +total_tax
         reserves_account.balance = cast(Any, F("balance") + total_tax)
         reserves_account.save(update_fields=["balance"])
 

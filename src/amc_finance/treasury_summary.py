@@ -169,7 +169,7 @@ def get_treasury_summary(target_date=None, days=1):
         account__book=Account.Book.GOVERNMENT,
         journal_entry__description="Wealth Tax",
         journal_entry__date__range=[date_start, date_end],
-    ).aggregate(total=Sum("credit", default=Decimal(0)))
+    ).aggregate(total=Sum("debit", default=Decimal(0)))
     wealth_tax_collected = wealth_tax_agg["total"]
 
     # --- Point-in-time balances ---
@@ -189,8 +189,7 @@ def get_treasury_summary(target_date=None, days=1):
     reserves_balance = gov_accounts["Sovereign Reserves"].balance if "Sovereign Reserves" in gov_accounts else Decimal(0)
 
     # If report date is in the past, rewind balances.
-    # Account.balance grows via credits in this system (not standard
-    # double-entry debits), so net change = credit - debit.
+    # Standard double-entry: ASSET balance += debit - credit.
     today = now.date()
     if date_end < today:
         post_treasury = LedgerEntry.objects.filter(
@@ -198,7 +197,7 @@ def get_treasury_summary(target_date=None, days=1):
             account__account_type=Account.AccountType.ASSET,
             account__book=Account.Book.GOVERNMENT,
             journal_entry__date__gt=date_end,
-        ).aggregate(net=Sum(F("credit") - F("debit"), default=Decimal(0)))
+        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
         treasury_balance -= post_treasury["net"]
 
         post_reserves = LedgerEntry.objects.filter(
@@ -206,7 +205,7 @@ def get_treasury_summary(target_date=None, days=1):
             account__account_type=Account.AccountType.ASSET,
             account__book=Account.Book.GOVERNMENT,
             journal_entry__date__gt=date_end,
-        ).aggregate(net=Sum(F("credit") - F("debit"), default=Decimal(0)))
+        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
         reserves_balance -= post_reserves["net"]
 
     surplus = total_income - total_expenses
@@ -396,7 +395,7 @@ def get_treasury_trend(days=7):
         )
         .annotate(day=TruncDay("journal_entry__date"))
         .values("day")
-        .annotate(net_change=Sum(F("credit") - F("debit")))
+        .annotate(net_change=Sum(F("debit") - F("credit")))
         .order_by("day")
     )
 
@@ -431,7 +430,7 @@ def get_treasury_trend(days=7):
         )
         .annotate(day=TruncDay("journal_entry__date"))
         .values("day")
-        .annotate(net_change=Sum(F("credit") - F("debit")))
+        .annotate(net_change=Sum(F("debit") - F("credit")))
         .order_by("day")
     )
 

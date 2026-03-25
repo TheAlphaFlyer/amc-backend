@@ -816,10 +816,21 @@ class TreasurySummaryTestCase(TestCase):
             character=character,
             balance=5_000_000,
         )
-        self._create_journal_entry("Wealth Tax", [
-            {"account": bank_account, "debit": Decimal(10_000), "credit": 0},
-            {"account": reserves, "debit": 0, "credit": Decimal(10_000)},
-        ])
+        # Wealth tax bypasses create_journal_entry (both sides are debits,
+        # which doesn't balance in standard double-entry validation).
+        je = JournalEntry.objects.create(
+            date=timezone.now(),
+            description="Wealth Tax",
+            creator=character,
+        )
+        LedgerEntry.objects.create(
+            journal_entry=je, account=bank_account,
+            debit=Decimal(10_000), credit=0,
+        )
+        LedgerEntry.objects.create(
+            journal_entry=je, account=reserves,
+            debit=Decimal(10_000), credit=0,
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["wealth_tax_collected"], Decimal(10_000))
