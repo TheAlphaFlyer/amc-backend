@@ -1,12 +1,28 @@
 import asyncio
+import os
 
 import discord
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from datetime import timedelta
 
 from amc_finance.services import get_crossover_accounts
+
+
+def _load_discord_token():
+    """Get DISCORD_TOKEN from settings, falling back to agenix secrets."""
+    token = settings.DISCORD_TOKEN
+    if token:
+        return token
+    secrets_path = "/run/agenix/backend"
+    if os.path.exists(secrets_path):
+        with open(secrets_path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("DISCORD_TOKEN="):
+                    return line.split("=", 1)[1].strip("\"'")
+    return None
 
 
 class Command(BaseCommand):
@@ -37,6 +53,13 @@ class Command(BaseCommand):
         asyncio.run(self._send_warnings(accounts))
 
     async def _send_warnings(self, accounts):
+        token = _load_discord_token()
+        if not token:
+            raise CommandError(
+                "DISCORD_TOKEN not found. Set it in your environment or ensure "
+                "/run/agenix/backend is readable."
+            )
+
         intents = discord.Intents.default()
         client = discord.Client(intents=intents)
         ready = asyncio.Event()
@@ -45,7 +68,7 @@ class Command(BaseCommand):
         async def on_ready():
             ready.set()
 
-        asyncio.create_task(client.start(settings.DISCORD_TOKEN))
+        asyncio.create_task(client.start(token))
         await ready.wait()
 
         warned = 0

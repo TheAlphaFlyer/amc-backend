@@ -8,7 +8,7 @@ and gov-web dashboard.
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Sum, F, Q
+from django.db.models import Sum, F
 from django.db.models.functions import TruncDay
 from django.utils import timezone
 
@@ -172,7 +172,9 @@ def get_treasury_summary(target_date=None, days=1):
     ).aggregate(total=Sum("credit", default=Decimal(0)))
     wealth_tax_collected = wealth_tax_agg["total"]
 
-    # --- Current balances (single query for both accounts) ---
+    # --- Point-in-time balances ---
+    # Read current Account.balance and subtract changes after the report
+    # date to reconstruct the historical balance.
     gov_accounts = {
         acc.name: acc
         for acc in Account.objects.filter(
@@ -185,6 +187,26 @@ def get_treasury_summary(target_date=None, days=1):
 
     treasury_balance = gov_accounts["Treasury Fund"].balance if "Treasury Fund" in gov_accounts else Decimal(0)
     reserves_balance = gov_accounts["Sovereign Reserves"].balance if "Sovereign Reserves" in gov_accounts else Decimal(0)
+
+    # If report date is in the past, rewind balances
+    today = now.date()
+    if date_end < today:
+        # Subtract all changes that happened after date_end
+        post_treasury = LedgerEntry.objects.filter(
+            account__name="Treasury Fund",
+            account__account_type=Account.AccountType.ASSET,
+            account__book=Account.Book.GOVERNMENT,
+            journal_entry__date__gt=date_end,
+        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
+        treasury_balance -= post_treasury["net"]
+
+        post_reserves = LedgerEntry.objects.filter(
+            account__name="Sovereign Reserves",
+            account__account_type=Account.AccountType.ASSET,
+            account__book=Account.Book.GOVERNMENT,
+            journal_entry__date__gt=date_end,
+        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
+        reserves_balance -= post_reserves["net"]
 
     surplus = total_income - total_expenses
 
