@@ -153,3 +153,34 @@ class LedgerEntry(models.Model):
         if self.debit > 0:
             return f"{self.account} Dr. {self.debit}"
         return f"{self.account} Cr. {self.credit}"
+
+
+class DailyTreasurySnapshot(models.Model):
+    """
+    Persisted end-of-day treasury summary for historical browsing.
+    One row per day, created by the daily cron task at 02:30 UTC.
+    """
+
+    date = models.DateField(unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Point-in-time balances (as of end of day)
+    treasury_balance = models.DecimalField(max_digits=14, decimal_places=2)
+    reserves_balance = models.DecimalField(max_digits=14, decimal_places=2)
+
+    # Aggregated totals
+    total_income = models.DecimalField(max_digits=14, decimal_places=2)
+    total_expenses = models.DecimalField(max_digits=14, decimal_places=2)
+    surplus = models.DecimalField(max_digits=14, decimal_places=2)
+    wealth_tax_collected = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    nirc_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    # Full breakdown stored as JSON for flexibility
+    data = models.JSONField(help_text="Full treasury summary dict for this day")
+
+    class Meta:
+        ordering = ["-date"]
+        verbose_name_plural = "Daily treasury snapshots"
+
+    def __str__(self):
+        return f"Treasury Snapshot {self.date} (surplus: {self.surplus:+,.0f})"

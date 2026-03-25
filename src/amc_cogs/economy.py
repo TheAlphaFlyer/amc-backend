@@ -44,6 +44,7 @@ from amc_finance.services import (
     get_non_performing_loans,
     get_crossover_accounts,
 )
+from amc_finance.treasury_summary import get_treasury_summary, save_treasury_snapshot
 from amc.subsidies import DEFAULT_SAVING_RATE
 from amc.save_file import decrypt, encrypt
 
@@ -106,6 +107,7 @@ class EconomyCog(commands.Cog):
         self.daily_top_haulers_task.start()
         self.weekly_donations_task.start()
         self.daily_gov_employee_summary_task.start()
+        self.daily_treasury_summary_task.start()
         self.npl_warning_task.start()
         self.npl_collections_board_task.start()
         self.crossover_warning_task.start()
@@ -127,6 +129,21 @@ class EconomyCog(commands.Cog):
         if treasury_channel:
             sent_message = await treasury_channel.send(embed=embed)
             # Forward to #general
+            general_channel = self.bot.get_channel(self.general_channel_id)
+            if general_channel:
+                await sent_message.forward(general_channel)
+
+    @tasks.loop(time=dt_time(hour=2, minute=30, tzinfo=dt_timezone.utc))
+    async def daily_treasury_summary_task(self):
+        # Save snapshot for yesterday before posting (captures end-of-day balances)
+        await sync_to_async(save_treasury_snapshot)()
+        embed = await self.build_treasury_summary_embed()
+        treasury_channel_id = getattr(
+            settings, "DISCORD_TREASURY_CHANNEL_ID", 1402660537619320872
+        )
+        treasury_channel = self.bot.get_channel(treasury_channel_id)
+        if treasury_channel:
+            sent_message = await treasury_channel.send(embed=embed)
             general_channel = self.bot.get_channel(self.general_channel_id)
             if general_channel:
                 await sent_message.forward(general_channel)
@@ -679,6 +696,94 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         embed.set_footer(text=f"Requested by {interaction.user.display_name}")
 
         await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="treasury_summary",
+        description="Display daily treasury income/expense summary with breakdown",
+    )
+    @app_commands.describe(days="Number of days to summarize (default: 1)")
+    async def treasury_summary_cmd(self, interaction, days: int = 1):
+        await interaction.response.defer()
+        embed = await self.build_treasury_summary_embed(days=days)
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed)
+
+    async def build_treasury_summary_embed(self, days=1):
+        summary = await sync_to_async(get_treasury_summary)(days=days)
+        now = timezone.now()
+        yesterday = (now - timedelta(days=1)).date()
+
+        if days == 1:
+            title = "📊 Daily Treasury Summary"
+            description = f"Generated for {yesterday.strftime('%A, %-d %B %Y')}"
+        else:
+            title = f"📊 Treasury Summary ({days} days)"
+            description = f"{summary['date_start']} to {summary['date_end']}"
+
+        surplus = summary["surplus"]
+        if surplus >= 0:
+            surplus_indicator = f"✅ Surplus: `${surplus:,}`"
+            color = discord.Color.green()
+        else:
+            surplus_indicator = f"❌ Deficit: `${surplus:,}`"
+            color = discord.Color.red()
+
+        embed = discord.Embed(
+            title=title,
+            description=f"{description}\n\n{surplus_indicator}",
+            color=color,
+            timestamp=now,
+        )
+
+        # Balances
+        embed.add_field(
+            name="💰 Treasury Balance",
+            value=f"`${summary['treasury_balance']:,}`",
+            inline=True,
+        )
+        embed.add_field(
+            name="🏛️ Sovereign Reserves",
+            value=f"`${summary['reserves_balance']:,}`",
+            inline=True,
+        )
+
+        # Income breakdown
+        income_lines = []
+        for key, data in summary["income"]["breakdown"].items():
+            income_lines.append(f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`")
+        income_str = "\n".join(income_lines) if income_lines else "No income recorded."
+        embed.add_field(
+            name=f"📈 Total Income: `${summary['income']['total']:,}`",
+            value=income_str,
+            inline=False,
+        )
+
+        # Expense breakdown
+        expense_lines = []
+        for key, data in summary["expenses"]["breakdown"].items():
+            expense_lines.append(f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`")
+        expense_str = "\n".join(expense_lines) if expense_lines else "No expenses recorded."
+        embed.add_field(
+            name=f"📉 Total Expenses: `${summary['expenses']['total']:,}`",
+            value=expense_str,
+            inline=False,
+        )
+
+        # Wealth tax (separate — goes to reserves)
+        if summary["wealth_tax_collected"] > 0:
+            embed.add_field(
+                name="🔒 Wealth Tax → Reserves",
+                value=f"`${summary['wealth_tax_collected']:,}`",
+                inline=True,
+            )
+
+        embed.add_field(
+            name="🔗 Full Dashboard",
+            value="[View on gov.aseanmotorclub.com](https://gov.aseanmotorclub.com/treasury-dashboard)",
+            inline=False,
+        )
+
+        return embed
 
     @app_commands.command(name="bank_account", description="Display your bank account")
     async def bank_account(self, interaction):
