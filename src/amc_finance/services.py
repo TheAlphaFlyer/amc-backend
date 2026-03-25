@@ -844,13 +844,13 @@ INTEREST_DECAY_K = 2.0  # controls how fast interest decays with offline time
 # Wealth Tax — Progressive brackets with log-plateau decay
 # Hourly rate: r(t) = k · ln(1 + t/S) / (S + t)
 # Cumulative loss grows as k/2 · ln(1 + t/S)² — monotonic, no recovery
-WEALTH_TAX_EXEMPT = 500_000
+WEALTH_TAX_EXEMPT = 1_000_000
 WEALTH_TAX_S = 2163  # time scale in hours (~90 days)
 WEALTH_TAX_BRACKETS = [
     # (floor, ceiling, k)
-    (500_000,    2_500_000,  0.75),   # Low
-    (2_500_000,  10_000_000, 1.25),   # Mid
-    (10_000_000, float('inf'), 1.75), # High
+    (1_000_000,   20_000_000,   0.65),  # Low
+    (20_000_000,  100_000_000,  1.05),  # Mid
+    (100_000_000, float('inf'), 1.55),  # High
 ]
 
 # Sovereign Reserves — NIRC (Net Investment Returns Contribution)
