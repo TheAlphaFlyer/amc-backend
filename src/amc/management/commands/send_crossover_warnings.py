@@ -13,17 +13,20 @@ DM_DELAY_SECONDS = 1.5  # Rate limit: ~40 DMs/min (Discord limit is 50/sec globa
 
 
 def _load_discord_token():
-    """Get DISCORD_TOKEN from settings, falling back to agenix secrets."""
-    token = settings.DISCORD_TOKEN
+    """Get DISCORD_TOKEN from environment or agenix secrets (requires root)."""
+    token = os.environ.get("DISCORD_TOKEN") or getattr(settings, "DISCORD_TOKEN", None)
     if token:
         return token
+    # Fall back to agenix secrets (only readable as root)
     secrets_path = "/run/agenix/backend"
-    if os.path.exists(secrets_path):
+    try:
         with open(secrets_path) as f:
             for line in f:
                 line = line.strip()
                 if line.startswith("DISCORD_TOKEN="):
                     return line.split("=", 1)[1].strip("\"'")
+    except (PermissionError, FileNotFoundError):
+        pass
     return None
 
 
@@ -63,8 +66,10 @@ class Command(BaseCommand):
         token = _load_discord_token()
         if not token:
             raise CommandError(
-                "DISCORD_TOKEN not found. Set it in your environment or ensure "
-                "/run/agenix/backend is readable."
+                "DISCORD_TOKEN not found. Run as root to read /run/agenix/backend, "
+                "or: systemd-run --pipe --wait --collect "
+                "--service-type=oneshot -p EnvironmentFile=/run/agenix/backend "
+                "amcm send_crossover_warnings --force"
             )
 
         intents = discord.Intents.default()
