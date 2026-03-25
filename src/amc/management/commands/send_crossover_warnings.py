@@ -9,6 +9,8 @@ from datetime import timedelta
 
 from amc_finance.services import get_crossover_accounts
 
+DM_DELAY_SECONDS = 1.5  # Rate limit: ~40 DMs/min (Discord limit is 50/sec global)
+
 
 def _load_discord_token():
     """Get DISCORD_TOKEN from settings, falling back to agenix secrets."""
@@ -34,6 +36,11 @@ class Command(BaseCommand):
             action="store_true",
             help="List crossover accounts without sending DMs",
         )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Ignore the 30-day cooldown and re-send to all crossover accounts",
+        )
 
     def handle(self, *args, **options):
         accounts = get_crossover_accounts()
@@ -50,9 +57,9 @@ class Command(BaseCommand):
                 )
             return
 
-        asyncio.run(self._send_warnings(accounts))
+        asyncio.run(self._send_warnings(accounts, force=options["force"]))
 
-    async def _send_warnings(self, accounts):
+    async def _send_warnings(self, accounts, force=False):
         token = _load_discord_token()
         if not token:
             raise CommandError(
@@ -73,9 +80,11 @@ class Command(BaseCommand):
 
         warned = 0
         skipped = 0
+        failed = 0
         for account in accounts:
             character = account.character
-            if character.crossover_warning_sent_at is not None:
+
+            if not force and character.crossover_warning_sent_at is not None:
                 if timezone.now() < character.crossover_warning_sent_at + timedelta(
                     days=30
                 ):
@@ -105,12 +114,14 @@ class Command(BaseCommand):
                     self.style.SUCCESS(f"  ✓ {character.name} (ID:{character.id})")
                 )
             except discord.Forbidden:
+                failed += 1
                 self.stdout.write(
                     self.style.WARNING(
                         f"  ⊘ {character.name} (ID:{character.id}): DMs disabled"
                     )
                 )
             except Exception as e:
+                failed += 1
                 self.stdout.write(
                     self.style.ERROR(
                         f"  ✗ {character.name} (ID:{character.id}): {e}"
@@ -121,9 +132,12 @@ class Command(BaseCommand):
             character.crossover_warning_sent_at = timezone.now()
             await character.asave(update_fields=["crossover_warning_sent_at"])
 
+            # Rate limit: pause between DMs to avoid Discord API throttling
+            await asyncio.sleep(DM_DELAY_SECONDS)
+
         await client.close()
         self.stdout.write(
             self.style.SUCCESS(
-                f"\nDone: {warned} warned, {skipped} skipped (cooldown)."
+                f"\nDone: {warned} sent, {skipped} skipped (cooldown), {failed} failed."
             )
         )
