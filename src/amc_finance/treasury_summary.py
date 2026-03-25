@@ -188,16 +188,17 @@ def get_treasury_summary(target_date=None, days=1):
     treasury_balance = gov_accounts["Treasury Fund"].balance if "Treasury Fund" in gov_accounts else Decimal(0)
     reserves_balance = gov_accounts["Sovereign Reserves"].balance if "Sovereign Reserves" in gov_accounts else Decimal(0)
 
-    # If report date is in the past, rewind balances
+    # If report date is in the past, rewind balances.
+    # Account.balance grows via credits in this system (not standard
+    # double-entry debits), so net change = credit - debit.
     today = now.date()
     if date_end < today:
-        # Subtract all changes that happened after date_end
         post_treasury = LedgerEntry.objects.filter(
             account__name="Treasury Fund",
             account__account_type=Account.AccountType.ASSET,
             account__book=Account.Book.GOVERNMENT,
             journal_entry__date__gt=date_end,
-        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
+        ).aggregate(net=Sum(F("credit") - F("debit"), default=Decimal(0)))
         treasury_balance -= post_treasury["net"]
 
         post_reserves = LedgerEntry.objects.filter(
@@ -205,7 +206,7 @@ def get_treasury_summary(target_date=None, days=1):
             account__account_type=Account.AccountType.ASSET,
             account__book=Account.Book.GOVERNMENT,
             journal_entry__date__gt=date_end,
-        ).aggregate(net=Sum(F("debit") - F("credit"), default=Decimal(0)))
+        ).aggregate(net=Sum(F("credit") - F("debit"), default=Decimal(0)))
         reserves_balance -= post_reserves["net"]
 
     surplus = total_income - total_expenses
@@ -395,7 +396,7 @@ def get_treasury_trend(days=7):
         )
         .annotate(day=TruncDay("journal_entry__date"))
         .values("day")
-        .annotate(net_change=Sum(F("debit") - F("credit")))
+        .annotate(net_change=Sum(F("credit") - F("debit")))
         .order_by("day")
     )
 
@@ -430,7 +431,7 @@ def get_treasury_trend(days=7):
         )
         .annotate(day=TruncDay("journal_entry__date"))
         .values("day")
-        .annotate(net_change=Sum(F("debit") - F("credit")))
+        .annotate(net_change=Sum(F("credit") - F("debit")))
         .order_by("day")
     )
 
