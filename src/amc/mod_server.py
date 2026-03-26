@@ -218,13 +218,12 @@ async def get_webhook_events(session):
 
 
 async def get_webhook_events2(session):
-    from django.core.cache import cache
-
-    since_seq = cache.get("webhook:last_processed_seq", 0)
-    url = f"/events?since={since_seq}" if since_seq else "/events"
-    async with session.get(url, timeout=FAST_TIMEOUT) as resp:
+    # Note: ?since= filtering is not used because the C++ EventsRoute
+    # rejects URLs with query params (exact match bug). Deduplication
+    # is handled downstream by process_events' seq-based filtering.
+    async with session.get("/events", timeout=FAST_TIMEOUT) as resp:
         data = await resp.json()
-        return data["events"]
+        return data.get("events", [])
 
 
 async def get_status(session):
