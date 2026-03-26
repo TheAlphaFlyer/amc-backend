@@ -14,6 +14,21 @@ from django.conf import settings
 
 logger = logging.getLogger("amc.sse")
 
+
+def parse_epoch_seq(event_id: str) -> tuple[int | None, int]:
+    """Parse an SSE event ID that may be epoch-prefixed.
+
+    Formats:
+        "1711400000:42" -> (1711400000, 42)   # epoch:seq
+        "42"           -> (None, 42)           # plain seq (backward compat)
+
+    Returns (epoch, seq). Raises ValueError on unparseable input.
+    """
+    if ":" in event_id:
+        epoch_str, seq_str = event_id.split(":", 1)
+        return int(epoch_str), int(seq_str)
+    return None, int(event_id)
+
 # Debounce: flush buffered events after this much silence
 FLUSH_DEBOUNCE_SECONDS = 0.5
 
@@ -114,8 +129,9 @@ async def run_sse_listener(ctx):
     discord_client = ctx.get("discord_client")
 
     from django.core.cache import cache
-    from amc.webhook import LAST_SEQ_CACHE_KEY
+    from amc.webhook import LAST_SEQ_CACHE_KEY, LAST_EPOCH_CACHE_KEY
     last_event_id = str(cache.get(LAST_SEQ_CACHE_KEY, 0))
+    current_epoch = cache.get(LAST_EPOCH_CACHE_KEY)
     backoff = INITIAL_BACKOFF
 
     # sock_read=90: detect dead connections if the mod server hangs after
@@ -187,12 +203,33 @@ async def run_sse_listener(ctx):
                                     event_id, data = parse_sse_event(current_lines)
                                     current_lines = []
                                     if data:
+                                        parsed_epoch = None
+                                        parsed_seq = None
                                         if event_id:
+                                            try:
+                                                parsed_epoch, parsed_seq = parse_epoch_seq(event_id)
+                                            except ValueError:
+                                                logger.warning("SSE: invalid event ID: %s", event_id)
                                             last_event_id = event_id
+
+                                            # Detect epoch change (server restart)
+                                            if parsed_epoch is not None and current_epoch is not None and parsed_epoch != current_epoch:
+                                                logger.warning(
+                                                    "SSE epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
+                                                    current_epoch, parsed_epoch,
+                                                )
+                                                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+
+                                            if parsed_epoch is not None:
+                                                current_epoch = parsed_epoch
+                                                cache.set(LAST_EPOCH_CACHE_KEY, current_epoch, timeout=None)
+
                                         try:
                                             event_obj = json.loads(data)
-                                            if event_id:
-                                                event_obj["_seq"] = int(event_id)
+                                            if parsed_seq is not None:
+                                                event_obj["_seq"] = parsed_seq
+                                            if parsed_epoch is not None:
+                                                event_obj["_epoch"] = parsed_epoch
                                             event_buffer.append(event_obj)
                                         except json.JSONDecodeError:
                                             logger.warning(

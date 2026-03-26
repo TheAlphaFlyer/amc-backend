@@ -1,5 +1,8 @@
 import json
+import logging
 import os
+
+logger = logging.getLogger("amc.webhook")
 import asyncio
 import itertools
 from operator import attrgetter
@@ -673,15 +676,37 @@ async def split_party_payment(
 
 
 LAST_SEQ_CACHE_KEY = "webhook:last_processed_seq"
+LAST_TS_CACHE_KEY = "webhook:last_processed_ts"
+LAST_EPOCH_CACHE_KEY = "webhook:last_epoch"
 
 
 async def process_events(
     events, http_client=None, http_client_mod=None, discord_client=None
 ):
+    # ── Epoch-based reset ──
+    # If the game server restarted, events will carry a new _epoch.
+    # Detect this and reset the seq high-water mark so we don't
+    # silently drop events with lower seq numbers from the new session.
+    last_processed = cache.get(LAST_SEQ_CACHE_KEY, 0)
+    cached_epoch = cache.get(LAST_EPOCH_CACHE_KEY)
+    for event in events:
+        event_epoch = event.get("_epoch")
+        if event_epoch is not None:
+            if cached_epoch is not None and event_epoch != cached_epoch:
+                logger.warning(
+                    "Epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
+                    cached_epoch, event_epoch,
+                )
+                last_processed = 0
+                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+            if event_epoch != cached_epoch:
+                cached_epoch = event_epoch
+                cache.set(LAST_EPOCH_CACHE_KEY, cached_epoch, timeout=None)
+            break  # Only need to check one event for epoch
+
     # ── Seq-based deduplication ──
     # Filter out events we've already processed, using the monotonic _seq
     # assigned by the C++ EventManager.
-    last_processed = cache.get(LAST_SEQ_CACHE_KEY, 0)
     new_events = []
     max_seq = last_processed
     for event in events:
@@ -692,6 +717,16 @@ async def process_events(
             max_seq = max(max_seq, seq)
         new_events.append(event)
     events = new_events
+
+    # ── Timestamp-floor deduplication (pre-sequence hotfix) ──
+    # For events without _seq (old mod), skip if timestamp <= last processed.
+    # This prevents full buffer replay on worker restart.
+    last_processed_ts = cache.get(LAST_TS_CACHE_KEY, 0)
+    if last_processed_ts:
+        events = [
+            e for e in events
+            if e.get("_seq") is not None or e["timestamp"] > last_processed_ts
+        ]
 
     if not events:
         return
@@ -813,9 +848,13 @@ async def process_events(
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
 
-    # Persist high-water mark after successful processing
+    # Persist high-water marks after successful processing
     if max_seq > last_processed:
         cache.set(LAST_SEQ_CACHE_KEY, max_seq, timeout=None)
+    # Timestamp floor for events without _seq
+    max_ts = max((e["timestamp"] for e in events if e.get("_seq") is None), default=0)
+    if max_ts and max_ts > last_processed_ts:
+        cache.set(LAST_TS_CACHE_KEY, max_ts, timeout=None)
 
 
 async def process_cargo_log(cargo, player, character, timestamp):

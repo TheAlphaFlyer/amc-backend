@@ -234,6 +234,15 @@ REDIS_SETTINGS = {}
 if redis_port := os.environ.get("REDIS_PORT"):
     REDIS_SETTINGS["port"] = int(redis_port)
 
+# Use Redis for Django cache so critical state (e.g. webhook dedup
+# high-water mark) survives worker restarts.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"redis://127.0.0.1:{os.environ.get('REDIS_PORT', '6379')}",
+    },
+}
+
 # Discord settings
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")

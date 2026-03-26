@@ -2037,3 +2037,43 @@ class SeqDeduplicationTests(TestCase):
 
         cache.delete("webhook:last_processed_seq")
 
+    async def test_epoch_change_resets_high_water_mark(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events with a new _epoch should reset the seq dedup, even if seq < old mark."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        # Simulate: old server session had epoch=1000, high-water mark at seq=50
+        cache.set("webhook:last_processed_seq", 50, timeout=None)
+        cache.set("webhook:last_epoch", 1000, timeout=None)
+
+        # New server starts with epoch=2000, seq starts from 1
+        events = [
+            {**self._make_cargo_event(character.guid, seq=1), "_epoch": 2000},
+            {**self._make_cargo_event(character.guid, seq=2), "_epoch": 2000},
+        ]
+
+        await process_events(events)
+
+        # Both events should be processed (epoch change resets mark)
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark should now be 2 (from the new epoch)
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 2)
+        # Epoch should be updated
+        self.assertEqual(cache.get("webhook:last_epoch"), 2000)
+
+        cache.delete("webhook:last_processed_seq")
+        cache.delete("webhook:last_epoch")
