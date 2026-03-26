@@ -22,8 +22,12 @@ from django.utils.translation import gettext as _, gettext_lazy
     # deprecated_message="<Title>Command Deprecated</>\nThe /despawn command is no longer available.\nVehicles now despawn automatically."
 )
 async def cmd_despawn(ctx: CommandContext, category: str = "all"):
-    await ctx.reply(
-        _("<Title>Despawn Unavailable</>\n\nThis command is temporarily disabled.")
+    from amc.mod_server import send_system_message
+
+    await send_system_message(
+        ctx.http_client_mod,
+        _("Despawn is temporarily disabled."),
+        character_guid=ctx.character.guid,
     )
 
 
