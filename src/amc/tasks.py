@@ -286,16 +286,12 @@ async def _login_guid_dependent_actions(
         # --- News popup ---
         news_items = await NewsItem.aget_active()
         if news_items:
-            lines = ["<Title>News</>"]
-            for item in news_items:
-                date_str = item.created_at.strftime("%d %b %Y")
-                lines.append(f"\n<Bold>{item.title}</> ({date_str})")
-                if item.body:
-                    lines.append(item.body)
+            from amc.commands.news import format_news_popup
+
             asyncio.create_task(
                 show_popup(
                     http_client_mod,
-                    "\n".join(lines),
+                    format_news_popup(news_items),
                     character_guid=character_guid,
                     player_id=str(player.unique_id),
                 )
