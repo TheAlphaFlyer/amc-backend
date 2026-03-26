@@ -74,6 +74,7 @@ from .models import (
     SupplyChainEventTemplate,
     SupplyChainObjectiveTemplate,
     VehicleDecal,
+    NewsItem,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1174,3 +1175,10 @@ class SupplyChainEventTemplateAdmin(admin.ModelAdmin):
     list_filter = ["enabled"]
     search_fields = ["name"]
     inlines = [SupplyChainObjectiveTemplateInline]
+
+
+@admin.register(NewsItem)
+class NewsItemAdmin(admin.ModelAdmin):
+    list_display = ["title", "created_at", "expires_at"]
+    ordering = ["-created_at"]
+    search_fields = ["title", "body"]

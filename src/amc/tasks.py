@@ -39,6 +39,7 @@ from amc.models import (
     Garage,
     WorldText,
     WorldObject,
+    NewsItem,
 )
 from amc.game_server import announce, get_players
 from amc.utils import forward_to_discord
@@ -277,6 +278,24 @@ async def _login_guid_dependent_actions(
                 show_popup(
                     http_client_mod,
                     settings.WELCOME_TEXT,
+                    character_guid=character_guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+
+        # --- News popup ---
+        news_items = await NewsItem.aget_active()
+        if news_items:
+            lines = ["<Title>News</>"]
+            for item in news_items:
+                date_str = item.created_at.strftime("%d %b %Y")
+                lines.append(f"\n<Bold>{item.title}</> ({date_str})")
+                if item.body:
+                    lines.append(item.body)
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    "\n".join(lines),
                     character_guid=character_guid,
                     player_id=str(player.unique_id),
                 )

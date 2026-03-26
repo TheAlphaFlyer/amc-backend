@@ -2559,3 +2559,38 @@ class Voucher(models.Model):
         status = "claimed" if self.is_claimed else "unclaimed"
         return f"Voucher {self.code} - {self.amount:,} ({status})"
 
+
+@final
+class NewsItem(models.Model):
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Leave blank to auto-expire 7 days after creation.",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @classmethod
+    async def aget_active(cls, limit=4):
+        """Return the latest unexpired news items.
+
+        Items with an explicit expires_at are filtered by that date.
+        Items without expires_at default to 7 days after created_at.
+        """
+        now = timezone.now()
+        return [
+            item
+            async for item in cls.objects.filter(
+                Q(expires_at__gt=now)
+                | Q(expires_at__isnull=True, created_at__gt=now - timedelta(days=7))
+            )[:limit]
+        ]
+
+    @override
+    def __str__(self):
+        return self.title
+
