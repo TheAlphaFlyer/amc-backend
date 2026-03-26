@@ -334,6 +334,43 @@ class CriminalRecord(models.Model):
         return [r async for r in qs.select_related("character")]
 
 
+class FactionChoice(models.TextChoices):
+    COP = "cop", "Cop"
+    CRIMINAL = "criminal", "Criminal"
+
+
+@final
+class FactionMembership(models.Model):
+    player = models.OneToOneField(
+        Player, on_delete=models.CASCADE, related_name="faction_membership"
+    )
+    faction = models.CharField(max_length=10, choices=FactionChoice.choices)
+    joined_at = models.DateTimeField(auto_now_add=True)
+    last_switched_at = models.DateTimeField(null=True, blank=True)
+
+    @override
+    def __str__(self):
+        return f"{self.player} — {self.get_faction_display()}"
+
+    @property
+    def cooldown_remaining(self) -> timedelta:
+        """Return remaining cooldown duration, or zero if cooldown has elapsed."""
+        from django.conf import settings
+
+        if self.last_switched_at is None:
+            return timedelta(0)
+        cooldown = timedelta(
+            hours=getattr(settings, "FACTION_SWITCH_COOLDOWN_HOURS", 24)
+        )
+        elapsed = timezone.now() - self.last_switched_at
+        remaining = cooldown - elapsed
+        return max(remaining, timedelta(0))
+
+    @property
+    def can_switch(self) -> bool:
+        return self.cooldown_remaining == timedelta(0)
+
+
 @final
 class Team(models.Model):
     name = models.CharField(max_length=200)

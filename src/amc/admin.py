@@ -75,6 +75,7 @@ from .models import (
     SupplyChainObjectiveTemplate,
     VehicleDecal,
     NewsItem,
+    FactionMembership,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1182,3 +1183,12 @@ class NewsItemAdmin(admin.ModelAdmin):
     list_display = ["title", "created_at", "expires_at"]
     ordering = ["-created_at"]
     search_fields = ["title", "body"]
+
+
+@admin.register(FactionMembership)
+class FactionMembershipAdmin(admin.ModelAdmin):
+    list_display = ["player", "faction", "joined_at", "last_switched_at"]
+    list_filter = ["faction"]
+    search_fields = ["player__unique_id", "player__characters__name", "player__discord_name"]
+    autocomplete_fields = ["player"]
+

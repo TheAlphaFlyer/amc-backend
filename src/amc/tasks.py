@@ -41,6 +41,7 @@ from amc.models import (
     WorldObject,
     NewsItem,
     CriminalRecord,
+    FactionMembership,
 )
 from amc.game_server import announce, get_players
 from amc.utils import forward_to_discord
@@ -731,6 +732,23 @@ async def process_log_event(
                         character_created,
                     )
                 )
+
+                # Fire-and-forget: sync faction Discord role on login
+                if discord_client and player.discord_user_id:
+                    try:
+                        membership = await FactionMembership.objects.aget(player=player)
+                        guild = discord_client.get_guild(settings.DISCORD_GUILD_ID)
+                        if guild:
+                            member = guild.get_member(player.discord_user_id)
+                            if member:
+                                from amc_cogs.faction import sync_faction_discord_role
+                                asyncio.create_task(
+                                    sync_faction_discord_role(
+                                        guild, member, membership.faction
+                                    )
+                                )
+                    except FactionMembership.DoesNotExist:
+                        pass
 
             if (
                 discord_client

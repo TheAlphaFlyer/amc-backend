@@ -16,6 +16,7 @@ from amc_cogs.server import ServerCog
 from amc_cogs.profile import PlayerProfileCog
 from amc_cogs.supply_chain import SupplyChainCog
 from amc_cogs.tuning_workshop import TuningWorkshopCog
+from amc_cogs.faction import FactionCog
 
 
 class AMCDiscordBot(commands.Bot):
@@ -51,6 +52,7 @@ class AMCDiscordBot(commands.Bot):
         await self.add_cog(PlayerProfileCog(self), guild=guild)
         await self.add_cog(SupplyChainCog(self), guild=guild)
         await self.add_cog(TuningWorkshopCog(self), guild=guild)
+        await self.add_cog(FactionCog(self), guild=guild)
         await self.tree.sync(guild=guild)
 
 
