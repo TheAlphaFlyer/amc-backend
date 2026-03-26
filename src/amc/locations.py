@@ -12,39 +12,39 @@ point_of_interests = [
         Point(**{"z": -20696.78, "y": 150230.13, "x": 1025.73}),
         300,
         """\
-<Title>Corporation Rules</Title>
-<Warning>Corporations are NOT ALLOWED</Warning> - if you are planning to use AI drivers.
+<Title>Corporation Rules</>
+<Warning>Corporations are NOT ALLOWED</> - if you are planning to use AI drivers.
 Having too many AI vehicles on the server have caused traffic jams and other mishaps.
 Unlicensed corporations will be closed down!
 
-<Bold>You may ONLY start a corporation for the following purposes:</Bold>
+<Bold>You may ONLY start a corporation for the following purposes:</>
 - Spawning Campy's around the map
 - Renting out vehicles for other players
 - Showcasing liveries for car shows
 
-For any other purposes, <Highlight>please contact the admins on the discord</Highlight>.
+For any other purposes, <Highlight>please contact the admins on the discord</>.
 """,
     ),
     (
         Point(**{"x": -220383.08, "y": 141777.71, "z": -20186.82}),
         500,
         """\
-<Title>Want to take out a loan?</Title>
-<Warning>This bank charges high interest rate!</Warning> - many players have ended up in a debt spiral.
+<Title>Want to take out a loan?</>
+<Warning>This bank charges high interest rate!</> - many players have ended up in a debt spiral.
 
-<Bold>Use Bank ASEAN instead!</Bold>
+<Bold>Use Bank ASEAN instead!</>
 - Our loans are interest free
 - Our loans have to repayment period
 - You only have to pay them back when you make a profit
 
-Use <Highlight>/bank</Highlight> to create a Bank ASEAN account today!
+Use <Highlight>/bank</> to create a Bank ASEAN account today!
 """,
     ),
     (
         Point(**{"z": -21564.73, "y": 157275.61, "x": -83784.37}),
         2000,
         f"""\
-<Title>Welcome to the ASEAN Park</Title>
+<Title>Welcome to the ASEAN Park</>
 
 {settings.CREDITS_TEXT}
 """,

@@ -17,7 +17,7 @@ from amc_finance.services import (
 
 
 async def get_subsidies_text():
-    text = _("<Title>ASEAN Server Subsidies</Title>\n\n")
+    text = _("<Title>ASEAN Server Subsidies</>\n\n")
 
     rules = SubsidyRule.objects.filter(active=True).order_by("-priority")
 
@@ -60,12 +60,12 @@ async def get_subsidies_text():
 
     # Tow Request Subsidies
     text += "\n"
-    text += _("<Title>Wrecker Subsidies</Title>\n")
+    text += _("<Title>Wrecker Subsidies</>\n")
     text += _(
         "<Bold>Flipped Vehicle</> - <Money>2,000</> + <Money>100%</> of payment\n"
         "<Bold>Other Tow Requests</> - <Money>2,000</> + <Money>50%</> of payment\n"
         "\n"
-        "<Title>Body Damage Bonus</Title>\n"
+        "<Title>Body Damage Bonus</>\n"
         "<Secondary>Tow requests include a body damage bonus up to <Money>55%</> of base payment.</>\n"
         "<Secondary>Keep the towed vehicle's body intact for maximum bonus!</>\n"
     )

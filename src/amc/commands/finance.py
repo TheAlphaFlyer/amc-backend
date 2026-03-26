@@ -223,7 +223,7 @@ async def cmd_loan(ctx: CommandContext, amount: str, verification_code: str = ""
             fee_adj = ""
         await ctx.reply(
             _(
-                "<Title>Loan</Title>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
+                "<Title>Loan</>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
             ).format(fee=fee, fee_adj=fee_adj, credit_label=credit_label, amount=amount, code_expected=code_expected.upper())
         )
         return

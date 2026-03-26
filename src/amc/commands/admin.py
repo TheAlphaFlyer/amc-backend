@@ -165,7 +165,7 @@ async def cmd_remove_garage(ctx: CommandContext):
         ).format(count=removed_count)
         if no_tag_count > 0:
             msg += _(
-                "\n\n<Warning>{no_tag} garage(s) had no tag and could not be despawned from the game world. They were only removed from the database.</Warning>"
+                "\n\n<Warning>{no_tag} garage(s) had no tag and could not be despawned from the game world. They were only removed from the database.</>"
             ).format(no_tag=no_tag_count)
         await ctx.reply(msg)
     else:
@@ -322,7 +322,7 @@ async def cmd_bill(ctx: CommandContext, target_player_name: str):
             show_popup(
                 ctx.http_client_mod,
                 _(
-                    "<Title>Player not found</Title>\n\nPlease make sure you typed the name correctly."
+                    "<Title>Player not found</>\n\nPlease make sure you typed the name correctly."
                 ),
                 character_guid=ctx.character.guid,
                 player_id=str(ctx.player.unique_id),

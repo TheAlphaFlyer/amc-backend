@@ -119,9 +119,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                         show_popup(
                             ctx.http_client_mod,
                             _(
-                                "<Title>Rescue Teleport Restricted</Title>\n"
+                                "<Title>Rescue Teleport Restricted</>\n"
                                 "Destination is {distance:.0f} units from {requester}.\n"
-                                "Maximum allowed distance: <Highlight>10,000 units</Highlight>.\n\n"
+                                "Maximum allowed distance: <Highlight>10,000 units</>.\n\n"
                                 "Move your custom destination marker closer to the requester."
                             ).format(
                                 distance=distance,
