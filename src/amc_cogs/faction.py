@@ -20,6 +20,16 @@ FACTION_ROLE_MAP = {
     FactionChoice.CRIMINAL: "DISCORD_CRIMINAL_ROLE_ID",
 }
 
+FACTION_CHANNEL_MAP = {
+    FactionChoice.COP: "DISCORD_COP_CHANNEL_ID",
+    FactionChoice.CRIMINAL: "DISCORD_CRIMINAL_CHANNEL_ID",
+}
+
+FACTION_EMOJI = {
+    FactionChoice.COP: "🚔",
+    FactionChoice.CRIMINAL: "🔫",
+}
+
 
 async def sync_faction_discord_role(guild, member, new_faction, old_faction=None):
     """Add the new faction role and remove the old one (if any)."""
@@ -57,6 +67,23 @@ async def remove_faction_discord_role(guild, member, faction):
 class FactionCog(commands.Cog):
     def __init__(self, bot: "AMCDiscordBot"):
         self.bot = bot
+
+    async def _notify_faction_channel(self, member, faction):
+        """Send a join notification to the faction's channel."""
+        channel_setting = FACTION_CHANNEL_MAP.get(faction, "")
+        channel_id = getattr(settings, channel_setting, 0)
+        if not channel_id:
+            return
+        channel = self.bot.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.abc.Messageable):
+            return
+        emoji = FACTION_EMOJI.get(faction, "")
+        label = FactionChoice(faction).label
+        embed = discord.Embed(
+            description=f"{emoji} **{member.display_name}** has joined the **{label}** faction!",
+            color=discord.Color.blue() if faction == FactionChoice.COP else discord.Color.red(),
+        )
+        await channel.send(embed=embed)
 
     @app_commands.command(
         name="faction",
@@ -188,6 +215,7 @@ class FactionCog(commands.Cog):
             await membership.asave(update_fields=["faction", "last_switched_at"])
 
             await sync_faction_discord_role(guild, member, new_faction, old_faction)
+            await self._notify_faction_channel(member, new_faction)
 
             embed = discord.Embed(
                 title=f"Faction Switched to {new_label}!",
@@ -206,6 +234,7 @@ class FactionCog(commands.Cog):
                 faction=new_faction,
             )
             await sync_faction_discord_role(guild, member, new_faction)
+            await self._notify_faction_channel(member, new_faction)
 
             embed = discord.Embed(
                 title=f"Welcome to the {new_label} faction!",
