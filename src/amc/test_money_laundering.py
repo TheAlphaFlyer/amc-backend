@@ -2,7 +2,7 @@ import time
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from django.test import TestCase
 from django.contrib.gis.geos import Point
 from asgiref.sync import sync_to_async
@@ -57,9 +57,10 @@ async def _setup_character(guid_suffix=""):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+@patch("amc.webhook.announce", new_callable=AsyncMock)
 class MoneyLaunderingTests(TestCase):
     async def test_money_delivery_creates_criminal_record(
-        self, mock_get_treasury, mock_get_rp_mode
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
         """Money delivery should create a CriminalRecord for the character."""
         mock_get_rp_mode.return_value = False
@@ -76,7 +77,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertGreater(record.expires_at, timezone.now())
 
     async def test_money_delivery_extends_existing_criminal_record(
-        self, mock_get_treasury, mock_get_rp_mode
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
         """Subsequent Money deliveries should extend the criminal record by 7 days."""
         mock_get_rp_mode.return_value = False
@@ -99,17 +100,16 @@ class MoneyLaunderingTests(TestCase):
             await CriminalRecord.objects.filter(character=character).acount(), 1
         )
         record = await CriminalRecord.objects.aget(character=character)
-        # Should be extended by 7 days from original expiry
         expected_expiry = original_expiry + timedelta(days=7)
         self.assertAlmostEqual(
             record.expires_at.timestamp(), expected_expiry.timestamp(), delta=5
         )
 
-    @patch("amc.webhook.announce", new_callable=AsyncMock)
+    @patch("amc.webhook.asyncio.sleep", new_callable=AsyncMock)
     async def test_money_delivery_server_announcement(
-        self, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sleep, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        """Money delivery should trigger a server announcement with the amount."""
+        """Money delivery should trigger a debounced server announcement."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
@@ -119,16 +119,55 @@ class MoneyLaunderingTests(TestCase):
 
         await process_event(event, player, character, http_client=http_client)
         # Let fire-and-forget create_task coroutines complete
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(10):
+            await asyncio.sleep(0)
 
         mock_announce.assert_called()
         announce_msg = mock_announce.call_args[0][0]
         self.assertIn("laundered", announce_msg)
         self.assertIn("15,000", announce_msg)
 
+    async def test_money_delivery_debounces_announcements(
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Multiple Money deliveries within the debounce window should accumulate, not spam."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 1_000_000
+
+        player, character = await _setup_character("deb")
+        http_client = AsyncMock()
+
+        # Patch create_task to capture but NOT actually schedule the coroutine
+        # This prevents the background task from running and calling real announce
+        created_tasks = []
+        original_create_task = asyncio.create_task
+
+        def tracking_create_task(coro):
+            created_tasks.append(coro)
+            # Close the coroutine to avoid "was never awaited" warning
+            coro.close()
+            return AsyncMock()
+
+        with patch("amc.webhook.asyncio.create_task", side_effect=tracking_create_task):
+            # First delivery — should schedule ONE delayed task
+            event1 = _money_cargo_event(character.guid, player.unique_id, payment=10_000)
+            await process_event(event1, player, character, http_client=http_client)
+
+            # Second delivery — should NOT schedule another task (just accumulate)
+            event2 = _money_cargo_event(character.guid, player.unique_id, payment=20_000)
+            await process_event(event2, player, character, http_client=http_client)
+
+        # Only one create_task call for the delayed announcement
+        self.assertEqual(len(created_tasks), 1)
+
+        # Verify accumulated total in cache
+        from django.core.cache import cache
+        cache_key = f"money_laundered:{character.guid}"
+        total = await cache.aget(cache_key, 0)
+        self.assertEqual(total, 30_000)
+
     async def test_money_delivery_treasury_cost(
-        self, mock_get_treasury, mock_get_rp_mode
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
         """Money delivery should deduct 20% of the payment from the treasury."""
         mock_get_rp_mode.return_value = False
@@ -147,7 +186,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertEqual(initial_balance - final_balance, expected_cost)
 
     async def test_money_delivery_treasury_cost_multiple_cargos(
-        self, mock_get_treasury, mock_get_rp_mode
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
         """Multiple Money cargos in one event should sum up for treasury cost."""
         mock_get_rp_mode.return_value = False
@@ -157,7 +196,6 @@ class MoneyLaunderingTests(TestCase):
 
         initial_balance = Decimal(str(await get_treasury_fund_balance()))
 
-        # Event with 3 Money cargos
         event = {
             "hook": "ServerCargoArrived",
             "timestamp": int(time.time()),
@@ -196,12 +234,11 @@ class MoneyLaunderingTests(TestCase):
         await process_event(event, player, character)
 
         final_balance = Decimal(str(await get_treasury_fund_balance()))
-        # Total Money payment: 30,000, treasury cost: 20% = 6,000
         expected_cost = Decimal(int(30_000 * 0.20))
         self.assertEqual(initial_balance - final_balance, expected_cost)
 
     async def test_non_money_delivery_no_treasury_cost(
-        self, mock_get_treasury, mock_get_rp_mode
+        self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
         """Non-Money cargo deliveries should not incur treasury cost."""
         mock_get_rp_mode.return_value = False

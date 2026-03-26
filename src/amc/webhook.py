@@ -404,6 +404,21 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
         )
 
 
+
+async def _announce_laundered_after_delay(character_guid, http_client, delay=30):
+    """Wait for the debounce window, then announce the accumulated total."""
+    await asyncio.sleep(delay)
+    cache_key = f"money_laundered:{character_guid}"
+    total = await cache.aget(cache_key, 0)
+    await cache.adelete(cache_key)
+    if total > 0:
+        await announce(
+            f"${total:,} has been laundered",
+            http_client,
+            color="FFA500",
+        )
+
+
 async def handle_cargo_arrived(
     event,
     player,
@@ -457,17 +472,21 @@ async def handle_cargo_arrived(
                 expires_at=timezone.now() + timedelta(days=7),
             )
 
-        # Server announcement for money laundering
+        # Server announcement for money laundering (debounced over 30s window)
         money_payment = sum(log.payment for log in logs if log.cargo_key == "Money")
         if money_payment > 0:
             if http_client:
-                asyncio.create_task(
-                    announce(
-                        f"${money_payment:,} has been laundered",
-                        http_client,
-                        color="FFA500",
+                cache_key = f"money_laundered:{character.guid}"
+                prev_total = await cache.aget(cache_key, 0)
+                if prev_total == 0:
+                    # First delivery in window — schedule delayed announcement
+                    await cache.aset(cache_key, money_payment, timeout=30)
+                    asyncio.create_task(
+                        _announce_laundered_after_delay(character.guid, http_client, delay=30)
                     )
-                )
+                else:
+                    # Within window — just accumulate
+                    await cache.aset(cache_key, prev_total + money_payment, timeout=30)
             laundering_cost = int(money_payment * 0.20)
             if laundering_cost > 0:
                 await record_treasury_expense(laundering_cost, "Money Laundering Cost")
