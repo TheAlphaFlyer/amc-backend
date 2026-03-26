@@ -86,6 +86,7 @@ class CargoKey(models.TextChoices):
     Cement = "Cement", "Cement"
     Terra = "Terra", "Terra"
     SunflowerSeed = "SunflowerSeed", "Sunflower Seed"
+    Money = "Money", "Money"
 
 
 class VehicleKey(models.TextChoices):

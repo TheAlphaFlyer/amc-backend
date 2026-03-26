@@ -437,6 +437,25 @@ async def handle_cargo_arrived(
 
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
+    # --- Criminal record for Money deliveries ---
+    if character and any(log.cargo_key == "Money" for log in logs):
+        from amc.models import CriminalRecord
+
+        active_record = await (
+            CriminalRecord.objects.filter(
+                character=character, expires_at__gt=timezone.now()
+            ).afirst()
+        )
+        if active_record:
+            active_record.expires_at = active_record.expires_at + timedelta(days=7)
+            await active_record.asave(update_fields=["expires_at"])
+        else:
+            await CriminalRecord.objects.acreate(
+                character=character,
+                reason="Money delivery",
+                expires_at=timezone.now() + timedelta(days=7),
+            )
+
     total_subsidy = 0
     total_payment = sum([log.payment for log in logs])
 

@@ -311,6 +311,30 @@ class Character(models.Model):
 
 
 @final
+class CriminalRecord(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="criminal_records"
+    )
+    reason = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "expires_at"])]
+
+    @override
+    def __str__(self):
+        return f"{self.character.name} — {self.reason} (expires {self.expires_at})"
+
+    @classmethod
+    async def aget_active(cls, character=None):
+        qs = cls.objects.filter(expires_at__gt=timezone.now())
+        if character:
+            qs = qs.filter(character=character)
+        return [r async for r in qs.select_related("character")]
+
+
+@final
 class Team(models.Model):
     name = models.CharField(max_length=200)
     tag = models.CharField(max_length=6)
