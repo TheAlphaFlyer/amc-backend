@@ -26,6 +26,7 @@ from amc.subsidies import (
 from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
+    record_treasury_expense,
 )
 from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
@@ -455,6 +456,21 @@ async def handle_cargo_arrived(
                 reason="Money delivery",
                 expires_at=timezone.now() + timedelta(days=7),
             )
+
+        # Server announcement for money laundering
+        money_payment = sum(log.payment for log in logs if log.cargo_key == "Money")
+        if money_payment > 0:
+            if http_client:
+                asyncio.create_task(
+                    announce(
+                        f"${money_payment:,} has been laundered",
+                        http_client,
+                        color="FFA500",
+                    )
+                )
+            laundering_cost = int(money_payment * 0.20)
+            if laundering_cost > 0:
+                await record_treasury_expense(laundering_cost, "Money Laundering Cost")
 
     total_subsidy = 0
     total_payment = sum([log.payment for log in logs])
