@@ -155,14 +155,14 @@ async def cmd_rename(ctx: CommandContext, name: str):
     if len(name) > 20 or "(" in name:
         await ctx.reply("Invalid name")
         return
-    # Block [GOV] tag for non-government-employees
+    # Block GOV tag for non-government-employees (legacy [GOV#] and compact [G₃])
     import re
 
     if (
-        re.search(r"\[GOV\d*\]", name, re.IGNORECASE)
+        re.search(r"\[GOV\d*\]|\[[CM]*G\d*\]", name, re.IGNORECASE)
         and not ctx.character.is_gov_employee
     ):
-        await ctx.reply("The [GOV] tag is reserved for government employees")
+        await ctx.reply("The [G] tag is reserved for government employees")
         return
     # RP Logic
     ctx.character.custom_name = name

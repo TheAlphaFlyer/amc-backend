@@ -428,7 +428,8 @@ async def handle_cargo_arrived(
     is_rp_mode,
     used_shortcut,
     http_client,
-    discord_client,
+    http_client_mod=None,
+    discord_client=None,
     active_term=None,
 ):
     valid_cargos = []
@@ -471,6 +472,10 @@ async def handle_cargo_arrived(
                 reason="Money delivery",
                 expires_at=timezone.now() + timedelta(days=7),
             )
+
+        # Apply [CRIM] tag immediately
+        from amc.player_tags import refresh_player_name
+        await refresh_player_name(character, http_client_mod)
 
         # Server announcement for money laundering (debounced over 30s window)
         money_payment = sum(log.payment for log in logs if log.cargo_key == "Money")
@@ -1018,7 +1023,8 @@ async def process_event(
                 is_rp_mode,
                 used_shortcut,
                 http_client,
-                discord_client,
+                http_client_mod=http_client_mod,
+                discord_client=discord_client,
                 active_term=active_term,
             )
             base_payment += payment

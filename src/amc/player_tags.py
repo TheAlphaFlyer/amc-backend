@@ -4,10 +4,17 @@ from amc.mod_server import set_character_name
 
 logger = logging.getLogger(__name__)
 
-# Compile regexes for stripping prefix tags
+# Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
+    # New compact format: must start with C/M/G, optionally followed by more letters/digits
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12] — but NOT [123] or [ABC]
+    re.compile(r"\[(?=[CMG])[CMG\d]+\]\s*"),
+    # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
+    re.compile(r"\[(?=[CMG])[CMG₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
+    # Legacy formats (for players who logged in before the refactor)
+    re.compile(r"\[CRIM\]\s*", re.IGNORECASE),
     re.compile(r"\[MODS\]\s*", re.IGNORECASE),
-    re.compile(r"\[MOD\]\s*", re.IGNORECASE),  # legacy, auto-heals to [MODS]
+    re.compile(r"\[MOD\]\s*", re.IGNORECASE),
     re.compile(r"\[GOV\d*\]\s*", re.IGNORECASE),
     re.compile(r"\[DOT\]\s*", re.IGNORECASE),
 ]
@@ -22,28 +29,40 @@ def strip_all_tags(name: str) -> str:
 
 
 def build_display_name(
-    base_name: str, *, has_custom_parts: bool = False, gov_level: int = 0
+    base_name: str,
+    *,
+    has_criminal_record: bool = False,
+    has_custom_parts: bool = False,
+    gov_level: int = 0,
 ) -> str:
-    """Build the definitive display name with all applicable tags.
+    """Build the definitive display name with a single compact tag.
 
-    Tag order: [MODS] [GOV#] BaseName
+    Tag format: [CMG3] BaseName
+      C = Criminal record (suppressed when gov employee)
+      M = Modded vehicle parts
+      G3 = Government employee level
 
     Args:
         base_name: The player's original name (stripped of any existing tags)
+        has_criminal_record: Whether the player has an active criminal record
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
         gov_level: Government employee level (0 = not a gov employee)
     """
     clean_name = strip_all_tags(base_name)
-    tags = []
+    tag = ""
+
+    # C is suppressed when gov employee is active
+    if has_criminal_record and gov_level == 0:
+        tag += "C"
 
     if has_custom_parts:
-        tags.append("[MODS]")
+        tag += "M"
 
     if gov_level > 0:
-        tags.append(f"[GOV{gov_level}]")
+        tag += f"G{gov_level}"
 
-    if tags:
-        return f"{' '.join(tags)} {clean_name}"
+    if tag:
+        return f"[{tag}] {clean_name}"
     return clean_name
 
 
@@ -53,7 +72,7 @@ async def refresh_player_name(
     """Recompute and apply the correct display name for a character.
 
     This is the ONLY function that should call set_character_name.
-    Reads character state (gov_employee, etc.) and computes the definitive name.
+    Reads character state (gov_employee, criminal_records, etc.) and computes the definitive name.
 
     Args:
         character: Character model instance (with player relation loaded)
@@ -66,9 +85,12 @@ async def refresh_player_name(
 
     # Determine MOD state
     if has_custom_parts is None:
-        # Preserve existing state if not explicitly specified
+        # Preserve existing state — check for both legacy [MODS]/[MOD] and new [M]
         current_name = character.custom_name or character.name
-        has_custom_parts = bool(re.search(r"\[MODS?\]", current_name, re.IGNORECASE))
+        has_custom_parts = bool(
+            re.search(r"\[MODS?\]", current_name, re.IGNORECASE)
+            or re.search(r"\[[CG0-9₀-₉]*M[G0-9₀-₉]*\]", current_name)
+        )
 
     # Determine GOV state
     gov_level = 0
@@ -77,9 +99,20 @@ async def refresh_player_name(
 
         gov_level = calculate_gov_level(character.gov_employee_contributions)
 
+    # Determine CRIM state
+    from django.utils import timezone
+    from amc.models import CriminalRecord
+
+    has_criminal_record = await CriminalRecord.objects.filter(
+        character=character, expires_at__gt=timezone.now()
+    ).aexists()
+
     # Reconstruct name
     new_name = build_display_name(
-        character.name, has_custom_parts=has_custom_parts, gov_level=gov_level
+        character.name,
+        has_criminal_record=has_criminal_record,
+        has_custom_parts=has_custom_parts,
+        gov_level=gov_level,
     )
 
     # Save to DB if changed
@@ -89,7 +122,7 @@ async def refresh_player_name(
             character.custom_name = None
         else:
             character.custom_name = new_name
-            
+
         await character.asave(update_fields=["custom_name"])
 
     # Push to game server if GUID exists

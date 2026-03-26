@@ -67,3 +67,18 @@ class FuzzyFindPlayerTestCase(SimpleTestCase):
     def test_case_insensitive(self):
         players = self._make_players("[MODS] Alice")
         self.assertEqual(fuzzy_find_player(players, "alice"), "pid-0")
+
+    def test_exact_match_base_name_strips_compact_mod_tag(self):
+        """Typing 'Alice' matches '[M] Alice'."""
+        players = self._make_players("[M] Alice", "Bob")
+        self.assertEqual(fuzzy_find_player(players, "Alice"), "pid-0")
+
+    def test_exact_match_base_name_strips_compact_gov_tag(self):
+        """Typing 'Alice' matches '[G2] Alice'."""
+        players = self._make_players("[G2] Alice", "Bob")
+        self.assertEqual(fuzzy_find_player(players, "Alice"), "pid-0")
+
+    def test_exact_match_base_name_strips_compact_combined_tag(self):
+        """Typing 'Alice' matches '[MG2] Alice'."""
+        players = self._make_players("[MG2] Alice", "Bob")
+        self.assertEqual(fuzzy_find_player(players, "Alice"), "pid-0")
