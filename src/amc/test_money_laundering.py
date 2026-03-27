@@ -2,7 +2,7 @@ import time
 import asyncio
 from datetime import timedelta
 from decimal import Decimal
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 from django.test import TestCase
 from django.contrib.gis.geos import Point
 from asgiref.sync import sync_to_async
@@ -140,7 +140,6 @@ class MoneyLaunderingTests(TestCase):
         # Patch create_task to capture but NOT actually schedule the coroutine
         # This prevents the background task from running and calling real announce
         created_tasks = []
-        original_create_task = asyncio.create_task
 
         def tracking_create_task(coro):
             created_tasks.append(coro)

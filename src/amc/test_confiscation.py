@@ -169,3 +169,31 @@ class ConfiscationHandlerTests(TestCase):
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
+
+    async def test_unknown_previous_owner_triggers_confiscation(
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
+    ):
+        """Unknown PreviousOwnerCharacterGuid (not in DB) should still trigger confiscation without charging."""
+        officer, _ = await self._setup_police_and_criminal()
+
+        # Pass a guid that doesn't exist in DB
+        event = _pickup_event(officer.guid, payment=5000, previous_owner_guid="UNKNOWN-GUID")
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+        await handle_pickup_cargo(event, officer, mock_http, mock_http_mod)
+
+        # Confiscation record created with character=None
+        self.assertEqual(await Confiscation.objects.acount(), 1)
+        conf = await Confiscation.objects.afirst()
+        self.assertIsNone(conf.character_id)
+        self.assertEqual(conf.officer_id, officer.id)
+        self.assertEqual(conf.amount, 5000)
+
+        # Previous owner transfer should be skipped
+        mock_transfer.assert_not_called()
+
+        # Treasury credited
+        mock_treasury.assert_called_once_with(5000, "Police Confiscation")
+        
+        # Cargo despawned
+        mock_despawn.assert_called_once_with(mock_http_mod, str(officer.guid))

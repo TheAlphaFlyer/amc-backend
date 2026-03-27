@@ -438,13 +438,13 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
         .filter(guid=previous_owner_guid)
         .afirst()
     )
-    if not previous_owner:
-        return
 
-    # No police-on-police confiscation
-    is_prev_police = await PoliceSession.objects.filter(
-        character=previous_owner, ended_at__isnull=True
-    ).aexists()
+    is_prev_police = False
+    if previous_owner:
+        # No police-on-police confiscation
+        is_prev_police = await PoliceSession.objects.filter(
+            character=previous_owner, ended_at__isnull=True
+        ).aexists()
     if is_prev_police:
         return
 
@@ -457,12 +457,13 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
     )
 
     # 2. Charge previous owner
-    await transfer_money(
-        http_client_mod,
-        int(-payment),
-        "Money Confiscated",
-        str(previous_owner.player.unique_id),
-    )
+    if previous_owner:
+        await transfer_money(
+            http_client_mod,
+            int(-payment),
+            "Money Confiscated",
+            str(previous_owner.player.unique_id),
+        )
 
     # 3. Credit treasury
     await record_treasury_confiscation_income(payment, "Police Confiscation")

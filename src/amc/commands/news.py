@@ -1,6 +1,4 @@
 import asyncio
-from datetime import timedelta
-from django.utils import timezone
 from django.utils.translation import gettext_lazy
 from amc.command_framework import registry, CommandContext
 from amc.models import NewsItem

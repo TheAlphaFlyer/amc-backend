@@ -343,7 +343,8 @@ class CriminalRecord(models.Model):
 @final
 class Confiscation(models.Model):
     character = models.ForeignKey(
-        Character, on_delete=models.CASCADE, related_name="confiscations_received"
+        Character, on_delete=models.CASCADE, related_name="confiscations_received",
+        null=True, blank=True
     )
     officer = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="confiscations_made"

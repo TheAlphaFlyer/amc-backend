@@ -41,6 +41,7 @@ from amc_finance.services import (
     get_player_loan_balance,
     get_character_max_loan,
     make_treasury_bank_deposit,
+    make_treasury_bank_withdrawal,
     get_non_performing_loans,
     get_crossover_accounts,
 )
