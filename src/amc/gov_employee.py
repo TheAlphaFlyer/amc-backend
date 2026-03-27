@@ -14,6 +14,19 @@ def calculate_gov_level(contributions: int) -> int:
     return (contributions // GOV_LEVEL_STEP) + 1
 
 
+def strip_gov_name(name: str) -> str:
+    """Remove [GOVn] prefix from a name."""
+    from amc.player_tags import strip_all_tags
+
+    return strip_all_tags(name)
+
+
+def make_gov_name(name: str, level: int) -> str:
+    """Build a display name with a [GOVn] prefix."""
+    clean = strip_gov_name(name)
+    return f"[GOV{level}] {clean}"
+
+
 async def activate_gov_role(character, session):
     """Activate the government employee role for 24 hours."""
     level = calculate_gov_level(character.gov_employee_contributions)
