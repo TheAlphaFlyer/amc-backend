@@ -130,8 +130,17 @@ async def run_sse_listener(ctx):
 
     from django.core.cache import cache
     from amc.webhook import LAST_SEQ_CACHE_KEY, LAST_EPOCH_CACHE_KEY
-    last_event_id = str(cache.get(LAST_SEQ_CACHE_KEY, 0))
     current_epoch = cache.get(LAST_EPOCH_CACHE_KEY)
+    if current_epoch is not None:
+        # Build epoch-prefixed Last-Event-ID so the C++ server can
+        # properly position in the ring buffer for this epoch.
+        last_seq = cache.get(LAST_SEQ_CACHE_KEY, 0)
+        last_event_id = f"{current_epoch}:{last_seq}" if last_seq else "0"
+    else:
+        # No epoch cached — SSE has never connected, or the cache was
+        # cleared.  The LAST_SEQ is likely from the old polling system
+        # and meaningless for the SSE ring buffer.  Start fresh.
+        last_event_id = "0"
     backoff = INITIAL_BACKOFF
 
     # sock_read=90: detect dead connections if the mod server hangs after

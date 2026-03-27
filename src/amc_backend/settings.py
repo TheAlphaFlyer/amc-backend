@@ -72,6 +72,11 @@ LOGGING = {
             "level": "ERROR",
             "propagate": True,
         },
+        "amc.sse": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 
