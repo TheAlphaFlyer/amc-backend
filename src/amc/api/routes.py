@@ -82,6 +82,7 @@ import os
 
 POSITION_UPDATE_RATE = 1
 POSITION_UPDATE_SLEEP = 1.0 / POSITION_UPDATE_RATE
+HEARTBEAT_INTERVAL = 15
 
 app_router = Router()
 
@@ -354,12 +355,19 @@ async def streaming_player_count(request):
 
     async def event_stream():
         last_count = None
+        ticks_since_heartbeat = 0
         while True:
             players = await get_players_mod(session)
             count = len(players)
             if count != last_count:
                 yield f"data: {count}\n\n"
                 last_count = count
+                ticks_since_heartbeat = 0
+            else:
+                ticks_since_heartbeat += 1
+                if ticks_since_heartbeat * POSITION_UPDATE_SLEEP >= HEARTBEAT_INTERVAL:
+                    yield ": heartbeat\n\n"
+                    ticks_since_heartbeat = 0
             await asyncio.sleep(POSITION_UPDATE_SLEEP)
 
     return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
