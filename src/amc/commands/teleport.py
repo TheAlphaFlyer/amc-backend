@@ -3,7 +3,7 @@ import math
 from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
-from amc.models import TeleportPoint, RescueRequest, FactionChoice, FactionMembership
+from amc.models import TeleportPoint, RescueRequest, PoliceSession
 from amc.mod_server import teleport_player, list_player_vehicles, show_popup
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
@@ -52,6 +52,14 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
         pass
 
     no_vehicles = not player_info.get("bIsAdmin")
+
+    # Police on duty: always no_vehicles, even for admins
+    is_on_duty = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
+    ).aexists()
+    if is_on_duty:
+        no_vehicles = True
+
     location = None
     rescue_tp_data = None
 
@@ -62,16 +70,16 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 name__iexact=name,
             )
 
-            # Block police faction from using dasa
+            # Block police on duty from using dasa
             if teleport_point.name.lower() == "dasa":
-                is_police = await FactionMembership.objects.filter(
-                    player=ctx.player, faction=FactionChoice.COP
+                is_police = await PoliceSession.objects.filter(
+                    character=ctx.character, ended_at__isnull=True
                 ).aexists()
                 if is_police:
                     asyncio.create_task(
                         show_popup(
                             ctx.http_client_mod,
-                            _("This teleport location is restricted for police officers."),
+                            _("This teleport location is restricted while on police duty."),
                             character_guid=ctx.character.guid,
                             player_id=str(ctx.player.unique_id),
                         )

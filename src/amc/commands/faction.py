@@ -4,7 +4,7 @@ import re
 from django.core.cache import cache
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
-from amc.models import ArrestZone, Character, FactionChoice, FactionMembership, TeleportPoint
+from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint
 from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player
 from django.utils.translation import gettext as gettext, gettext_lazy
 
@@ -55,12 +55,12 @@ def _build_player_locations(players: list) -> dict[str, tuple[str, tuple[float, 
     featured=True,
 )
 async def cmd_arrest(ctx: CommandContext):
-    # 1. Verify cop faction
-    is_cop = await FactionMembership.objects.filter(
-        player=ctx.player, faction=FactionChoice.COP
+    # 1. Verify active police session
+    is_cop = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
     ).aexists()
     if not is_cop:
-        await send_system_message(ctx.http_client_mod, gettext("You must be a member of the Police faction to use this command."), character_guid=ctx.character.guid)
+        await send_system_message(ctx.http_client_mod, gettext("You must be on police duty to use this command. Use /police to start."), character_guid=ctx.character.guid)
         return
 
     # 2. Cooldown check
@@ -103,17 +103,16 @@ async def cmd_arrest(ctx: CommandContext):
         await send_system_message(ctx.http_client_mod, gettext("No players nearby."), character_guid=ctx.character.guid)
         return
 
-    # Batch query: exclude characters who are in the police faction
+    # Batch query: exclude characters who have active police sessions
     cop_guids = set()
     async for char in (
         Character.objects.filter(guid__in=other_guids)
-        .select_related("player__faction_membership")
     ):
-        try:
-            if char.player.faction_membership.faction == FactionChoice.COP:
-                cop_guids.add(char.guid)
-        except FactionMembership.DoesNotExist:
-            continue
+        has_session = await PoliceSession.objects.filter(
+            character=char, ended_at__isnull=True
+        ).aexists()
+        if has_session:
+            cop_guids.add(char.guid)
 
     suspect_guids = [g for g in other_guids if g not in cop_guids]
 
@@ -185,19 +184,20 @@ async def cmd_arrest(ctx: CommandContext):
 
             crim_uid, current_criminal_loc, crim_veh = current_locations[guid]
 
-            # Speed check: suspect must not be moving too fast
-            prev_loc = prev_suspect_locs[guid]
-            suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
-            if suspect_speed > SUSPECT_SPEED_LIMIT:
-                name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext("{name} is moving too fast. Removed from arrest.").format(name=name),
-                    character_guid=ctx.character.guid,
-                )
-                del targets[guid]
-                prev_suspect_locs.pop(guid, None)
-                continue
+            # Speed check: only applies to suspects in vehicles
+            if crim_veh:
+                prev_loc = prev_suspect_locs[guid]
+                suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
+                if suspect_speed > SUSPECT_SPEED_LIMIT:
+                    name = target_chars[guid].name if guid in target_chars else "Unknown"
+                    await send_system_message(
+                        ctx.http_client_mod,
+                        gettext("{name} is moving too fast. Removed from arrest.").format(name=name),
+                        character_guid=ctx.character.guid,
+                    )
+                    del targets[guid]
+                    prev_suspect_locs.pop(guid, None)
+                    continue
 
             # Proximity check: cop must stay within radius of suspect
             if _distance_3d(current_cop_loc, current_criminal_loc) > ARREST_RADIUS:

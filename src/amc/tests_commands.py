@@ -53,7 +53,7 @@ from amc.commands.teleport import cmd_tp_coords, cmd_tp_name
 from amc.commands.faction import cmd_arrest, parse_location_string
 
 
-from amc.models import Character, Player
+from amc.models import Character, Player, PoliceSession
 # Import other models as needed for mocking or actual DB tests if we go that route
 
 
@@ -1867,13 +1867,12 @@ class ArrestCommandTestCase(TestCase):
         with patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys:
             await cmd_arrest(self.ctx)
             mock_sys.assert_called()
-            self.assertIn("Police faction", mock_sys.call_args[0][1])
+            self.assertIn("police duty", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_no_criminals_nearby(self):
         """Cop with no criminals in range."""
-        from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
 
         mock_players = self._make_player_list(cop_loc=(100, 200, 300))
 
@@ -1892,7 +1891,7 @@ class ArrestCommandTestCase(TestCase):
         """Suspect exists but is too far away (>1500 units / 15m)."""
         from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -1916,23 +1915,24 @@ class ArrestCommandTestCase(TestCase):
         """Suspect moves too fast (>500 units/tick) → removed from arrest."""
         from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
 
-        # Criminal starts at (200,200,300), then jumps 600 units (> SUSPECT_SPEED_LIMIT=500)
+        # Criminal starts at (200,200,300), then jumps 600 units (>SUSPECT_SPEED_LIMIT=500)
+        # Criminal must be in a vehicle for speed check to apply
         initial_players = self._make_player_list(
-            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), False)]
+            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), True)]
         )
         speeding_players = self._make_player_list(
-            cop_loc=(100, 200, 300), criminals=[((800, 200, 300), False)]
+            cop_loc=(100, 200, 300), criminals=[((800, 200, 300), True)]
         )
 
         with (
             patch(
                 "amc.commands.faction.get_players",
-                new=AsyncMock(side_effect=[initial_players, speeding_players]),
+                new=AsyncMock(side_effect=[initial_players] + [speeding_players] * 3),
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
@@ -1950,7 +1950,7 @@ class ArrestCommandTestCase(TestCase):
         from amc.models import FactionMembership, FactionChoice, TeleportPoint
         from django.contrib.gis.geos import Point
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -1990,7 +1990,7 @@ class ArrestCommandTestCase(TestCase):
         """Criminal goes offline during polling → removed from arrest."""
         from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -2019,9 +2019,8 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_cooldown(self):
         """Second arrest within cooldown is rejected."""
-        from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
 
         with (
             patch("amc.commands.faction.cache") as mock_cache,
@@ -2037,7 +2036,7 @@ class ArrestCommandTestCase(TestCase):
         from amc.models import FactionMembership, FactionChoice, TeleportPoint
         from django.contrib.gis.geos import Point
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -2111,7 +2110,7 @@ class ArrestCommandTestCase(TestCase):
         """Jail TeleportPoint doesn't exist → error message."""
         from amc.models import FactionMembership, FactionChoice
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -2142,7 +2141,7 @@ class ArrestCommandTestCase(TestCase):
         from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
         from django.contrib.gis.geos import Point, Polygon
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -2189,7 +2188,7 @@ class ArrestCommandTestCase(TestCase):
         from amc.models import ArrestZone, FactionMembership, FactionChoice
         from django.contrib.gis.geos import Polygon
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
@@ -2231,7 +2230,7 @@ class ArrestCommandTestCase(TestCase):
         from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
         from django.contrib.gis.geos import Point
 
-        await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
+        await PoliceSession.objects.acreate(character=self.character)
         await FactionMembership.objects.acreate(
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )

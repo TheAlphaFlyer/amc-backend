@@ -42,9 +42,8 @@ from amc.models import (
     DeliveryJob,
     Character,
     Confiscation,
-    FactionChoice,
-    FactionMembership,
     MinistryTerm,
+    PoliceSession,
     SubsidyRule,
 )
 
@@ -416,9 +415,9 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
     if cargo_key != "Money":
         return
 
-    # Must be active police
-    is_police = await FactionMembership.objects.filter(
-        player=character.player, faction=FactionChoice.COP
+    # Must be active police (on duty)
+    is_police = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
     ).aexists()
     if not is_police:
         return
@@ -442,8 +441,8 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
         return
 
     # No police-on-police confiscation
-    is_prev_police = await FactionMembership.objects.filter(
-        player=previous_owner.player, faction=FactionChoice.COP
+    is_prev_police = await PoliceSession.objects.filter(
+        character=previous_owner, ended_at__isnull=True
     ).aexists()
     if is_prev_police:
         return
@@ -486,6 +485,13 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
             )
         else:
             await cache.aset(cache_key, prev_total + payment, timeout=60)
+
+    # 6. Track confiscation for police level
+    from amc.police import record_confiscation_for_level
+
+    await record_confiscation_for_level(
+        character, payment, http_client=http_client, session=http_client_mod
+    )
 
 
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):

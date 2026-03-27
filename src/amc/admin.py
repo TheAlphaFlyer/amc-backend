@@ -79,6 +79,7 @@ from .models import (
     CriminalRecord,
     Confiscation,
     ArrestZone,
+    PoliceSession,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1241,4 +1242,14 @@ class FactionMembershipAdmin(admin.ModelAdmin):
     list_filter = ["faction"]
     search_fields = ["player__unique_id", "player__characters__name", "player__discord_name"]
     autocomplete_fields = ["player"]
+
+
+@admin.register(PoliceSession)
+class PoliceSessionAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "started_at", "ended_at"]
+    list_select_related = ["character", "character__player"]
+    search_fields = ["character__name", "character__player__unique_id"]
+    list_filter = ["ended_at"]
+    readonly_fields = ["character"]
+    ordering = ["-started_at"]
 

@@ -7,8 +7,7 @@ from django.test import TestCase
 from amc.factories import PlayerFactory, CharacterFactory
 from amc.models import (
     Confiscation,
-    FactionChoice,
-    FactionMembership,
+    PoliceSession,
 )
 from amc.webhook import handle_pickup_cargo
 
@@ -28,6 +27,7 @@ def _pickup_event(character_guid, payment=5000, previous_owner_guid=None, cargo_
     }
 
 
+@patch("amc.police.record_confiscation_for_level", new_callable=AsyncMock)
 @patch("amc.webhook.record_treasury_confiscation_income", new_callable=AsyncMock)
 @patch("amc.webhook.despawn_player_cargo", new_callable=AsyncMock)
 @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
@@ -36,19 +36,17 @@ class ConfiscationHandlerTests(TestCase):
     """Tests for handle_pickup_cargo — police Money confiscation."""
 
     async def _setup_police_and_criminal(self):
-        """Create a police officer and a non-police player."""
+        """Create a police officer (with active session) and a non-police player."""
         officer_player = await sync_to_async(PlayerFactory)()
         officer = await sync_to_async(CharacterFactory)(player=officer_player)
-        await FactionMembership.objects.acreate(
-            player=officer_player, faction=FactionChoice.COP
-        )
+        await PoliceSession.objects.acreate(character=officer)
 
         criminal_player = await sync_to_async(PlayerFactory)()
         criminal = await sync_to_async(CharacterFactory)(player=criminal_player)
         return officer, criminal
 
     async def test_police_confiscates_money(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Police picking up Money from non-police triggers full confiscation."""
         officer, criminal = await self._setup_police_and_criminal()
@@ -80,7 +78,7 @@ class ConfiscationHandlerTests(TestCase):
         mock_despawn.assert_called_once_with(mock_http_mod, str(officer.guid))
 
     async def test_non_police_no_confiscation(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Non-police picking up Money should not trigger confiscation."""
         player = await sync_to_async(PlayerFactory)()
@@ -98,7 +96,7 @@ class ConfiscationHandlerTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_non_money_cargo_no_confiscation(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Police picking up non-Money cargo should not trigger confiscation."""
         officer, criminal = await self._setup_police_and_criminal()
@@ -113,7 +111,7 @@ class ConfiscationHandlerTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_self_confiscation_blocked(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Police picking up their own Money should not trigger confiscation."""
         officer, _ = await self._setup_police_and_criminal()
@@ -127,20 +125,16 @@ class ConfiscationHandlerTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_police_on_police_blocked(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Police picking up Money from another police officer should not trigger confiscation."""
         officer1_player = await sync_to_async(PlayerFactory)()
         officer1 = await sync_to_async(CharacterFactory)(player=officer1_player)
-        await FactionMembership.objects.acreate(
-            player=officer1_player, faction=FactionChoice.COP,
-        )
+        await PoliceSession.objects.acreate(character=officer1)
 
         officer2_player = await sync_to_async(PlayerFactory)()
         officer2 = await sync_to_async(CharacterFactory)(player=officer2_player)
-        await FactionMembership.objects.acreate(
-            player=officer2_player, faction=FactionChoice.COP,
-        )
+        await PoliceSession.objects.acreate(character=officer2)
 
         event = _pickup_event(
             officer1.guid, payment=5000, previous_owner_guid=officer2.guid,
@@ -151,7 +145,7 @@ class ConfiscationHandlerTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_missing_previous_owner_guid(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Missing PreviousOwnerCharacterGuid should not trigger confiscation."""
         officer, _ = await self._setup_police_and_criminal()
@@ -163,7 +157,7 @@ class ConfiscationHandlerTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_zero_payment_no_confiscation(
-        self, mock_announce, mock_transfer, mock_despawn, mock_treasury,
+        self, mock_announce, mock_transfer, mock_despawn, mock_treasury, mock_level,
     ):
         """Zero-payment cargo should not trigger confiscation."""
         officer, criminal = await self._setup_police_and_criminal()
