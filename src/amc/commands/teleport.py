@@ -3,7 +3,7 @@ import math
 from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
-from amc.models import TeleportPoint, RescueRequest
+from amc.models import TeleportPoint, RescueRequest, FactionChoice, FactionMembership
 from amc.mod_server import teleport_player, list_player_vehicles, show_popup
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
@@ -61,6 +61,23 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 Q(character=ctx.character) | Q(character__isnull=True),
                 name__iexact=name,
             )
+
+            # Block police faction from using dasa
+            if teleport_point.name.lower() == "dasa":
+                is_police = await FactionMembership.objects.filter(
+                    player=ctx.player, faction=FactionChoice.COP
+                ).aexists()
+                if is_police:
+                    asyncio.create_task(
+                        show_popup(
+                            ctx.http_client_mod,
+                            _("This teleport location is restricted for police officers."),
+                            character_guid=ctx.character.guid,
+                            player_id=str(ctx.player.unique_id),
+                        )
+                    )
+                    return
+
             loc_obj = teleport_point.location
             location = {"X": loc_obj.x, "Y": loc_obj.y, "Z": loc_obj.z}
         except TeleportPoint.DoesNotExist:
