@@ -78,6 +78,7 @@ from .models import (
     FactionMembership,
     CriminalRecord,
     Confiscation,
+    ArrestZone,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -902,6 +903,34 @@ class JobPostingConfigAdmin(admin.ModelAdmin):
 @admin.register(SubsidyArea)
 class SubsidyAreaAdmin(admin.ModelAdmin):
     list_display = ["name"]
+    search_fields = ["name"]
+
+    class Media:
+        js = (
+            "https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js",
+            "amc/js/OLMapWidget.js",
+        )
+        css = {
+            "all": (
+                "https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css",
+                "gis/css/ol3.css",
+            )
+        }
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        defaults = {
+            "widgets": {
+                "polygon": AMCOpenLayersWidget,
+            }
+        }
+        defaults.update(kwargs)
+        return super().get_form(request, obj, change, **defaults)
+
+
+@admin.register(ArrestZone)
+class ArrestZoneAdmin(admin.ModelAdmin):
+    list_display = ["name", "active"]
+    list_filter = ["active"]
     search_fields = ["name"]
 
     class Media:

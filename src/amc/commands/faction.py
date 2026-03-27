@@ -4,14 +4,14 @@ import re
 from django.core.cache import cache
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
-from amc.models import Character, FactionChoice, FactionMembership, TeleportPoint
-from amc.mod_server import force_exit_vehicle, teleport_player
+from amc.models import ArrestZone, Character, FactionChoice, FactionMembership, TeleportPoint
+from amc.mod_server import force_exit_vehicle, show_popup, teleport_player
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
-ARREST_RADIUS = 500  # 5m — cop must be within 5m of criminal
-STATIONARY_THRESHOLD = 100  # 1m — max movement per poll tick
-ARREST_POLL_COUNT = 5  # 5 polls × 1s = 5 seconds
+ARREST_RADIUS = 1000  # 10m — cop must be within 10m of criminal
+SUSPECT_SPEED_LIMIT = 300  # 3m per poll tick — suspects moving faster are removed
+ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 60  # seconds between arrests per cop
 
 _LOC_RE = re.compile(
@@ -85,6 +85,18 @@ async def cmd_arrest(ctx: CommandContext):
 
     cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
 
+    # 3b. Zone check — cop must be inside an active ArrestZone
+    from django.contrib.gis.geos import Point
+    cop_point = Point(cop_loc[0], cop_loc[1], srid=3857)
+    zones_exist = await ArrestZone.objects.filter(active=True).aexists()
+    if zones_exist:
+        in_zone = await ArrestZone.objects.filter(
+            active=True, polygon__contains=cop_point
+        ).aexists()
+        if not in_zone:
+            await ctx.reply(gettext("Arrests can only be made in designated arrest zones."))
+            return
+
     # 4. Find nearby criminals
     other_guids = [g for g in locations if g != cop_guid]
     if not other_guids:
@@ -130,10 +142,13 @@ async def cmd_arrest(ctx: CommandContext):
 
     # 5. Notify cop
     await ctx.reply(
-        gettext("Arresting {names}… stand still for 5 seconds.").format(names=names_str)
+        gettext("Arresting {names}… stay close for 3 seconds.").format(names=names_str)
     )
 
-    # 6. Poll loop — check every second for 5 seconds
+    # Track previous suspect positions for speed check
+    prev_suspect_locs = {guid: targets[guid][1] for guid in targets}
+
+    # 6. Poll loop — check every second for 3 seconds
     for i in range(ARREST_POLL_COUNT):
         await asyncio.sleep(1)
 
@@ -144,14 +159,11 @@ async def cmd_arrest(ctx: CommandContext):
 
         current_locations = _build_player_locations(players)
 
-        # Check cop still online and stationary
+        # Check cop still online
         if cop_guid not in current_locations:
             return  # cop disconnected, silently abort
 
         cop_uid_now, current_cop_loc, cop_veh = current_locations[cop_guid]
-        if _distance_3d(cop_loc, current_cop_loc) > STATIONARY_THRESHOLD:
-            await ctx.reply(gettext("You moved. Arrest cancelled."))
-            return
 
         # Check each target criminal
         for guid in list(targets.keys()):
@@ -162,19 +174,24 @@ async def cmd_arrest(ctx: CommandContext):
                     gettext("{name} went offline. Removed from arrest.").format(name=name)
                 )
                 del targets[guid]
+                prev_suspect_locs.pop(guid, None)
                 continue
 
             crim_uid, current_criminal_loc, crim_veh = current_locations[guid]
-            initial_loc = locations[guid][1]
 
-            if _distance_3d(initial_loc, current_criminal_loc) > STATIONARY_THRESHOLD:
+            # Speed check: suspect must not be moving too fast
+            prev_loc = prev_suspect_locs[guid]
+            suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
+            if suspect_speed > SUSPECT_SPEED_LIMIT:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
                 await ctx.reply(
-                    gettext("{name} moved. Removed from arrest.").format(name=name)
+                    gettext("{name} is moving too fast. Removed from arrest.").format(name=name)
                 )
                 del targets[guid]
+                prev_suspect_locs.pop(guid, None)
                 continue
 
+            # Proximity check: cop must stay within radius of suspect
             if _distance_3d(current_cop_loc, current_criminal_loc) > ARREST_RADIUS:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
                 await ctx.reply(
@@ -183,9 +200,11 @@ async def cmd_arrest(ctx: CommandContext):
                     )
                 )
                 del targets[guid]
+                prev_suspect_locs.pop(guid, None)
                 continue
 
-            # Update vehicle status for arrest execution
+            # Update for next tick
+            prev_suspect_locs[guid] = current_criminal_loc
             targets[guid] = (crim_uid, current_criminal_loc, crim_veh)
 
         if not targets:
@@ -216,6 +235,13 @@ async def cmd_arrest(ctx: CommandContext):
             crim_uid,
             jail_location,
             no_vehicles=True,
+        )
+
+        # Popup notification
+        await show_popup(
+            ctx.http_client_mod,
+            "You have been arrested!",
+            player_id=crim_uid,
         )
 
         name = target_chars[guid].name if guid in target_chars else "Unknown"
