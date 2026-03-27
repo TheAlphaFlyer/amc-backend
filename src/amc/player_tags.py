@@ -6,11 +6,11 @@ logger = logging.getLogger(__name__)
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G, optionally followed by more letters/digits
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12] — but NOT [123] or [ABC]
-    re.compile(r"\[(?=[CMG])[CMG\d]+\]\s*"),
+    # New compact format: must start with C/M/G/P, optionally followed by more letters/digits
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [P], [MP], [MPG3] — but NOT [123] or [ABC]
+    re.compile(r"\[(?=[CMGP])[CMGP\d]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
-    re.compile(r"\[(?=[CMG])[CMG₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
+    re.compile(r"\[(?=[CMGP])[CMGP₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
     # Legacy formats (for players who logged in before the refactor)
     re.compile(r"\[CRIM\]\s*", re.IGNORECASE),
     re.compile(r"\[MODS\]\s*", re.IGNORECASE),
@@ -33,30 +33,36 @@ def build_display_name(
     *,
     has_criminal_record: bool = False,
     has_custom_parts: bool = False,
+    is_police: bool = False,
     gov_level: int = 0,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [CMG3] BaseName
-      C = Criminal record (suppressed when gov employee)
+    Tag format: [MPCG3] BaseName  (order: M, P, C, G)
       M = Modded vehicle parts
+      P = Police faction member
+      C = Criminal record (suppressed when police or gov employee)
       G3 = Government employee level
 
     Args:
         base_name: The player's original name (stripped of any existing tags)
         has_criminal_record: Whether the player has an active criminal record
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
+        is_police: Whether the player belongs to the Police (COP) faction
         gov_level: Government employee level (0 = not a gov employee)
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
 
-    # C is suppressed when gov employee is active
-    if has_criminal_record and gov_level == 0:
-        tag += "C"
-
     if has_custom_parts:
         tag += "M"
+
+    if is_police:
+        tag += "P"
+
+    # C is suppressed when police or gov employee is active
+    if has_criminal_record and not is_police and gov_level == 0:
+        tag += "C"
 
     if gov_level > 0:
         tag += f"G{gov_level}"
@@ -107,11 +113,19 @@ async def refresh_player_name(
         character=character, expires_at__gt=timezone.now()
     ).aexists()
 
+    # Determine POLICE state
+    from amc.models import FactionChoice, FactionMembership
+
+    is_police = await FactionMembership.objects.filter(
+        player=character.player, faction=FactionChoice.COP
+    ).aexists()
+
     # Reconstruct name
     new_name = build_display_name(
         character.name,
         has_criminal_record=has_criminal_record,
         has_custom_parts=has_custom_parts,
+        is_police=is_police,
         gov_level=gov_level,
     )
 

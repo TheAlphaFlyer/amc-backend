@@ -25,11 +25,35 @@ def test_build_display_name_gov_multi_digit():
 def test_build_display_name_mod_and_gov():
     assert build_display_name("PlayerOne", has_custom_parts=True, gov_level=3) == "[MG3] PlayerOne"
 
+def test_build_display_name_police_only():
+    assert build_display_name("PlayerOne", is_police=True) == "[P] PlayerOne"
+
+def test_build_display_name_police_and_mods():
+    assert build_display_name("PlayerOne", is_police=True, has_custom_parts=True) == "[MP] PlayerOne"
+
+def test_build_display_name_police_and_gov():
+    assert build_display_name("PlayerOne", is_police=True, gov_level=3) == "[PG3] PlayerOne"
+
+def test_build_display_name_police_mods_and_gov():
+    assert build_display_name("PlayerOne", is_police=True, has_custom_parts=True, gov_level=3) == "[MPG3] PlayerOne"
+
+def test_build_display_name_police_suppresses_crim():
+    """Police membership suppresses criminal tag."""
+    assert build_display_name("PlayerOne", is_police=True, has_criminal_record=True) == "[P] PlayerOne"
+
+def test_build_display_name_police_and_gov_suppress_crim():
+    """Police + gov both suppress criminal tag."""
+    assert build_display_name("PlayerOne", is_police=True, has_criminal_record=True, gov_level=3) == "[PG3] PlayerOne"
+
 def test_build_display_name_crim_only():
     assert build_display_name("PlayerOne", has_criminal_record=True) == "[C] PlayerOne"
 
+def test_build_display_name_crim_not_suppressed_without_police_or_gov():
+    """Criminal tag is NOT suppressed when player is neither police nor gov."""
+    assert build_display_name("PlayerOne", has_criminal_record=True, has_custom_parts=True) == "[MC] PlayerOne"
+
 def test_build_display_name_crim_and_mods():
-    assert build_display_name("PlayerOne", has_criminal_record=True, has_custom_parts=True) == "[CM] PlayerOne"
+    assert build_display_name("PlayerOne", has_criminal_record=True, has_custom_parts=True) == "[MC] PlayerOne"
 
 def test_build_display_name_crim_suppressed_by_gov():
     """Criminal tag is suppressed when gov level > 0."""
@@ -38,6 +62,10 @@ def test_build_display_name_crim_suppressed_by_gov():
 def test_build_display_name_all_active_crim_suppressed():
     """All flags active: criminal suppressed by gov, so [MG₃]."""
     assert build_display_name("PlayerOne", has_criminal_record=True, has_custom_parts=True, gov_level=3) == "[MG3] PlayerOne"
+
+def test_build_display_name_all_flags_with_police():
+    """All flags + police: criminal suppressed, so [MPG3]."""
+    assert build_display_name("PlayerOne", has_criminal_record=True, has_custom_parts=True, is_police=True, gov_level=3) == "[MPG3] PlayerOne"
 
 
 # --- strip_all_tags ---
@@ -49,6 +77,11 @@ def test_strip_new_format():
     assert strip_all_tags("[C] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[CM] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[CMG23] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[P] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[MP] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[MPG3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[PG3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[MC] PlayerOne") == "PlayerOne"
 
 def test_strip_legacy_format():
     assert strip_all_tags("[MODS] PlayerOne") == "PlayerOne"
@@ -222,7 +255,7 @@ async def test_refresh_player_name_crim_and_mods(mock_set_name):
     await refresh_player_name(character, session, has_custom_parts=True)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[CM] TestPlayer"
+    assert character.custom_name == "[MC] TestPlayer"
 
 
 @pytest.mark.asyncio
@@ -254,3 +287,65 @@ async def test_refresh_player_name_expired_crim_no_tag(mock_set_name):
 
     await character.arefresh_from_db()
     assert character.custom_name is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
+async def test_refresh_player_name_police_faction(mock_set_name):
+    """Police faction membership → [P] tag."""
+    from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import FactionChoice, FactionMembership
+    from asgiref.sync import sync_to_async
+
+    player = await sync_to_async(PlayerFactory)()
+    character = await sync_to_async(CharacterFactory)(
+        player=player,
+        name="TestPlayer",
+        guid="test-guid-police-1",
+    )
+
+    await FactionMembership.objects.acreate(
+        player=player, faction=FactionChoice.COP
+    )
+
+    session = MagicMock()
+    await refresh_player_name(character, session)
+
+    await character.arefresh_from_db()
+    assert character.custom_name == "[P] TestPlayer"
+    mock_set_name.assert_awaited_once_with(session, "test-guid-police-1", "[P] TestPlayer")
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
+async def test_refresh_player_name_police_suppresses_crim(mock_set_name):
+    """Police + criminal record → [P] (criminal suppressed)."""
+    from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import CriminalRecord, FactionChoice, FactionMembership
+    from asgiref.sync import sync_to_async
+    from django.utils import timezone
+    from datetime import timedelta
+
+    player = await sync_to_async(PlayerFactory)()
+    character = await sync_to_async(CharacterFactory)(
+        player=player,
+        name="TestPlayer",
+        guid="test-guid-police-2",
+    )
+
+    await FactionMembership.objects.acreate(
+        player=player, faction=FactionChoice.COP
+    )
+    await CriminalRecord.objects.acreate(
+        character=character,
+        reason="Money delivery",
+        expires_at=timezone.now() + timedelta(days=7),
+    )
+
+    session = MagicMock()
+    await refresh_player_name(character, session)
+
+    await character.arefresh_from_db()
+    assert character.custom_name == "[P] TestPlayer"
