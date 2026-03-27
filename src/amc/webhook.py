@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-
-logger = logging.getLogger("amc.webhook")
 import asyncio
 import itertools
 from operator import attrgetter
@@ -15,7 +13,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character
+from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -26,6 +24,7 @@ from amc.subsidies import (
 from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
+    record_treasury_confiscation_income,
 )
 from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
@@ -42,9 +41,14 @@ from amc.models import (
     DeliveryPoint,
     DeliveryJob,
     Character,
+    Confiscation,
+    FactionChoice,
+    FactionMembership,
     MinistryTerm,
     SubsidyRule,
 )
+
+logger = logging.getLogger("amc.webhook")
 
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
 WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
@@ -391,6 +395,99 @@ async def handle_police_shift(event, player, timestamp, action):
     return 0, 0
 
 
+async def _announce_confiscation_after_delay(character_guid, http_client, delay=30):
+    """Wait for the debounce window, then announce the accumulated confiscation total."""
+    await asyncio.sleep(delay)
+    cache_key = f"money_confiscated:{character_guid}"
+    total = await cache.aget(cache_key, 0)
+    await cache.adelete(cache_key)
+    if total > 0:
+        await announce(
+            f"${total:,} has been confiscated by police",
+            http_client,
+            color="4A90D9",
+        )
+
+
+async def handle_pickup_cargo(event, character, http_client, http_client_mod):
+    """Handle ServerPickupCargo: confiscate Money if picker is police."""
+    cargo = event["data"].get("Cargo", {})
+    cargo_key = cargo.get("Net_CargoKey")
+    if cargo_key != "Money":
+        return
+
+    # Must be active police
+    is_police = await FactionMembership.objects.filter(
+        player=character.player, faction=FactionChoice.COP
+    ).aexists()
+    if not is_police:
+        return
+
+    payment = cargo.get("Net_Payment", 0)
+    previous_owner_guid = cargo.get("PreviousOwnerCharacterGuid")
+    if not previous_owner_guid or payment <= 0:
+        return
+
+    # No self-confiscation
+    if str(character.guid).upper() == previous_owner_guid.upper():
+        return
+
+    # Look up previous owner
+    previous_owner = await (
+        Character.objects.select_related("player")
+        .filter(guid=previous_owner_guid)
+        .afirst()
+    )
+    if not previous_owner:
+        return
+
+    # No police-on-police confiscation
+    is_prev_police = await FactionMembership.objects.filter(
+        player=previous_owner.player, faction=FactionChoice.COP
+    ).aexists()
+    if is_prev_police:
+        return
+
+    # 1. Record confiscation
+    await Confiscation.objects.acreate(
+        character=previous_owner,
+        officer=character,
+        cargo_key=cargo_key,
+        amount=payment,
+    )
+
+    # 2. Charge previous owner
+    await transfer_money(
+        http_client_mod,
+        int(-payment),
+        "Money Confiscated",
+        str(previous_owner.player.unique_id),
+    )
+
+    # 3. Credit treasury
+    await record_treasury_confiscation_income(payment, "Police Confiscation")
+
+    # 4. Despawn the cargo from the police officer
+    try:
+        await despawn_player_cargo(http_client_mod, str(character.guid))
+    except Exception:
+        logger.warning("Failed to despawn cargo for %s after confiscation", character.guid)
+
+    # 5. Debounced announcement
+    if http_client:
+        cache_key = f"money_confiscated:{character.guid}"
+        prev_total = await cache.aget(cache_key, 0)
+        if prev_total == 0:
+            await cache.aset(cache_key, payment, timeout=60)
+            asyncio.create_task(
+                _announce_confiscation_after_delay(
+                    character.guid, http_client, delay=30
+                )
+            )
+        else:
+            await cache.aset(cache_key, prev_total + payment, timeout=60)
+
+
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
     if is_rp_mode and character.last_login < timestamp - timedelta(seconds=15):
         # await despawn_player_vehicle(http_client_mod, player.unique_id)
@@ -707,6 +804,11 @@ async def process_events(
                 )
                 last_processed = 0
                 cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+            elif cached_epoch is None:
+                # First SSE connection — LAST_SEQ may be stale from old
+                # polling system.  Reset to avoid dropping all events.
+                last_processed = 0
+                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
             if event_epoch != cached_epoch:
                 cached_epoch = event_epoch
                 cache.set(LAST_EPOCH_CACHE_KEY, cached_epoch, timeout=None)
@@ -1015,5 +1117,8 @@ async def process_event(
 
         case "ServerRemovePolicePlayer":
             await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.END)
+
+        case "ServerPickupCargo":
+            await handle_pickup_cargo(event, character, http_client, http_client_mod)
 
     return base_payment, subsidy, contract_payment

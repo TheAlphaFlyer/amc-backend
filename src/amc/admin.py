@@ -77,6 +77,7 @@ from .models import (
     NewsItem,
     FactionMembership,
     CriminalRecord,
+    Confiscation,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -613,6 +614,15 @@ class CriminalRecordAdmin(admin.ModelAdmin):
     search_fields = ["character__name", "character__player__unique_id", "reason"]
     list_filter = ["reason"]
     readonly_fields = ["character"]
+    ordering = ["-created_at"]
+
+
+@admin.register(Confiscation)
+class ConfiscationAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "officer", "cargo_key", "amount", "created_at"]
+    list_select_related = ["character", "character__player", "officer", "officer__player"]
+    search_fields = ["character__name", "officer__name", "character__player__unique_id"]
+    readonly_fields = ["character", "officer"]
     ordering = ["-created_at"]
 
 

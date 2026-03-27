@@ -334,6 +334,26 @@ class CriminalRecord(models.Model):
         return [r async for r in qs.select_related("character")]
 
 
+@final
+class Confiscation(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="confiscations_received"
+    )
+    officer = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="confiscations_made"
+    )
+    cargo_key = models.CharField(max_length=100)
+    amount = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "created_at"])]
+
+    @override
+    def __str__(self):
+        return f"{self.officer.name} confiscated {self.cargo_key} (${self.amount:,}) from {self.character.name}"
+
+
 class FactionChoice(models.TextChoices):
     COP = "cop", "Cop"
     CRIMINAL = "criminal", "Criminal"

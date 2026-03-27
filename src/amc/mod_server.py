@@ -304,6 +304,13 @@ async def force_exit_vehicle(session, character_guid):
             raise Exception("Failed to exit vehicle")
 
 
+async def despawn_player_cargo(session, character_guid):
+    async with session.post(f"/players/{character_guid}/despawn_cargo") as resp:
+        if resp.status != 200:
+            raise Exception("Failed to despawn cargo")
+        return await resp.json()
+
+
 async def set_world_vehicle_decal(
     session,
     vehicle_class,

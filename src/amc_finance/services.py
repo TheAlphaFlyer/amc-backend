@@ -739,6 +739,35 @@ async def record_treasury_expense(amount, description="Treasury Expense"):
     )
 
 
+async def record_treasury_confiscation_income(amount, description="Police Confiscation"):
+    """Credit the treasury via confiscation (Dr. Treasury Fund / Cr. Confiscation Revenue).
+
+    Unlike player_donation, this does NOT increment total_donations.
+    """
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    confiscation_revenue, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.REVENUE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Confiscation Revenue",
+    )
+
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {"account": confiscation_revenue, "debit": 0, "credit": amount},
+            {"account": treasury_fund, "debit": amount, "credit": 0},
+        ],
+    )
+
+
 async def send_fund_to_player(amount, character, reason):
     account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.LIABILITY,
