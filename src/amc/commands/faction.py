@@ -5,7 +5,7 @@ from django.core.cache import cache
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import ArrestZone, Character, FactionChoice, FactionMembership, TeleportPoint
-from amc.mod_server import force_exit_vehicle, show_popup, teleport_player
+from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
@@ -60,19 +60,19 @@ async def cmd_arrest(ctx: CommandContext):
         player=ctx.player, faction=FactionChoice.COP
     ).aexists()
     if not is_cop:
-        await ctx.reply(gettext("You must be a member of the Police faction to use this command."))
+        await send_system_message(ctx.http_client_mod, gettext("You must be a member of the Police faction to use this command."), character_guid=ctx.character.guid)
         return
 
     # 2. Cooldown check
     cooldown_key = f"arrest_cooldown:{ctx.player.unique_id}"
     if cache.get(cooldown_key):
-        await ctx.reply(gettext("You must wait before making another arrest."))
+        await send_system_message(ctx.http_client_mod, gettext("You must wait before making another arrest."), character_guid=ctx.character.guid)
         return
 
     # 3. Initial poll — get all player positions
     players = await get_players(ctx.http_client)
     if not players:
-        await ctx.reply(gettext("Could not fetch player data."))
+        await send_system_message(ctx.http_client_mod, gettext("Could not fetch player data."), character_guid=ctx.character.guid)
         return
 
     locations = _build_player_locations(players)
@@ -80,7 +80,7 @@ async def cmd_arrest(ctx: CommandContext):
     # Find cop's own position
     cop_guid = ctx.character.guid
     if cop_guid not in locations:
-        await ctx.reply(gettext("Could not determine your position."))
+        await send_system_message(ctx.http_client_mod, gettext("Could not determine your position."), character_guid=ctx.character.guid)
         return
 
     cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
@@ -94,13 +94,13 @@ async def cmd_arrest(ctx: CommandContext):
             active=True, polygon__contains=cop_point
         ).aexists()
         if not in_zone:
-            await ctx.reply(gettext("Arrests can only be made in designated arrest zones."))
+            await send_system_message(ctx.http_client_mod, gettext("Arrests can only be made in designated arrest zones."), character_guid=ctx.character.guid)
             return
 
     # 4. Find nearby criminals
     other_guids = [g for g in locations if g != cop_guid]
     if not other_guids:
-        await ctx.reply(gettext("No players nearby."))
+        await send_system_message(ctx.http_client_mod, gettext("No players nearby."), character_guid=ctx.character.guid)
         return
 
     # Batch query: which of these characters are in the criminal faction?
@@ -116,7 +116,7 @@ async def cmd_arrest(ctx: CommandContext):
             continue
 
     if not criminal_guids:
-        await ctx.reply(gettext("No criminals nearby."))
+        await send_system_message(ctx.http_client_mod, gettext("No criminals nearby."), character_guid=ctx.character.guid)
         return
 
     # Filter to criminals within ARREST_RADIUS
@@ -129,7 +129,7 @@ async def cmd_arrest(ctx: CommandContext):
             targets[guid] = locations[guid]
 
     if not targets:
-        await ctx.reply(gettext("No criminals within arrest range."))
+        await send_system_message(ctx.http_client_mod, gettext("No criminals within arrest range."), character_guid=ctx.character.guid)
         return
 
     # Look up names for all targets
@@ -141,8 +141,10 @@ async def cmd_arrest(ctx: CommandContext):
     names_str = ", ".join(target_names)
 
     # 5. Notify cop
-    await ctx.reply(
-        gettext("Arresting {names}… stay close for 3 seconds.").format(names=names_str)
+    await send_system_message(
+        ctx.http_client_mod,
+        gettext("Arresting {names}… stay close for 3 seconds.").format(names=names_str),
+        character_guid=ctx.character.guid,
     )
 
     # Track previous suspect positions for speed check
@@ -154,7 +156,7 @@ async def cmd_arrest(ctx: CommandContext):
 
         players = await get_players(ctx.http_client)
         if not players:
-            await ctx.reply(gettext("Lost connection to server. Arrest cancelled."))
+            await send_system_message(ctx.http_client_mod, gettext("Lost connection to server. Arrest cancelled."), character_guid=ctx.character.guid)
             return
 
         current_locations = _build_player_locations(players)
@@ -170,8 +172,10 @@ async def cmd_arrest(ctx: CommandContext):
             if guid not in current_locations:
                 # Criminal went offline — remove from targets
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await ctx.reply(
-                    gettext("{name} went offline. Removed from arrest.").format(name=name)
+                await send_system_message(
+                    ctx.http_client_mod,
+                    gettext("{name} went offline. Removed from arrest.").format(name=name),
+                    character_guid=ctx.character.guid,
                 )
                 del targets[guid]
                 prev_suspect_locs.pop(guid, None)
@@ -184,8 +188,10 @@ async def cmd_arrest(ctx: CommandContext):
             suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
             if suspect_speed > SUSPECT_SPEED_LIMIT:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await ctx.reply(
-                    gettext("{name} is moving too fast. Removed from arrest.").format(name=name)
+                await send_system_message(
+                    ctx.http_client_mod,
+                    gettext("{name} is moving too fast. Removed from arrest.").format(name=name),
+                    character_guid=ctx.character.guid,
                 )
                 del targets[guid]
                 prev_suspect_locs.pop(guid, None)
@@ -194,10 +200,12 @@ async def cmd_arrest(ctx: CommandContext):
             # Proximity check: cop must stay within radius of suspect
             if _distance_3d(current_cop_loc, current_criminal_loc) > ARREST_RADIUS:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await ctx.reply(
+                await send_system_message(
+                    ctx.http_client_mod,
                     gettext("{name} is no longer within range. Removed from arrest.").format(
                         name=name
-                    )
+                    ),
+                    character_guid=ctx.character.guid,
                 )
                 del targets[guid]
                 prev_suspect_locs.pop(guid, None)
@@ -208,7 +216,7 @@ async def cmd_arrest(ctx: CommandContext):
             targets[guid] = (crim_uid, current_criminal_loc, crim_veh)
 
         if not targets:
-            await ctx.reply(gettext("All targets escaped. Arrest cancelled."))
+            await send_system_message(ctx.http_client_mod, gettext("All targets escaped. Arrest cancelled."), character_guid=ctx.character.guid)
             return
 
     # 7. Execute arrests — teleport to jail
@@ -216,7 +224,7 @@ async def cmd_arrest(ctx: CommandContext):
         jail_tp = await TeleportPoint.objects.aget(name__iexact="jail")
         jail_location = {"X": jail_tp.location.x, "Y": jail_tp.location.y, "Z": jail_tp.location.z}
     except TeleportPoint.DoesNotExist:
-        await ctx.reply(gettext("Jail teleport point not configured. Contact an admin."))
+        await send_system_message(ctx.http_client_mod, gettext("Jail teleport point not configured. Contact an admin."), character_guid=ctx.character.guid)
         return
 
     arrested_names = []
@@ -255,6 +263,8 @@ async def cmd_arrest(ctx: CommandContext):
     await ctx.announce(
         f"{names_arrested} arrested by {ctx.character.name}!"
     )
-    await ctx.reply(
-        gettext("{names} arrested and sent to jail.").format(names=names_arrested)
+    await send_system_message(
+        ctx.http_client_mod,
+        gettext("{names} arrested and sent to jail.").format(names=names_arrested),
+        character_guid=ctx.character.guid,
     )

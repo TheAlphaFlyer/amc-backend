@@ -1864,9 +1864,10 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_not_cop(self):
         """Non-cop player gets rejection."""
-        await cmd_arrest(self.ctx)
-        self.ctx.reply.assert_called()
-        self.assertIn("Police faction", self.ctx.reply.call_args[0][0])
+        with patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys:
+            await cmd_arrest(self.ctx)
+            mock_sys.assert_called()
+            self.assertIn("Police faction", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_no_criminals_nearby(self):
         """Cop with no criminals in range."""
@@ -1876,13 +1877,16 @@ class ArrestCommandTestCase(TestCase):
 
         mock_players = self._make_player_list(cop_loc=(100, 200, 300))
 
-        with patch(
-            "amc.commands.faction.get_players",
-            new=AsyncMock(return_value=mock_players),
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             await cmd_arrest(self.ctx)
-            self.ctx.reply.assert_called()
-            self.assertIn("No players nearby", self.ctx.reply.call_args[0][0])
+            mock_sys.assert_called()
+            self.assertIn("No players nearby", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_criminal_out_of_range(self):
         """Criminal exists but is too far away (>1000 units / 10m)."""
@@ -1897,13 +1901,16 @@ class ArrestCommandTestCase(TestCase):
             cop_loc=(100, 200, 300), criminals=[((1600, 200, 300), False)]
         )
 
-        with patch(
-            "amc.commands.faction.get_players",
-            new=AsyncMock(return_value=mock_players),
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             await cmd_arrest(self.ctx)
-            self.ctx.reply.assert_called()
-            self.assertIn("within arrest range", self.ctx.reply.call_args[0][0])
+            mock_sys.assert_called()
+            self.assertIn("within arrest range", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_suspect_speeding(self):
         """Suspect moves too fast (>300 units/tick) → removed from arrest."""
@@ -1929,12 +1936,13 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
-            replies = [call[0][0] for call in self.ctx.reply.call_args_list]
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("too fast" in r for r in replies), f"Expected 'too fast' in replies: {replies}"
+                any("too fast" in m for m in msgs), f"Expected 'too fast' in msgs: {msgs}"
             )
 
     async def test_cmd_arrest_cop_moved_still_succeeds(self):
@@ -1968,6 +1976,7 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -1998,13 +2007,14 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
-            replies = [call[0][0] for call in self.ctx.reply.call_args_list]
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("offline" in r for r in replies),
-                f"Expected 'offline' in replies: {replies}",
+                any("offline" in m for m in msgs),
+                f"Expected 'offline' in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_cooldown(self):
@@ -2013,11 +2023,14 @@ class ArrestCommandTestCase(TestCase):
 
         await FactionMembership.objects.acreate(player=self.player, faction=FactionChoice.COP)
 
-        with patch("amc.commands.faction.cache") as mock_cache:
+        with (
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
             mock_cache.get.return_value = True  # cooldown active
             await cmd_arrest(self.ctx)
-            self.ctx.reply.assert_called()
-            self.assertIn("wait", self.ctx.reply.call_args[0][0])
+            mock_sys.assert_called()
+            self.assertIn("wait", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_success(self):
         """Happy path: criminal arrested, exited vehicle, teleported to jail, popup shown."""
@@ -2053,6 +2066,7 @@ class ArrestCommandTestCase(TestCase):
             patch(
                 "amc.commands.faction.show_popup", new=AsyncMock()
             ) as mock_popup,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2075,6 +2089,13 @@ class ArrestCommandTestCase(TestCase):
                 self.ctx.http_client_mod,
                 "You have been arrested!",
                 player_id=str(self.criminal_player.unique_id),
+            )
+
+            # Confirmation sent via system message
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("arrested and sent to jail" in m for m in msgs),
+                f"Expected jail confirmation in msgs: {msgs}",
             )
 
             # Server-wide announcement
@@ -2106,13 +2127,14 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
-            replies = [call[0][0] for call in self.ctx.reply.call_args_list]
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("Jail" in r or "jail" in r.lower() for r in replies),
-                f"Expected jail error in replies: {replies}",
+                any("Jail" in m or "jail" in m.lower() for m in msgs),
+                f"Expected jail error in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_inside_zone(self):
@@ -2152,6 +2174,7 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2191,15 +2214,16 @@ class ArrestCommandTestCase(TestCase):
                 new=AsyncMock(return_value=mock_players),
             ),
             patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            self.ctx.reply.assert_called()
-            replies = [call[0][0] for call in self.ctx.reply.call_args_list]
+            mock_sys.assert_called()
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("designated" in r.lower() or "arrest zone" in r.lower() for r in replies),
-                f"Expected zone rejection in replies: {replies}",
+                any("designated" in m.lower() or "arrest zone" in m.lower() for m in msgs),
+                f"Expected zone rejection in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_no_zones_defined(self):
@@ -2233,6 +2257,7 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
