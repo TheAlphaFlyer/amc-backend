@@ -345,6 +345,26 @@ async def streaming_player_positions(request):
     return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
 
 
+player_count_router = Router()
+
+
+@player_count_router.get("/")
+async def streaming_player_count(request):
+    session = request.state["aiohttp_client"]
+
+    async def event_stream():
+        last_count = None
+        while True:
+            players = await get_players_mod(session)
+            count = len(players)
+            if count != last_count:
+                yield f"data: {count}\n\n"
+                last_count = count
+            await asyncio.sleep(POSITION_UPDATE_SLEEP)
+
+    return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+
+
 stats_router = Router()
 
 
