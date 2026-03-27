@@ -13,7 +13,8 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character
+from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
+from amc.mod_detection import detect_custom_parts
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -576,6 +577,32 @@ async def handle_cargo_arrived(
                 await record_ministry_subsidy_spend(cargo_subsidy, active_term.id)
         cargo_name = group_list[0].get_cargo_key_display()
 
+        if cargo_key == "Money" and http_client_mod:
+            try:
+                vehicles = await list_player_vehicles(http_client_mod, str(character.player.unique_id), active=True, complete=True)
+                if vehicles:
+                    main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+                    if main_vehicle:
+                        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+                        if custom_parts:
+                            penalty = payment * quantity
+                            await transfer_money(
+                                http_client_mod,
+                                int(-penalty),
+                                "Modded Vehicle Penalty",
+                                str(character.player.unique_id),
+                            )
+                            asyncio.create_task(
+                                show_popup(
+                                    http_client_mod,
+                                    "Your criminal profits were zeroed out for using a modified vehicle.",
+                                    character_guid=character.guid,
+                                    player_id=str(character.player.unique_id),
+                                )
+                            )
+            except Exception as e:
+                logger.warning(f"Failed to check custom parts for money delivery penalty: {e}")
+
         job = await (
             DeliveryJob.objects.filter_active().filter_by_delivery(
                 delivery_source, delivery_destination, cargo_key
@@ -1043,6 +1070,34 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
         return job
 
 
+async def handle_load_cargo(event, character, player, http_client_mod):
+    cargo = event["data"].get("Cargo", {})
+    if cargo.get("Net_CargoKey") != "Money":
+        return
+
+    try:
+        vehicles = await list_player_vehicles(http_client_mod, str(player.unique_id), active=True, complete=True)
+        if not vehicles:
+            return
+        
+        main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+        if not main_vehicle:
+            return
+        
+        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+        if custom_parts:
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    "You are not allowed to use modified vehicles for criminal gameplay!",
+                    character_guid=character.guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Failed to check custom parts for load cargo: {e}")
+
+
 async def process_event(
     event,
     player,
@@ -1126,5 +1181,9 @@ async def process_event(
 
         case "ServerPickupCargo":
             await handle_pickup_cargo(event, character, http_client, http_client_mod)
+
+        case "ServerLoadCargo":
+            if http_client_mod:
+                await handle_load_cargo(event, character, player, http_client_mod)
 
     return base_payment, subsidy, contract_payment

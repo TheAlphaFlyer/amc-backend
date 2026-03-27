@@ -493,6 +493,93 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 3)
         self.assertTrue(log.delivered)
 
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
+    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        mock_list_vehicles.return_value = {
+            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        }
+        mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        event = {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "Money",
+                        "Net_Payment": 10_000,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 1000, "Y": 1000, "Z": 0},
+                    }
+                ],
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        # It should call transfer_money to deduct the penalty
+        mock_transfer.assert_called_once_with(
+            http_client_mod,
+            -10_000,
+            "Modded Vehicle Penalty",
+            str(player.unique_id),
+        )
+        mock_show_popup.assert_called_once()
+        self.assertIn("profits were zeroed out", mock_show_popup.call_args[0][1])
+
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
+    async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        
+        mock_list_vehicles.return_value = {
+            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        }
+        mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {
+                    "Net_CargoKey": "Money",
+                    "Net_Payment": 10_000,
+                },
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        mock_show_popup.assert_called_once()
+        self.assertIn("not allowed to use modified vehicles", mock_show_popup.call_args[0][1])
+
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
