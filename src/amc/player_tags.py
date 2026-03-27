@@ -117,7 +117,7 @@ async def refresh_player_name(
     from amc.models import FactionChoice, FactionMembership
 
     is_police = await FactionMembership.objects.filter(
-        player=character.player, faction=FactionChoice.COP
+        player_id=character.player_id, faction=FactionChoice.COP
     ).aexists()
 
     # Reconstruct name

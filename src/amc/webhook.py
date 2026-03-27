@@ -26,7 +26,6 @@ from amc.subsidies import (
 from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
-    record_treasury_expense,
 )
 from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
@@ -405,19 +404,6 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
 
 
 
-async def _announce_laundered_after_delay(character_guid, http_client, delay=30):
-    """Wait for the debounce window, then announce the accumulated total."""
-    await asyncio.sleep(delay)
-    cache_key = f"money_laundered:{character_guid}"
-    total = await cache.aget(cache_key, 0)
-    await cache.adelete(cache_key)
-    if total > 0:
-        await announce(
-            f"${total:,} has been laundered",
-            http_client,
-            color="FFA500",
-        )
-
 
 async def handle_cargo_arrived(
     event,
@@ -454,47 +440,10 @@ async def handle_cargo_arrived(
 
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
-    # --- Criminal record for Money deliveries ---
-    if character and any(log.cargo_key == "Money" for log in logs):
-        from amc.models import CriminalRecord
+    # --- Special cargo side effects (e.g. Money → criminal record, announcements) ---
+    from amc.special_cargo import run_special_cargo_handlers
 
-        active_record = await (
-            CriminalRecord.objects.filter(
-                character=character, expires_at__gt=timezone.now()
-            ).afirst()
-        )
-        if active_record:
-            active_record.expires_at = active_record.expires_at + timedelta(days=7)
-            await active_record.asave(update_fields=["expires_at"])
-        else:
-            await CriminalRecord.objects.acreate(
-                character=character,
-                reason="Money delivery",
-                expires_at=timezone.now() + timedelta(days=7),
-            )
-
-        # Apply [CRIM] tag immediately
-        from amc.player_tags import refresh_player_name
-        await refresh_player_name(character, http_client_mod)
-
-        # Server announcement for money laundering (debounced over 30s window)
-        money_payment = sum(log.payment for log in logs if log.cargo_key == "Money")
-        if money_payment > 0:
-            if http_client:
-                cache_key = f"money_laundered:{character.guid}"
-                prev_total = await cache.aget(cache_key, 0)
-                if prev_total == 0:
-                    # First delivery in window — schedule delayed announcement
-                    await cache.aset(cache_key, money_payment, timeout=30)
-                    asyncio.create_task(
-                        _announce_laundered_after_delay(character.guid, http_client, delay=30)
-                    )
-                else:
-                    # Within window — just accumulate
-                    await cache.aset(cache_key, prev_total + money_payment, timeout=30)
-            laundering_cost = int(money_payment * 0.20)
-            if laundering_cost > 0:
-                await record_treasury_expense(laundering_cost, "Money Laundering Cost")
+    await run_special_cargo_handlers(logs, character, http_client, http_client_mod)
 
     total_subsidy = 0
     total_payment = sum([log.payment for log in logs])

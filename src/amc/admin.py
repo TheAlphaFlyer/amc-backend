@@ -76,6 +76,7 @@ from .models import (
     VehicleDecal,
     NewsItem,
     FactionMembership,
+    CriminalRecord,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -603,6 +604,16 @@ class PoliceShiftLogAdmin(admin.ModelAdmin):
     search_fields = ["player__unique_id"]
     autocomplete_fields = ["player"]
     list_filter = ["action"]
+
+
+@admin.register(CriminalRecord)
+class CriminalRecordAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "reason", "created_at", "expires_at"]
+    list_select_related = ["character", "character__player"]
+    search_fields = ["character__name", "character__player__unique_id", "reason"]
+    list_filter = ["reason"]
+    readonly_fields = ["character"]
+    ordering = ["-created_at"]
 
 
 @admin.register(TeleportPoint)
