@@ -9,8 +9,8 @@ from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, 
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
-ARREST_RADIUS = 1000  # 10m — cop must be within 10m of criminal
-SUSPECT_SPEED_LIMIT = 300  # 3m per poll tick — suspects moving faster are removed
+ARREST_RADIUS = 1500  # 15m — cop must be within 15m of suspect
+SUSPECT_SPEED_LIMIT = 500  # 5m per poll tick — suspects moving faster are removed
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 60  # seconds between arrests per cop
 
@@ -50,7 +50,7 @@ def _build_player_locations(players: list) -> dict[str, tuple[str, tuple[float, 
 
 @registry.register(
     ["/arrest", "/a"],
-    description=gettext_lazy("Arrest nearby criminals (Cops only)"),
+    description=gettext_lazy("Arrest nearby suspects (Cops only)"),
     category="Faction",
     featured=True,
 )
@@ -97,31 +97,33 @@ async def cmd_arrest(ctx: CommandContext):
             await send_system_message(ctx.http_client_mod, gettext("Arrests can only be made in designated arrest zones."), character_guid=ctx.character.guid)
             return
 
-    # 4. Find nearby criminals
+    # 4. Find nearby non-police players
     other_guids = [g for g in locations if g != cop_guid]
     if not other_guids:
         await send_system_message(ctx.http_client_mod, gettext("No players nearby."), character_guid=ctx.character.guid)
         return
 
-    # Batch query: which of these characters are in the criminal faction?
-    criminal_guids = set()
+    # Batch query: exclude characters who are in the police faction
+    cop_guids = set()
     async for char in (
         Character.objects.filter(guid__in=other_guids)
         .select_related("player__faction_membership")
     ):
         try:
-            if char.player.faction_membership.faction == FactionChoice.CRIMINAL:
-                criminal_guids.add(char.guid)
+            if char.player.faction_membership.faction == FactionChoice.COP:
+                cop_guids.add(char.guid)
         except FactionMembership.DoesNotExist:
             continue
 
-    if not criminal_guids:
-        await send_system_message(ctx.http_client_mod, gettext("No criminals nearby."), character_guid=ctx.character.guid)
+    suspect_guids = [g for g in other_guids if g not in cop_guids]
+
+    if not suspect_guids:
+        await send_system_message(ctx.http_client_mod, gettext("No suspects nearby."), character_guid=ctx.character.guid)
         return
 
-    # Filter to criminals within ARREST_RADIUS
+    # Filter to suspects within ARREST_RADIUS
     targets = {}  # guid → (unique_id, initial_loc, has_vehicle)
-    for guid in criminal_guids:
+    for guid in suspect_guids:
         if guid not in locations:
             continue
         dist = _distance_3d(cop_loc, locations[guid][1])
@@ -129,7 +131,7 @@ async def cmd_arrest(ctx: CommandContext):
             targets[guid] = locations[guid]
 
     if not targets:
-        await send_system_message(ctx.http_client_mod, gettext("No criminals within arrest range."), character_guid=ctx.character.guid)
+        await send_system_message(ctx.http_client_mod, gettext("No suspects within arrest range."), character_guid=ctx.character.guid)
         return
 
     # Look up names for all targets
