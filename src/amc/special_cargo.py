@@ -83,7 +83,7 @@ async def handle_money_cargo(
             cache_key = f"money_laundered:{character.guid}"
             prev_total = await cache.aget(cache_key, 0)
             if prev_total == 0:
-                await cache.aset(cache_key, money_payment, timeout=30)
+                await cache.aset(cache_key, money_payment, timeout=60)
                 asyncio.create_task(
                     _announce_laundered_after_delay(
                         character.guid, http_client, delay=30
@@ -91,7 +91,7 @@ async def handle_money_cargo(
                 )
             else:
                 await cache.aset(
-                    cache_key, prev_total + money_payment, timeout=30
+                    cache_key, prev_total + money_payment, timeout=60
                 )
         laundering_cost = int(money_payment * 0.20)
         if laundering_cost > 0:
