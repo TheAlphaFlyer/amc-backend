@@ -271,6 +271,12 @@ class Character(models.Model):
     gov_employee_level = models.PositiveIntegerField(default=0)
     gov_employee_contributions = models.PositiveBigIntegerField(default=0)
 
+    # Criminal
+    criminal_laundered_total = models.PositiveBigIntegerField(default=0)
+
+    # Police
+    police_confiscated_total = models.PositiveBigIntegerField(default=0)
+
     # Wealth tax crossover DM — sent once when tax > interest, 30-day cooldown
     crossover_warning_sent_at = models.DateTimeField(null=True, blank=True)
 
@@ -389,6 +395,23 @@ class FactionMembership(models.Model):
     @property
     def can_switch(self) -> bool:
         return self.cooldown_remaining == timedelta(0)
+
+
+@final
+class PoliceSession(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="police_sessions"
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "ended_at"])]
+
+    @override
+    def __str__(self):
+        status = "active" if self.ended_at is None else f"ended {self.ended_at}"
+        return f"{self.character.name} — {status}"
 
 
 @final

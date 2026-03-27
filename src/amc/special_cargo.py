@@ -8,6 +8,8 @@ called from handle_cargo_arrived() in webhook.py.
 
 import asyncio
 import logging
+
+from django.db.models import F
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
@@ -22,6 +24,14 @@ from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
 
 logger = logging.getLogger("amc.special_cargo")
+
+CRIMINAL_LEVEL_STEP = 100_000
+
+
+def calculate_criminal_level(laundered_total: int) -> int:
+    """Calculate criminal level from cumulative laundered amount.
+    Level scales infinitely: floor(total / step) + 1"""
+    return (laundered_total // CRIMINAL_LEVEL_STEP) + 1
 
 # Handler signature: (logs, character, http_client, http_client_mod) -> None
 SpecialCargoHandler = Callable[
@@ -57,6 +67,13 @@ async def handle_money_cargo(
     - Debounced laundering announcement (30s window)
     - Record 20% treasury cost
     """
+    # --- Accumulate laundered total for criminal level ---
+    money_payment = sum(log.payment for log in logs)
+    if money_payment > 0:
+        character.criminal_laundered_total = F("criminal_laundered_total") + money_payment
+        await character.asave(update_fields=["criminal_laundered_total"])
+        await character.arefresh_from_db(fields=["criminal_laundered_total"])
+
     # --- Criminal record ---
     active_record = await (
         CriminalRecord.objects.filter(
@@ -77,7 +94,6 @@ async def handle_money_cargo(
     await refresh_player_name(character, http_client_mod)
 
     # --- Debounced announcement + treasury cost ---
-    money_payment = sum(log.payment for log in logs)
     if money_payment > 0:
         if http_client:
             cache_key = f"money_laundered:{character.guid}"

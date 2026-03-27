@@ -31,24 +31,24 @@ def strip_all_tags(name: str) -> str:
 def build_display_name(
     base_name: str,
     *,
-    has_criminal_record: bool = False,
+    criminal_level: int = 0,
     has_custom_parts: bool = False,
-    is_police: bool = False,
+    police_level: int = 0,
     gov_level: int = 0,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MPCG3] BaseName  (order: M, P, C, G)
+    Tag format: [MP1C1G3] BaseName  (order: M, P, C, G)
       M = Modded vehicle parts
-      P = Police faction member
-      C = Criminal record (suppressed when police or gov employee)
+      P1 = Police level (active session)
+      C1 = Criminal level (suppressed when police or gov employee)
       G3 = Government employee level
 
     Args:
         base_name: The player's original name (stripped of any existing tags)
-        has_criminal_record: Whether the player has an active criminal record
+        criminal_level: Criminal level (0 = no active criminal record)
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
-        is_police: Whether the player belongs to the Police (COP) faction
+        police_level: Police level (0 = not on duty)
         gov_level: Government employee level (0 = not a gov employee)
     """
     clean_name = strip_all_tags(base_name)
@@ -57,12 +57,12 @@ def build_display_name(
     if has_custom_parts:
         tag += "M"
 
-    if is_police:
-        tag += "P"
+    if police_level > 0:
+        tag += f"P{police_level}"
 
     # C is suppressed when police or gov employee is active
-    if has_criminal_record and not is_police and gov_level == 0:
-        tag += "C"
+    if criminal_level > 0 and police_level == 0 and gov_level == 0:
+        tag += f"C{criminal_level}"
 
     if gov_level > 0:
         tag += f"G{gov_level}"
@@ -113,19 +113,26 @@ async def refresh_player_name(
         character=character, expires_at__gt=timezone.now()
     ).aexists()
 
-    # Determine POLICE state
-    from amc.models import FactionChoice, FactionMembership
+    # Compute criminal level from cumulative laundered total
+    criminal_level = 0
+    if has_criminal_record:
+        from amc.special_cargo import calculate_criminal_level
 
-    is_police = await FactionMembership.objects.filter(
-        player_id=character.player_id, faction=FactionChoice.COP
-    ).aexists()
+        criminal_level = calculate_criminal_level(character.criminal_laundered_total)
+
+    # Determine POLICE state
+    from amc.police import is_police as check_police, calculate_police_level
+
+    police_level = 0
+    if await check_police(character):
+        police_level = calculate_police_level(character.police_confiscated_total)
 
     # Reconstruct name
     new_name = build_display_name(
         character.name,
-        has_criminal_record=has_criminal_record,
+        criminal_level=criminal_level,
         has_custom_parts=has_custom_parts,
-        is_police=is_police,
+        police_level=police_level,
         gov_level=gov_level,
     )
 

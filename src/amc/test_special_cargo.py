@@ -162,3 +162,62 @@ class MoneyCargoHandlerTests(TestCase):
         self.assertEqual(await CriminalRecord.objects.filter(character=character).acount(), 0)
         mock_refresh.assert_not_called()
         mock_treasury_expense.assert_not_called()
+
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_criminal_laundered_total_accumulated(
+        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+    ):
+        """criminal_laundered_total is incremented by money payment amount."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        player, character = await self._setup_character()
+
+        event = self._money_event(character, payment=50_000)
+        await process_event(event, player, character)
+
+        await character.arefresh_from_db()
+        self.assertEqual(character.criminal_laundered_total, 50_000)
+
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_criminal_laundered_total_accumulates_across_deliveries(
+        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+    ):
+        """Multiple deliveries accumulate into criminal_laundered_total."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        player, character = await self._setup_character()
+
+        event1 = self._money_event(character, payment=60_000)
+        await process_event(event1, player, character)
+
+        event2 = self._money_event(character, payment=50_000)
+        await process_event(event2, player, character)
+
+        await character.arefresh_from_db()
+        self.assertEqual(character.criminal_laundered_total, 110_000)
+
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_criminal_level_increases_with_total(
+        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+    ):
+        """Criminal level increases after crossing 100k threshold."""
+        from amc.special_cargo import calculate_criminal_level
+
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        player, character = await self._setup_character()
+
+        # First delivery: 50k → level 1
+        event1 = self._money_event(character, payment=50_000)
+        await process_event(event1, player, character)
+        await character.arefresh_from_db()
+        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 1)
+
+        # Second delivery: 60k → total 110k → level 2
+        event2 = self._money_event(character, payment=60_000)
+        await process_event(event2, player, character)
+        await character.arefresh_from_db()
+        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 2)
