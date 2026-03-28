@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
 from amc.models import TeleportPoint, RescueRequest, PoliceSession
-from amc.mod_server import teleport_player, list_player_vehicles, show_popup
+from amc.mod_server import teleport_player, list_player_vehicles, show_popup, enter_last_vehicle
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
 
@@ -129,7 +129,7 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
             or rescue_tp_data
         ):
             # Teleport to Custom Waypoint
-            no_vehicles = not player_info.get("bIsAdmin") and not rescue_tp_data
+            no_vehicles = (not player_info.get("bIsAdmin") and not rescue_tp_data) or is_on_duty
             location = player_info.get("CustomDestinationAbsoluteLocation")
 
             if location and rescue_tp_data and not player_info.get("bIsAdmin"):
@@ -186,3 +186,23 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
         reset_trailers=not player_info.get("bIsAdmin"),
         reset_carried_vehicles=not player_info.get("bIsAdmin"),
     )
+
+
+@registry.register(
+    ["/teleport vehicle", "/tp vehicle"],
+    description=gettext_lazy("Teleport to and enter your last used vehicle (Police Only)"),
+    category="Teleportation",
+)
+async def cmd_tp_vehicle(ctx: CommandContext):
+    is_on_duty = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
+    ).aexists()
+    
+    if not is_on_duty:
+        await ctx.reply(_("Police Only"))
+        return
+
+    response = await enter_last_vehicle(ctx.http_client_mod, ctx.character.guid)
+    if "error" in response:
+        await ctx.reply(_("Could not enter vehicle: ") + response["error"])
+
