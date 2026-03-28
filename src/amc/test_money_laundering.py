@@ -76,10 +76,10 @@ class MoneyLaunderingTests(TestCase):
         self.assertEqual(record.reason, "Money delivery")
         self.assertGreater(record.expires_at, timezone.now())
 
-    async def test_money_delivery_extends_existing_criminal_record(
+    async def test_money_delivery_resets_existing_criminal_record(
         self, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        """Subsequent Money deliveries should extend the criminal record by 7 days."""
+        """Subsequent Money deliveries should reset the criminal record to 7 days from now."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
@@ -100,7 +100,7 @@ class MoneyLaunderingTests(TestCase):
             await CriminalRecord.objects.filter(character=character).acount(), 1
         )
         record = await CriminalRecord.objects.aget(character=character)
-        expected_expiry = original_expiry + timedelta(days=7)
+        expected_expiry = timezone.now() + timedelta(days=7)
         self.assertAlmostEqual(
             record.expires_at.timestamp(), expected_expiry.timestamp(), delta=5
         )

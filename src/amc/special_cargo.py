@@ -62,7 +62,7 @@ async def handle_money_cargo(
 ) -> None:
     """Side effects for Money deliveries.
 
-    - Create or extend criminal record (+7 days)
+    - Create or reset criminal record (7 days from now)
     - Refresh player name tag ([C])
     - Debounced laundering announcement (30s window)
     - Record 20% treasury cost
@@ -81,7 +81,7 @@ async def handle_money_cargo(
         ).afirst()
     )
     if active_record:
-        active_record.expires_at = active_record.expires_at + timedelta(days=7)
+        active_record.expires_at = timezone.now() + timedelta(days=7)
         await active_record.asave(update_fields=["expires_at"])
     else:
         await CriminalRecord.objects.acreate(

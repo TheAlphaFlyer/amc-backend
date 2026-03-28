@@ -76,7 +76,7 @@ class MoneyCargoHandlerTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_criminal_record_extended_on_repeat_delivery(
+    async def test_criminal_record_reset_on_repeat_delivery(
         self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = False
@@ -94,10 +94,10 @@ class MoneyCargoHandlerTests(TestCase):
 
         records = [r async for r in CriminalRecord.objects.filter(character=character)]
         self.assertEqual(len(records), 1, "Should not create a second record")
-        # Should be extended by 7 days from original expiry
+        # Should be reset to 7 days from now (not extended from original expiry)
         self.assertAlmostEqual(
             records[0].expires_at.timestamp(),
-            (original_expiry + timedelta(days=7)).timestamp(),
+            (timezone.now() + timedelta(days=7)).timestamp(),
             delta=5,
         )
 
