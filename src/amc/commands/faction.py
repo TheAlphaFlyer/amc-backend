@@ -14,10 +14,10 @@ from django.db.models import Sum
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
-ARREST_RADIUS = 1500  # 15m — cop must be within 15m of suspect
+ARREST_RADIUS = 2250  # 22.5m — cop must be within 22.5m of suspect
 SUSPECT_SPEED_LIMIT = 500  # 5m per poll tick — suspects moving faster are removed
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
-ARREST_COOLDOWN = 60  # seconds between arrests per cop
+ARREST_COOLDOWN = 0  # seconds between arrests per cop
 
 _LOC_RE = re.compile(
     r"X=(?P<x>[-\d.]+)\s+Y=(?P<y>[-\d.]+)\s+Z=(?P<z>[-\d.]+)"
