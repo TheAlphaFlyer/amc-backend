@@ -245,6 +245,7 @@ CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": f"redis://127.0.0.1:{os.environ.get('REDIS_PORT', '6379')}",
+        "KEY_PREFIX": os.environ.get("CACHE_KEY_PREFIX", ""),
     },
 }
 
