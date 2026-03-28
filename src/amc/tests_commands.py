@@ -51,9 +51,10 @@ from amc.commands.rp_rescue import cmd_rescue, cmd_respond
 from amc.commands.social import cmd_thank
 from amc.commands.teleport import cmd_tp_coords, cmd_tp_name, cmd_tp_vehicle
 from amc.commands.faction import cmd_arrest, parse_location_string
+from amc.commands.wanted import cmd_wanted
 
 
-from amc.models import Character, Player, PoliceSession
+from amc.models import Character, CriminalRecord, Player, PoliceSession
 # Import other models as needed for mocking or actual DB tests if we go that route
 
 
@@ -2371,3 +2372,138 @@ class ArrestCommandTestCase(TestCase):
             mock_tp.assert_called()
             self.ctx.announce.assert_called()
             self.assertIn("arrested", self.ctx.announce.call_args[0][0])
+
+    # --- Wanted Command Tests ---
+
+    async def test_cmd_wanted_no_records(self):
+        """No active criminal records → reply 'No wanted criminals'."""
+        await cmd_wanted(self.ctx)
+        self.ctx.reply.assert_called_with("No wanted criminals")
+
+    async def test_cmd_wanted_with_records(self):
+        """Active records shown grouped online-first, sorted by criminal level desc."""
+        now = timezone.now()
+
+        # Create characters with different criminal levels (IDs avoid setUp collision)
+        player_a = await Player.objects.acreate(unique_id="76561198000000101")
+        char_online = await Character.objects.acreate(
+            name="OnlineCriminal", player=player_a, guid="guid-online",
+            criminal_laundered_total=250_000,  # level 3
+        )
+        player_b = await Player.objects.acreate(unique_id="76561198000000102")
+        char_offline = await Character.objects.acreate(
+            name="OfflineCriminal", player=player_b, guid="guid-offline",
+            criminal_laundered_total=500_000,  # level 6
+        )
+        player_c = await Player.objects.acreate(unique_id="76561198000000103")
+        char_online2 = await Character.objects.acreate(
+            name="OnlineCriminal2", player=player_c, guid="guid-online2",
+            criminal_laundered_total=100_000,  # level 2
+        )
+
+        # Create active records
+        await CriminalRecord.objects.acreate(
+            character=char_online, reason="Money delivery",
+            expires_at=now + timedelta(days=3),
+        )
+        await CriminalRecord.objects.acreate(
+            character=char_offline, reason="Money delivery",
+            expires_at=now + timedelta(days=5),
+        )
+        await CriminalRecord.objects.acreate(
+            character=char_online2, reason="Money delivery",
+            expires_at=now + timedelta(days=1),
+        )
+
+        # Mock online players: only guid-online and guid-online2 are online
+        mock_players = [
+            ("76561198000000101", {"character_guid": "guid-online", "name": "OnlineCriminal"}),
+            ("76561198000000103", {"character_guid": "guid-online2", "name": "OnlineCriminal2"}),
+        ]
+
+        with patch(
+            "amc.commands.wanted.get_players",
+            new=AsyncMock(return_value=mock_players),
+        ):
+            await cmd_wanted(self.ctx)
+
+        self.ctx.reply.assert_called()
+        output = self.ctx.reply.call_args[0][0]
+
+        # Verify structure
+        self.assertIn("Wanted List", output)
+        self.assertIn("Online", output)
+        self.assertIn("Offline", output)
+
+        # Online section: C3 before C2 (higher level first)
+        online_pos_c3 = output.index("OnlineCriminal (")
+        online_pos_c2 = output.index("OnlineCriminal2")
+        self.assertLess(online_pos_c3, online_pos_c2)
+
+        # Offline section: C6
+        self.assertIn("OfflineCriminal", output)
+        self.assertIn("C6", output)
+
+        # Online section appears before Offline
+        online_section = output.index("<Title>Online</>")
+        offline_section = output.index("<Title>Offline</>")
+        self.assertLess(online_section, offline_section)
+
+    async def test_cmd_wanted_expired_excluded(self):
+        """Expired records are not shown."""
+        now = timezone.now()
+        player_x = await Player.objects.acreate(unique_id="76561198000000104")
+        char = await Character.objects.acreate(
+            name="ExpiredCriminal", player=player_x, guid="guid-expired",
+            criminal_laundered_total=100_000,
+        )
+        await CriminalRecord.objects.acreate(
+            character=char, reason="Money delivery",
+            expires_at=now - timedelta(days=1),  # expired yesterday
+        )
+
+        with patch(
+            "amc.commands.wanted.get_players",
+            new=AsyncMock(return_value=[]),
+        ):
+            await cmd_wanted(self.ctx)
+
+        self.ctx.reply.assert_called_with("No wanted criminals")
+
+    async def test_cmd_wanted_excludes_active_police(self):
+        """Characters with active police sessions are excluded from wanted list."""
+        now = timezone.now()
+
+        # Criminal with active police session — should be excluded
+        player_cop = await Player.objects.acreate(unique_id="76561198000000201")
+        char_cop = await Character.objects.acreate(
+            name="CopWithRecord", player=player_cop, guid="guid-cop-record",
+            criminal_laundered_total=300_000,
+        )
+        await CriminalRecord.objects.acreate(
+            character=char_cop, reason="Money delivery",
+            expires_at=now + timedelta(days=3),
+        )
+        await PoliceSession.objects.acreate(character=char_cop)  # active session
+
+        # Regular criminal — should appear
+        player_crim = await Player.objects.acreate(unique_id="76561198000000202")
+        char_crim = await Character.objects.acreate(
+            name="RegularCriminal", player=player_crim, guid="guid-regular-crim",
+            criminal_laundered_total=200_000,
+        )
+        await CriminalRecord.objects.acreate(
+            character=char_crim, reason="Money delivery",
+            expires_at=now + timedelta(days=5),
+        )
+
+        with patch(
+            "amc.commands.wanted.get_players",
+            new=AsyncMock(return_value=[]),
+        ):
+            await cmd_wanted(self.ctx)
+
+        self.ctx.reply.assert_called()
+        output = self.ctx.reply.call_args[0][0]
+        self.assertNotIn("CopWithRecord", output)
+        self.assertIn("RegularCriminal", output)
