@@ -2106,6 +2106,88 @@ class ArrestCommandTestCase(TestCase):
             # Cooldown set
             mock_cache.set.assert_called()
 
+    async def test_cmd_arrest_retroactive_confiscates_money(self):
+        """Happy path: criminal arrested and recent Money deliveries are seized retroactively."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+        
+        # Setup criminal's current progression
+        self.criminal_character.criminal_laundered_total = 50_000
+        await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
+        
+        # Inject an illegal Delivery that happened natively 1 minute ago
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money",
+            payment=25_000,
+            quantity=1,
+            timestamp=timezone.now() - timezone.timedelta(minutes=1)
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()),
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
+            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
+            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()) as mock_prog,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            # Verification assertions
+            mock_transfer.assert_called_once_with(
+                self.ctx.http_client_mod,
+                -25000,
+                "Money Confiscated",
+                str(self.criminal_player.unique_id)
+            )
+            mock_treasury.assert_called_once_with(25000, "Police Confiscation")
+            mock_prog.assert_called_once_with(
+                self.character,
+                25000,
+                http_client=self.ctx.http_client,
+                session=self.ctx.http_client_mod
+            )
+            
+            # Check criminal ranking reversal
+            await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 25_000)
+            
+            # Ensure Confiscation record was logged
+            self.assertTrue(
+                await Confiscation.objects.filter(
+                    amount=25000, officer=self.character, character=self.criminal_character
+                ).aexists()
+            )
+            
+            # Check for financial messages
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("Confiscated $25,000" in m for m in msgs),
+                f"Expected confiscation alert in msgs: {msgs}"
+            )
+
     async def test_cmd_arrest_no_jail(self):
         """Jail TeleportPoint doesn't exist → error message."""
         from amc.models import FactionMembership, FactionChoice

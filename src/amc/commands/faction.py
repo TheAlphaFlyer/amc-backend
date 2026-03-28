@@ -4,8 +4,13 @@ import re
 from django.core.cache import cache
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
-from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint
-from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player
+from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint, Delivery, Confiscation
+from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player, transfer_money
+from amc_finance.services import record_treasury_confiscation_income
+from amc.police import record_confiscation_for_level
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Sum
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
@@ -256,6 +261,58 @@ async def cmd_arrest(ctx: CommandContext):
 
         name = target_chars[guid].name if guid in target_chars else "Unknown"
         arrested_names.append(name)
+
+        # Money confiscation logic
+        suspect_char = target_chars.get(guid)
+        if suspect_char:
+            five_mins_ago = timezone.now() - timedelta(minutes=5)
+            recent_deliveries = await Delivery.objects.filter(
+                character=suspect_char,
+                cargo_key="Money",
+                timestamp__gte=five_mins_ago
+            ).aaggregate(total_payment=Sum("payment"))
+            
+            confiscated_amount = recent_deliveries["total_payment"] or 0
+            if confiscated_amount > 0:
+                await Confiscation.objects.acreate(
+                    character=suspect_char,
+                    officer=ctx.character,
+                    cargo_key="Money",
+                    amount=confiscated_amount,
+                )
+                
+                await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
+                new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)
+                suspect_char.criminal_laundered_total = new_criminal_total
+                await suspect_char.asave(update_fields=["criminal_laundered_total"])
+                
+                await transfer_money(
+                    ctx.http_client_mod,
+                    int(-confiscated_amount),
+                    "Money Confiscated",
+                    str(suspect_char.player_id),
+                )
+                
+                await record_treasury_confiscation_income(confiscated_amount, "Police Confiscation")
+                
+                await record_confiscation_for_level(
+                    ctx.character, confiscated_amount, http_client=ctx.http_client, session=ctx.http_client_mod
+                )
+                
+                await send_system_message(
+                    ctx.http_client_mod,
+                    gettext("Confiscated ${amount:,} in illegal earnings from {name}.").format(
+                        amount=confiscated_amount, name=name
+                    ),
+                    character_guid=ctx.character.guid
+                )
+                await send_system_message(
+                    ctx.http_client_mod,
+                    gettext("Police confiscated ${amount:,} in illegal earnings from your account.").format(
+                        amount=confiscated_amount
+                    ),
+                    character_guid=suspect_char.guid
+                )
 
     # Set cooldown
     cache.set(cooldown_key, True, timeout=ARREST_COOLDOWN)
