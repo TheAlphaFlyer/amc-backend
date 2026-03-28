@@ -3,7 +3,7 @@ import math
 from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
-from amc.models import TeleportPoint, RescueRequest
+from amc.models import TeleportPoint, RescueRequest, PoliceSession
 from amc.mod_server import teleport_player, list_player_vehicles, show_popup
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
@@ -52,6 +52,14 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
         pass
 
     no_vehicles = not player_info.get("bIsAdmin")
+
+    # Police on duty: always no_vehicles, even for admins
+    is_on_duty = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
+    ).aexists()
+    if is_on_duty:
+        no_vehicles = True
+
     location = None
     rescue_tp_data = None
 
@@ -61,6 +69,23 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 Q(character=ctx.character) | Q(character__isnull=True),
                 name__iexact=name,
             )
+
+            # Block police on duty from using dasa
+            if teleport_point.name.lower() == "dasa":
+                is_police = await PoliceSession.objects.filter(
+                    character=ctx.character, ended_at__isnull=True
+                ).aexists()
+                if is_police:
+                    asyncio.create_task(
+                        show_popup(
+                            ctx.http_client_mod,
+                            _("This teleport location is restricted while on police duty."),
+                            character_guid=ctx.character.guid,
+                            player_id=str(ctx.player.unique_id),
+                        )
+                    )
+                    return
+
             loc_obj = teleport_point.location
             location = {"X": loc_obj.x, "Y": loc_obj.y, "Z": loc_obj.z}
         except TeleportPoint.DoesNotExist:
@@ -119,9 +144,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                         show_popup(
                             ctx.http_client_mod,
                             _(
-                                "<Title>Rescue Teleport Restricted</Title>\n"
+                                "<Title>Rescue Teleport Restricted</>\n"
                                 "Destination is {distance:.0f} units from {requester}.\n"
-                                "Maximum allowed distance: <Highlight>10,000 units</Highlight>.\n\n"
+                                "Maximum allowed distance: <Highlight>10,000 units</>.\n\n"
                                 "Move your custom destination marker closer to the requester."
                             ).format(
                                 distance=distance,

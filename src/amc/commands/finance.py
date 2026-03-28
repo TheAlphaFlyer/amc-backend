@@ -223,7 +223,7 @@ async def cmd_loan(ctx: CommandContext, amount: str, verification_code: str = ""
             fee_adj = ""
         await ctx.reply(
             _(
-                "<Title>Loan</Title>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
+                "<Title>Loan</>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
             ).format(fee=fee, fee_adj=fee_adj, credit_label=credit_label, amount=amount, code_expected=code_expected.upper())
         )
         return
@@ -457,8 +457,8 @@ async def _gov_ranking_text(character):
     category="Finance",
 )
 async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
-    from amc.gov_employee import activate_gov_role, make_gov_name
-    from amc.mod_server import set_character_name
+    from amc.gov_employee import activate_gov_role
+    from amc.player_tags import refresh_player_name
     from django.utils import timezone
 
     character = ctx.character
@@ -471,8 +471,7 @@ async def cmd_workforgov(ctx: CommandContext, verification_code: str = ""):
 
         # Re-apply GOV tag in case it was lost (e.g. GUID resolution failed on login)
         if character.guid:
-            gov_name = make_gov_name(character.name, character.gov_employee_level)
-            await set_character_name(ctx.http_client_mod, character.guid, gov_name)
+            await refresh_player_name(character, ctx.http_client_mod)
 
         ranking_text = await _gov_ranking_text(character)
 

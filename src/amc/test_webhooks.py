@@ -438,6 +438,148 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 2)
         self.assertTrue(log.delivered)
 
+    async def test_contract_new_mod_flow(self, mock_get_treasury, mock_get_rp_mode):
+        """New mod: ServerSignContract sends guid, ServerContractCargoDelivered sends guid-only."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        # Step 1: Sign contract (new mod includes ContractGuid)
+        sign_event = {
+            "hook": "ServerSignContract",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "new_mod_guid_456",
+                "Contract": {
+                    "Item": "gravel",
+                    "Amount": 3,
+                    "CompletionPayment": {"BaseValue": 75000},
+                    "Cost": {"BaseValue": 2000},
+                },
+            },
+        }
+        await process_event(sign_event, player, character)
+
+        log = await ServerSignContractLog.objects.aget(guid="new_mod_guid_456")
+        self.assertEqual(log.cargo_key, "gravel")
+        self.assertEqual(log.amount, 3)
+        self.assertEqual(log.payment, 75000)
+
+        # Step 2: Deliver cargo (new mod sends guid-only, no Item/Amount)
+        deliver_event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "new_mod_guid_456",
+            },
+        }
+
+        # Deliveries 1, 2 — not complete yet
+        for i in range(2):
+            _, _, contract_pay = await process_event(deliver_event, player, character)
+            self.assertEqual(contract_pay, 0)
+
+        await log.arefresh_from_db()
+        self.assertEqual(log.finished_amount, 2)
+        self.assertFalse(log.delivered)
+
+        # Delivery 3 — completion
+        _, _, contract_pay = await process_event(deliver_event, player, character)
+        self.assertEqual(contract_pay, 75000)
+
+        await log.arefresh_from_db()
+        self.assertEqual(log.finished_amount, 3)
+        self.assertTrue(log.delivered)
+
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
+    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        mock_list_vehicles.return_value = {
+            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        }
+        mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        event = {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "Money",
+                        "Net_Payment": 10_000,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 1000, "Y": 1000, "Z": 0},
+                    }
+                ],
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        # It should call transfer_money to deduct the penalty
+        mock_transfer.assert_called_once_with(
+            http_client_mod,
+            -10_000,
+            "Modded Vehicle Penalty",
+            str(player.unique_id),
+        )
+        mock_show_popup.assert_called_once()
+        self.assertIn("profits were zeroed out", mock_show_popup.call_args[0][1])
+
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
+    async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        
+        mock_list_vehicles.return_value = {
+            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        }
+        mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {
+                    "Net_CargoKey": "Money",
+                    "Net_Payment": 10_000,
+                },
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        mock_show_popup.assert_called_once()
+        self.assertIn("not allowed to use modified vehicles", mock_show_popup.call_args[0][1])
+
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
@@ -1845,3 +1987,180 @@ class OnPlayerProfitTests(TestCase):
         # Non-gov paths should NOT be called
         mock_repay_loan.assert_not_called()
         mock_savings.assert_not_called()
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class SeqDeduplicationTests(TestCase):
+    """Tests for _seq-based idempotency in process_events."""
+
+    def _make_cargo_event(self, character_guid, seq=None):
+        event = {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character_guid),
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "oranges",
+                        "Net_Payment": 1000,
+                        "Net_Weight": 10.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100, "Y": 100, "Z": 0},
+                    }
+                ],
+            },
+        }
+        if seq is not None:
+            event["_seq"] = seq
+        return event
+
+    async def test_seq_dedup_skips_already_processed(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events with _seq <= last_processed should be skipped."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 5, timeout=None)
+
+        events = [
+            self._make_cargo_event(character.guid, seq=3),  # skip
+            self._make_cargo_event(character.guid, seq=5),  # skip (==)
+            self._make_cargo_event(character.guid, seq=6),  # process
+            self._make_cargo_event(character.guid, seq=7),  # process
+        ]
+
+        await process_events(events)
+
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark should be updated to 7
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 7)
+
+        cache.delete("webhook:last_processed_seq")
+
+    async def test_seq_dedup_backward_compat_no_seq(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events without _seq should always pass through (old mod compat)."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 99, timeout=None)
+
+        # No _seq field — should not be filtered
+        events = [
+            self._make_cargo_event(character.guid),
+            self._make_cargo_event(character.guid),
+        ]
+
+        await process_events(events)
+
+        # Both events processed despite high-water mark
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark unchanged (no _seq to update it)
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 99)
+
+        cache.delete("webhook:last_processed_seq")
+
+    async def test_seq_dedup_mixed_old_and_new(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Mix of events with and without _seq: old events pass through, new events are filtered."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        cache.set("webhook:last_processed_seq", 10, timeout=None)
+
+        events = [
+            self._make_cargo_event(character.guid, seq=8),   # skip (old)
+            self._make_cargo_event(character.guid),           # pass (no _seq)
+            self._make_cargo_event(character.guid, seq=11),  # process (new)
+        ]
+
+        await process_events(events)
+
+        # 2 events processed: the no-seq one + seq=11
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark updated to 11
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 11)
+
+        cache.delete("webhook:last_processed_seq")
+
+    async def test_epoch_change_resets_high_water_mark(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Events with a new _epoch should reset the seq dedup, even if seq < old mark."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestV"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="d1", name="D1", coord=Point(100, 100, 0)
+        )
+
+        from django.core.cache import cache
+        # Simulate: old server session had epoch=1000, high-water mark at seq=50
+        cache.set("webhook:last_processed_seq", 50, timeout=None)
+        cache.set("webhook:last_epoch", 1000, timeout=None)
+
+        # New server starts with epoch=2000, seq starts from 1
+        events = [
+            {**self._make_cargo_event(character.guid, seq=1), "_epoch": 2000},
+            {**self._make_cargo_event(character.guid, seq=2), "_epoch": 2000},
+        ]
+
+        await process_events(events)
+
+        # Both events should be processed (epoch change resets mark)
+        self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 2)
+
+        # High-water mark should now be 2 (from the new epoch)
+        self.assertEqual(cache.get("webhook:last_processed_seq"), 2)
+        # Epoch should be updated
+        self.assertEqual(cache.get("webhook:last_epoch"), 2000)
+
+        cache.delete("webhook:last_processed_seq")
+        cache.delete("webhook:last_epoch")

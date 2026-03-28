@@ -14,6 +14,21 @@ from django.conf import settings
 
 logger = logging.getLogger("amc.sse")
 
+
+def parse_epoch_seq(event_id: str) -> tuple[int | None, int]:
+    """Parse an SSE event ID that may be epoch-prefixed.
+
+    Formats:
+        "1711400000:42" -> (1711400000, 42)   # epoch:seq
+        "42"           -> (None, 42)           # plain seq (backward compat)
+
+    Returns (epoch, seq). Raises ValueError on unparseable input.
+    """
+    if ":" in event_id:
+        epoch_str, seq_str = event_id.split(":", 1)
+        return int(epoch_str), int(seq_str)
+    return None, int(event_id)
+
 # Debounce: flush buffered events after this much silence
 FLUSH_DEBOUNCE_SECONDS = 0.5
 
@@ -113,16 +128,40 @@ async def run_sse_listener(ctx):
     http_client_mod = ctx.get("http_client_mod")
     discord_client = ctx.get("discord_client")
 
-    last_event_id = "0"
+    from django.core.cache import cache
+    from amc.webhook import LAST_SEQ_CACHE_KEY, LAST_EPOCH_CACHE_KEY
+    current_epoch = cache.get(LAST_EPOCH_CACHE_KEY)
+    if current_epoch is not None:
+        # Build epoch-prefixed Last-Event-ID so the C++ server can
+        # properly position in the ring buffer for this epoch.
+        last_seq = cache.get(LAST_SEQ_CACHE_KEY, 0)
+        last_event_id = f"{current_epoch}:{last_seq}" if last_seq else "0"
+    else:
+        # No epoch cached — SSE has never connected, or the cache was
+        # cleared.  The LAST_SEQ is likely from the old polling system
+        # and meaningless for the SSE ring buffer.  Start fresh.
+        last_event_id = "0"
     backoff = INITIAL_BACKOFF
 
+    # sock_read=90: detect dead connections if the mod server hangs after
+    # accepting TCP but stops sending data/heartbeats.  The C++ mod should
+    # send SSE comments as keepalives; 90s is generous enough to avoid
+    # false positives during quiet periods.
     timeout = aiohttp.ClientTimeout(
         total=None,  # No total timeout — SSE is long-lived
         sock_connect=10,
-        sock_read=None,  # No read timeout — server may be quiet
+        sock_read=90,
     )
 
+    # Minimum connection duration (seconds) to consider a session "healthy".
+    # If a connection lasted this long, the disconnect is likely a server
+    # restart rather than a persistent error, so we reset backoff.
+    HEALTHY_SESSION_SECONDS = 60
+
+    loop = asyncio.get_event_loop()
+
     while True:
+        connected_at = loop.time()
         try:
             async with aiohttp.ClientSession(
                 base_url=base_url, timeout=timeout
@@ -149,6 +188,7 @@ async def run_sse_listener(ctx):
                         continue
 
                     logger.info("SSE connected")
+                    connected_at = loop.time()
                     backoff = INITIAL_BACKOFF  # Reset on successful connect
 
                     event_buffer: list[dict] = []
@@ -172,10 +212,33 @@ async def run_sse_listener(ctx):
                                     event_id, data = parse_sse_event(current_lines)
                                     current_lines = []
                                     if data:
+                                        parsed_epoch = None
+                                        parsed_seq = None
                                         if event_id:
+                                            try:
+                                                parsed_epoch, parsed_seq = parse_epoch_seq(event_id)
+                                            except ValueError:
+                                                logger.warning("SSE: invalid event ID: %s", event_id)
                                             last_event_id = event_id
+
+                                            # Detect epoch change (server restart)
+                                            if parsed_epoch is not None and current_epoch is not None and parsed_epoch != current_epoch:
+                                                logger.warning(
+                                                    "SSE epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
+                                                    current_epoch, parsed_epoch,
+                                                )
+                                                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+
+                                            if parsed_epoch is not None:
+                                                current_epoch = parsed_epoch
+                                                cache.set(LAST_EPOCH_CACHE_KEY, current_epoch, timeout=None)
+
                                         try:
                                             event_obj = json.loads(data)
+                                            if parsed_seq is not None:
+                                                event_obj["_seq"] = parsed_seq
+                                            if parsed_epoch is not None:
+                                                event_obj["_epoch"] = parsed_epoch
                                             event_buffer.append(event_obj)
                                         except json.JSONDecodeError:
                                             logger.warning(
@@ -204,14 +267,27 @@ async def run_sse_listener(ctx):
                             except Exception:
                                 logger.exception("SSE: error flushing remaining events")
 
-            # If we get here, the response stream ended cleanly
-            logger.info("SSE stream ended, reconnecting in %ss", backoff)
+            # Stream ended cleanly (server closed the connection)
+            session_duration = loop.time() - connected_at
+            if session_duration >= HEALTHY_SESSION_SECONDS:
+                # Long-lived session — likely a server restart, reconnect fast
+                logger.info(
+                    "SSE stream ended after %.0fs (healthy session), reconnecting immediately",
+                    session_duration,
+                )
+                backoff = INITIAL_BACKOFF
+                continue  # skip the sleep at the bottom
+            else:
+                logger.info("SSE stream ended after %.0fs, retrying in %ss", session_duration, backoff)
 
         except asyncio.CancelledError:
             logger.info("SSE listener shutting down")
             return
 
-        except (aiohttp.ClientError, OSError) as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            session_duration = loop.time() - connected_at
+            if session_duration >= HEALTHY_SESSION_SECONDS:
+                backoff = INITIAL_BACKOFF
             logger.warning("SSE connection error: %s, retrying in %ss", e, backoff)
 
         except Exception:

@@ -24,7 +24,7 @@ from amc.gov_employee import expire_gov_employees  # noqa: E402
 from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
-from amc_finance.services import apply_interest_to_bank_accounts, evaluate_credit_scores  # noqa: E402
+from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, evaluate_credit_scores, transfer_nirc  # noqa: E402
 
 REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
 
@@ -82,6 +82,37 @@ async def startup(ctx):
 
     if WEBHOOK_SSE_ENABLED:
         sse_task_handle = asyncio.create_task(run_sse_listener(ctx))
+
+    # Bootstrap webhook dedup high-water marks from DB / mod buffer if Redis is cold.
+    # Only bootstrap LAST_SEQ from DB IDs when using polling mode — SSE uses
+    # its own monotonic ring buffer seq (1, 2, 3...) which is independent of
+    # DB auto-increment IDs.
+    from django.core.cache import cache
+    from amc.webhook import LAST_SEQ_CACHE_KEY, LAST_TS_CACHE_KEY
+    from amc.models import ServerCargoArrivedLog
+    from amc.mod_server import get_webhook_events2
+
+    if not WEBHOOK_SSE_ENABLED:
+        current_seq = cache.get(LAST_SEQ_CACHE_KEY, 0)
+        if not current_seq:
+            latest_id = await ServerCargoArrivedLog.objects.order_by("-id").values_list(
+                "id", flat=True
+            ).afirst()
+            if latest_id:
+                cache.set(LAST_SEQ_CACHE_KEY, latest_id, timeout=None)
+                print(f"Bootstrapped {LAST_SEQ_CACHE_KEY} from DB: {latest_id}")
+
+    # Timestamp floor: drain current mod buffer to prevent replay of old events
+    ts_floor = cache.get(LAST_TS_CACHE_KEY, 0)
+    if not ts_floor:
+        try:
+            events = await get_webhook_events2(ctx["http_client_webhook"])
+            if events:
+                max_ts = max(e["timestamp"] for e in events)
+                cache.set(LAST_TS_CACHE_KEY, max_ts, timeout=None)
+                print(f"Bootstrapped {LAST_TS_CACHE_KEY} from mod buffer: {max_ts} ({len(events)} events)")
+        except Exception as e:
+            print(f"Failed to bootstrap timestamp floor: {e}")
 
 
 async def shutdown(ctx):
@@ -147,7 +178,11 @@ class WorkerSettings:
         # pyrefly: ignore [bad-argument-type]
         cron(apply_interest_to_bank_accounts, hour=None, minute=0, second=0),
         # pyrefly: ignore [bad-argument-type]
+        cron(apply_wealth_tax, hour=None, minute=0, second=30),
+        # pyrefly: ignore [bad-argument-type]
         cron(evaluate_credit_scores, hour=0, minute=15, second=0),
+        # pyrefly: ignore [bad-argument-type]
+        cron(transfer_nirc, hour=0, minute=5, second=0),  # daily NIRC drip
         # cron(monitor_events_main, second=None),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_events_event, second=None),

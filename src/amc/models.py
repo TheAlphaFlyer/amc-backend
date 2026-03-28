@@ -271,6 +271,15 @@ class Character(models.Model):
     gov_employee_level = models.PositiveIntegerField(default=0)
     gov_employee_contributions = models.PositiveBigIntegerField(default=0)
 
+    # Criminal
+    criminal_laundered_total = models.PositiveBigIntegerField(default=0)
+
+    # Police
+    police_confiscated_total = models.PositiveBigIntegerField(default=0)
+
+    # Wealth tax crossover DM — sent once when tax > interest, 30-day cooldown
+    crossover_warning_sent_at = models.DateTimeField(null=True, blank=True)
+
     objects: ClassVar[CharacterManager] = CharacterManager()
 
     if TYPE_CHECKING:
@@ -305,6 +314,105 @@ class Character(models.Model):
                 name="saving_rate_between_0_1",
             )
         ]
+
+
+@final
+class CriminalRecord(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="criminal_records"
+    )
+    reason = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "expires_at"])]
+
+    @override
+    def __str__(self):
+        return f"{self.character.name} — {self.reason} (expires {self.expires_at})"
+
+    @classmethod
+    async def aget_active(cls, character=None):
+        qs = cls.objects.filter(expires_at__gt=timezone.now())
+        if character:
+            qs = qs.filter(character=character)
+        return [r async for r in qs.select_related("character")]
+
+
+@final
+class Confiscation(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="confiscations_received",
+        null=True, blank=True
+    )
+    officer = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="confiscations_made"
+    )
+    cargo_key = models.CharField(max_length=100)
+    amount = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "created_at"])]
+
+    @override
+    def __str__(self):
+        return f"{self.officer.name} confiscated {self.cargo_key} (${self.amount:,}) from {self.character.name}"
+
+
+class FactionChoice(models.TextChoices):
+    COP = "cop", "Cop"
+    CRIMINAL = "criminal", "Criminal"
+
+
+@final
+class FactionMembership(models.Model):
+    player = models.OneToOneField(
+        Player, on_delete=models.CASCADE, related_name="faction_membership"
+    )
+    faction = models.CharField(max_length=10, choices=FactionChoice.choices)
+    joined_at = models.DateTimeField(auto_now_add=True)
+    last_switched_at = models.DateTimeField(null=True, blank=True)
+
+    @override
+    def __str__(self):
+        return f"{self.player} — {self.get_faction_display()}"
+
+    @property
+    def cooldown_remaining(self) -> timedelta:
+        """Return remaining cooldown duration, or zero if cooldown has elapsed."""
+        from django.conf import settings
+
+        if self.last_switched_at is None:
+            return timedelta(0)
+        cooldown = timedelta(
+            hours=getattr(settings, "FACTION_SWITCH_COOLDOWN_HOURS", 24)
+        )
+        elapsed = timezone.now() - self.last_switched_at
+        remaining = cooldown - elapsed
+        return max(remaining, timedelta(0))
+
+    @property
+    def can_switch(self) -> bool:
+        return self.cooldown_remaining == timedelta(0)
+
+
+@final
+class PoliceSession(models.Model):
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="police_sessions"
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "ended_at"])]
+
+    @override
+    def __str__(self):
+        status = "active" if self.ended_at is None else f"ended {self.ended_at}"
+        return f"{self.character.name} — {status}"
 
 
 @final
@@ -2184,6 +2292,17 @@ class ShortcutZone(models.Model):
 
 
 @final
+class ArrestZone(models.Model):
+    name = models.CharField(max_length=200)
+    polygon = models.PolygonField(srid=3857, dim=2)
+    active = models.BooleanField(default=True)
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+@final
 class SubsidyRule(models.Model):
     class RewardType(models.TextChoices):
         PERCENTAGE = "PERCENTAGE", _("Percentage")
@@ -2555,4 +2674,39 @@ class Voucher(models.Model):
     def __str__(self):
         status = "claimed" if self.is_claimed else "unclaimed"
         return f"Voucher {self.code} - {self.amount:,} ({status})"
+
+
+@final
+class NewsItem(models.Model):
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Leave blank to auto-expire 7 days after creation.",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @classmethod
+    async def aget_active(cls, limit=4):
+        """Return the latest unexpired news items.
+
+        Items with an explicit expires_at are filtered by that date.
+        Items without expires_at default to 7 days after created_at.
+        """
+        now = timezone.now()
+        return [
+            item
+            async for item in cls.objects.filter(
+                Q(expires_at__gt=now)
+                | Q(expires_at__isnull=True, created_at__gt=now - timedelta(days=7))
+            )[:limit]
+        ]
+
+    @override
+    def __str__(self):
+        return self.title
 

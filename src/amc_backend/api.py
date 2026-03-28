@@ -1,7 +1,7 @@
 from ninja import NinjaAPI, Schema
 from amc_backend.auth import OAuth2Bearer
 
-api = NinjaAPI()
+api = NinjaAPI(urls_namespace="internal")
 
 
 class UserMeSchema(Schema):

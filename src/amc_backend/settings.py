@@ -72,6 +72,11 @@ LOGGING = {
             "level": "ERROR",
             "propagate": True,
         },
+        "amc.sse": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 
@@ -234,6 +239,15 @@ REDIS_SETTINGS = {}
 if redis_port := os.environ.get("REDIS_PORT"):
     REDIS_SETTINGS["port"] = int(redis_port)
 
+# Use Redis for Django cache so critical state (e.g. webhook dedup
+# high-water mark) survives worker restarts.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": f"redis://127.0.0.1:{os.environ.get('REDIS_PORT', '6379')}",
+    },
+}
+
 # Discord settings
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
 DISCORD_GUILD_ID = os.environ.get("DISCORD_GUILD_ID")
@@ -274,6 +288,15 @@ DISCORD_VERIFIED_ROLE_ID = int(
 )
 DISCORD_ADMIN_ROLE_ID = int(
     os.environ.get("DISCORD_ADMIN_ROLE_ID", "1395460420189421713")
+)
+DISCORD_COP_ROLE_ID = int(os.environ.get("DISCORD_COP_ROLE_ID", "1486644765402333305"))
+DISCORD_CRIMINAL_ROLE_ID = int(
+    os.environ.get("DISCORD_CRIMINAL_ROLE_ID", "1486645424910635029")
+)
+DISCORD_COP_CHANNEL_ID = int(os.environ.get("DISCORD_COP_CHANNEL_ID", 0))
+DISCORD_CRIMINAL_CHANNEL_ID = int(os.environ.get("DISCORD_CRIMINAL_CHANNEL_ID", 0))
+FACTION_SWITCH_COOLDOWN_HOURS = int(
+    os.environ.get("FACTION_SWITCH_COOLDOWN_HOURS", 24)
 )
 DISCORD_AUDIT_CHANNEL_ID = int(os.environ.get("DISCORD_AUDIT_CHANNEL_ID", 0))
 

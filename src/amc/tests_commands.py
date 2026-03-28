@@ -50,9 +50,10 @@ from amc.commands.language import cmd_language
 from amc.commands.rp_rescue import cmd_rescue, cmd_respond
 from amc.commands.social import cmd_thank
 from amc.commands.teleport import cmd_tp_coords, cmd_tp_name
+from amc.commands.faction import cmd_arrest, parse_location_string
 
 
-from amc.models import Character, Player
+from amc.models import Character, Player, PoliceSession
 # Import other models as needed for mocking or actual DB tests if we go that route
 
 
@@ -1785,3 +1786,482 @@ class CommandsTestCase(TestCase):
             output = self.ctx.reply.call_args[0][0]
             self.assertIn("Mod Check", output)
             self.assertIn("incompatible", output)
+
+
+class ArrestCommandTestCase(TestCase):
+    """Tests for /arrest command."""
+
+    def setUp(self):
+        self.ctx = MagicMock(spec=CommandContext)
+        self.ctx.reply = AsyncMock()
+        self.ctx.announce = AsyncMock()
+        self.ctx.http_client_mod = MagicMock()
+        self.ctx.http_client = MagicMock()
+        self.ctx.discord_client = None
+        self.ctx.player_info = {}
+
+        self.ctx.http_client_mod.get.return_value = MockResponse()
+        self.ctx.http_client_mod.post.return_value = MockResponse()
+        self.ctx.http_client.get.return_value = MockResponse()
+
+        self.player = Player.objects.create(unique_id="76561198000000001")
+        self.character = Character.objects.create(
+            name="CopPlayer", player=self.player, guid="COP_GUID_001"
+        )
+        self.ctx.character = self.character
+        self.ctx.player = self.player
+        self.ctx.timestamp = timezone.now()
+
+        # Criminal player
+        self.criminal_player = Player.objects.create(unique_id="76561198000000002")
+        self.criminal_character = Character.objects.create(
+            name="CriminalPlayer", player=self.criminal_player, guid="CRIM_GUID_001"
+        )
+
+    def _make_player_list(self, cop_loc, criminals=None):
+        """Build a mock game server player list.
+
+        criminals: list of (loc_tuple, has_vehicle) or None
+        """
+        players = [
+            (
+                str(self.player.unique_id),
+                {
+                    "name": "CopPlayer",
+                    "unique_id": str(self.player.unique_id),
+                    "character_guid": self.character.guid,
+                    "location": f"X={cop_loc[0]} Y={cop_loc[1]} Z={cop_loc[2]}",
+                },
+            )
+        ]
+        if criminals is not None:
+            for i, (loc, has_vehicle) in enumerate(criminals):
+                # Use first criminal as default, create extras on the fly
+                if i == 0:
+                    guid = self.criminal_character.guid
+                    uid = str(self.criminal_player.unique_id)
+                    name = "CriminalPlayer"
+                else:
+                    guid = f"CRIM_GUID_{i+1:03d}"
+                    uid = f"7656119800000{i+10:04d}"
+                    name = f"Criminal{i+1}"
+                crim_data = {
+                    "name": name,
+                    "unique_id": uid,
+                    "character_guid": guid,
+                    "location": f"X={loc[0]} Y={loc[1]} Z={loc[2]}",
+                }
+                if has_vehicle:
+                    crim_data["vehicle"] = {"name": "Longhorn Semi", "unique_id": 12345 + i}
+                players.append((uid, crim_data))
+        return players
+
+    def test_parse_location_string(self):
+        x, y, z = parse_location_string("X=-53918.590 Y=153629.920 Z=-20901.710")
+        self.assertAlmostEqual(x, -53918.590)
+        self.assertAlmostEqual(y, 153629.920)
+        self.assertAlmostEqual(z, -20901.710)
+
+    async def test_cmd_arrest_not_cop(self):
+        """Non-cop player gets rejection."""
+        with patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys:
+            await cmd_arrest(self.ctx)
+            mock_sys.assert_called()
+            self.assertIn("police duty", mock_sys.call_args[0][1])
+
+    async def test_cmd_arrest_no_criminals_nearby(self):
+        """Cop with no criminals in range."""
+
+        await PoliceSession.objects.acreate(character=self.character)
+
+        mock_players = self._make_player_list(cop_loc=(100, 200, 300))
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            await cmd_arrest(self.ctx)
+            mock_sys.assert_called()
+            self.assertIn("No players nearby", mock_sys.call_args[0][1])
+
+    async def test_cmd_arrest_criminal_out_of_range(self):
+        """Suspect exists but is too far away (>1500 units / 15m)."""
+        from amc.models import FactionMembership, FactionChoice
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((2100, 200, 300), False)]
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            await cmd_arrest(self.ctx)
+            mock_sys.assert_called()
+            self.assertIn("within arrest range", mock_sys.call_args[0][1])
+
+    async def test_cmd_arrest_suspect_speeding(self):
+        """Suspect moves too fast (>500 units/tick) → removed from arrest."""
+        from amc.models import FactionMembership, FactionChoice
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+
+        # Criminal starts at (200,200,300), then jumps 600 units (>SUSPECT_SPEED_LIMIT=500)
+        # Criminal must be in a vehicle for speed check to apply
+        initial_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), True)]
+        )
+        speeding_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((800, 200, 300), True)]
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(side_effect=[initial_players] + [speeding_players] * 3),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("too fast" in m for m in msgs), f"Expected 'too fast' in msgs: {msgs}"
+            )
+
+    async def test_cmd_arrest_cop_moved_still_succeeds(self):
+        """Cop moves during polling but stays within range → arrest succeeds."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        # Cop moves 200 units but stays within 10m of criminal
+        initial_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), False)]
+        )
+        moved_players = self._make_player_list(
+            cop_loc=(300, 200, 300), criminals=[((200, 200, 300), False)]
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(side_effect=[initial_players] + [moved_players] * 3),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            # Arrest should succeed despite cop movement
+            mock_tp.assert_called()
+            self.ctx.announce.assert_called()
+            self.assertIn("arrested", self.ctx.announce.call_args[0][0])
+
+    async def test_cmd_arrest_criminal_disconnected(self):
+        """Criminal goes offline during polling → removed from arrest."""
+        from amc.models import FactionMembership, FactionChoice
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+
+        initial_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), False)]
+        )
+        cop_only = self._make_player_list(cop_loc=(100, 200, 300))
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(side_effect=[initial_players, cop_only]),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("offline" in m for m in msgs),
+                f"Expected 'offline' in msgs: {msgs}",
+            )
+
+    async def test_cmd_arrest_cooldown(self):
+        """Second arrest within cooldown is rejected."""
+
+        await PoliceSession.objects.acreate(character=self.character)
+
+        with (
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = True  # cooldown active
+            await cmd_arrest(self.ctx)
+            mock_sys.assert_called()
+            self.assertIn("wait", mock_sys.call_args[0][1])
+
+    async def test_cmd_arrest_success(self):
+        """Happy path: criminal arrested, exited vehicle, teleported to jail, popup shown."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), True)],
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch(
+                "amc.commands.faction.force_exit_vehicle", new=AsyncMock()
+            ) as mock_exit,
+            patch(
+                "amc.commands.faction.teleport_player", new=AsyncMock()
+            ) as mock_tp,
+            patch(
+                "amc.commands.faction.show_popup", new=AsyncMock()
+            ) as mock_popup,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            # Vehicle exit called
+            mock_exit.assert_called_with(
+                self.ctx.http_client_mod, "CRIM_GUID_001"
+            )
+
+            # Teleported to jail
+            mock_tp.assert_called_with(
+                self.ctx.http_client_mod,
+                str(self.criminal_player.unique_id),
+                {"X": 1000.0, "Y": 2000.0, "Z": 3000.0},
+                no_vehicles=True,
+            )
+
+            # Popup shown to arrested player
+            mock_popup.assert_called_with(
+                self.ctx.http_client_mod,
+                "You have been arrested!",
+                player_id=str(self.criminal_player.unique_id),
+            )
+
+            # Confirmation sent via system message
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("arrested and sent to jail" in m for m in msgs),
+                f"Expected jail confirmation in msgs: {msgs}",
+            )
+
+            # Server-wide announcement
+            self.ctx.announce.assert_called()
+            self.assertIn(
+                "arrested", self.ctx.announce.call_args[0][0]
+            )
+
+            # Cooldown set
+            mock_cache.set.assert_called()
+
+    async def test_cmd_arrest_no_jail(self):
+        """Jail TeleportPoint doesn't exist → error message."""
+        from amc.models import FactionMembership, FactionChoice
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300), criminals=[((200, 200, 300), False)]
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("Jail" in m or "jail" in m.lower() for m in msgs),
+                f"Expected jail error in msgs: {msgs}",
+            )
+
+    async def test_cmd_arrest_inside_zone(self):
+        """Cop inside an active ArrestZone → arrest proceeds normally."""
+        from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
+        from django.contrib.gis.geos import Point, Polygon
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        # Create a zone containing the cop's position (100, 200)
+        zone_polygon = Polygon(
+            ((0, 0), (500, 0), (500, 500), (0, 500), (0, 0)),
+            srid=3857,
+        )
+        await ArrestZone.objects.acreate(
+            name="Downtown", polygon=zone_polygon, active=True
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            # Arrest should succeed
+            mock_tp.assert_called()
+            self.ctx.announce.assert_called()
+            self.assertIn("arrested", self.ctx.announce.call_args[0][0])
+
+    async def test_cmd_arrest_outside_zone(self):
+        """Cop outside all active ArrestZones → arrest rejected."""
+        from amc.models import ArrestZone, FactionMembership, FactionChoice
+        from django.contrib.gis.geos import Polygon
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+
+        # Create a zone far from the cop's position (100, 200)
+        zone_polygon = Polygon(
+            ((5000, 5000), (6000, 5000), (6000, 6000), (5000, 6000), (5000, 5000)),
+            srid=3857,
+        )
+        await ArrestZone.objects.acreate(
+            name="Other Area", polygon=zone_polygon, active=True
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            mock_sys.assert_called()
+            msgs = [call[0][1] for call in mock_sys.call_args_list]
+            self.assertTrue(
+                any("designated" in m.lower() or "arrest zone" in m.lower() for m in msgs),
+                f"Expected zone rejection in msgs: {msgs}",
+            )
+
+    async def test_cmd_arrest_no_zones_defined(self):
+        """No ArrestZone rows → arrests allowed everywhere (backward-compat)."""
+        from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        # Ensure no ArrestZone exists
+        self.assertEqual(await ArrestZone.objects.acount(), 0)
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+        ):
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            # Arrest should succeed without any zones
+            mock_tp.assert_called()
+            self.ctx.announce.assert_called()
+            self.assertIn("arrested", self.ctx.announce.call_args[0][0])

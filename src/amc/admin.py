@@ -74,6 +74,12 @@ from .models import (
     SupplyChainEventTemplate,
     SupplyChainObjectiveTemplate,
     VehicleDecal,
+    NewsItem,
+    FactionMembership,
+    CriminalRecord,
+    Confiscation,
+    ArrestZone,
+    PoliceSession,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -177,6 +183,7 @@ class CharacterAdmin(admin.ModelAdmin):
     list_display = ["name", "player__unique_id", "last_login", "total_session_time"]
     list_select_related = ["player"]
     search_fields = ["player__unique_id", "player__discord_user_id", "name", "guid"]
+    list_filter = ["crossover_warning_sent_at"]
     inlines = [AccountInlineAdmin, PlayerStatusLogInlineAdmin]
     readonly_fields = ["guid", "player", "last_login", "total_session_time"]
 
@@ -602,6 +609,25 @@ class PoliceShiftLogAdmin(admin.ModelAdmin):
     list_filter = ["action"]
 
 
+@admin.register(CriminalRecord)
+class CriminalRecordAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "reason", "created_at", "expires_at"]
+    list_select_related = ["character", "character__player"]
+    search_fields = ["character__name", "character__player__unique_id", "reason"]
+    list_filter = ["reason"]
+    readonly_fields = ["character"]
+    ordering = ["-created_at"]
+
+
+@admin.register(Confiscation)
+class ConfiscationAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "officer", "cargo_key", "amount", "created_at"]
+    list_select_related = ["character", "character__player", "officer", "officer__player"]
+    search_fields = ["character__name", "officer__name", "character__player__unique_id"]
+    readonly_fields = ["character", "officer"]
+    ordering = ["-created_at"]
+
+
 @admin.register(TeleportPoint)
 class TeleportPointAdmin(admin.ModelAdmin):
     list_display = ["id", "character", "name", "location"]
@@ -902,6 +928,34 @@ class SubsidyAreaAdmin(admin.ModelAdmin):
         return super().get_form(request, obj, change, **defaults)
 
 
+@admin.register(ArrestZone)
+class ArrestZoneAdmin(admin.ModelAdmin):
+    list_display = ["name", "active"]
+    list_filter = ["active"]
+    search_fields = ["name"]
+
+    class Media:
+        js = (
+            "https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js",
+            "amc/js/OLMapWidget.js",
+        )
+        css = {
+            "all": (
+                "https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css",
+                "gis/css/ol3.css",
+            )
+        }
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        defaults = {
+            "widgets": {
+                "polygon": AMCOpenLayersWidget,
+            }
+        }
+        defaults.update(kwargs)
+        return super().get_form(request, obj, change, **defaults)
+
+
 @admin.register(ShortcutZone)
 class ShortcutZoneAdmin(admin.ModelAdmin):
     list_display = ["name", "active"]
@@ -1173,3 +1227,29 @@ class SupplyChainEventTemplateAdmin(admin.ModelAdmin):
     list_filter = ["enabled"]
     search_fields = ["name"]
     inlines = [SupplyChainObjectiveTemplateInline]
+
+
+@admin.register(NewsItem)
+class NewsItemAdmin(admin.ModelAdmin):
+    list_display = ["title", "created_at", "expires_at"]
+    ordering = ["-created_at"]
+    search_fields = ["title", "body"]
+
+
+@admin.register(FactionMembership)
+class FactionMembershipAdmin(admin.ModelAdmin):
+    list_display = ["player", "faction", "joined_at", "last_switched_at"]
+    list_filter = ["faction"]
+    search_fields = ["player__unique_id", "player__characters__name", "player__discord_name"]
+    autocomplete_fields = ["player"]
+
+
+@admin.register(PoliceSession)
+class PoliceSessionAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "started_at", "ended_at"]
+    list_select_related = ["character", "character__player"]
+    search_fields = ["character__name", "character__player__unique_id"]
+    list_filter = ["ended_at"]
+    readonly_fields = ["character"]
+    ordering = ["-started_at"]
+

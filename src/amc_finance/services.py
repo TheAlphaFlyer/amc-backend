@@ -125,6 +125,16 @@ async def get_treasury_fund_balance():
     return treasury_fund.balance
 
 
+async def get_sovereign_reserves_balance():
+    reserves, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Sovereign Reserves",
+    )
+    return reserves.balance
+
+
 async def get_character_total_donations(character, start_time):
     aggregates = await (
         LedgerEntry.objects.filter_character_donations(character)
@@ -695,6 +705,69 @@ async def send_fund_to_player_wallet(amount, character, description):
     )
 
 
+async def record_treasury_expense(amount, description="Treasury Expense"):
+    """Burn money from the treasury (Dr. Expenses / Cr. Treasury Fund)."""
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    treasury_expenses, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.EXPENSE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Expenses",
+    )
+
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {
+                "account": treasury_expenses,
+                "debit": amount,
+                "credit": 0,
+            },
+            {
+                "account": treasury_fund,
+                "debit": 0,
+                "credit": amount,
+            },
+        ],
+    )
+
+
+async def record_treasury_confiscation_income(amount, description="Police Confiscation"):
+    """Credit the treasury via confiscation (Dr. Treasury Fund / Cr. Confiscation Revenue).
+
+    Unlike player_donation, this does NOT increment total_donations.
+    """
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    confiscation_revenue, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.REVENUE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Confiscation Revenue",
+    )
+
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {"account": confiscation_revenue, "debit": 0, "credit": amount},
+            {"account": treasury_fund, "debit": amount, "credit": 0},
+        ],
+    )
+
+
 async def send_fund_to_player(amount, character, reason):
     account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.LIABILITY,
@@ -829,6 +902,116 @@ INTEREST_RATE = 0.022
 ONLINE_INTEREST_MULTIPLIER = 2.0
 INTEREST_THRESHOLD = 10_000_000
 INTEREST_SCALE = 40_000_000
+INTEREST_DECAY_K = 2.0  # controls how fast interest decays with offline time
+
+# Wealth Tax — Progressive brackets with log-plateau decay
+# Hourly rate: r(t) = k · ln(1 + t/S) / (S + t)
+# Cumulative loss grows as k/2 · ln(1 + t/S)² — monotonic, no recovery
+WEALTH_TAX_EXEMPT = 1_000_000
+WEALTH_TAX_S = 2163  # time scale in hours (~90 days)
+WEALTH_TAX_BRACKETS = [
+    # (floor, ceiling, k)
+    (1_000_000,   20_000_000,   0.65),  # Low
+    (20_000_000,  100_000_000,  1.05),  # Mid
+    (100_000_000, float('inf'), 1.55),  # High
+]
+
+# Sovereign Reserves — NIRC (Net Investment Returns Contribution)
+NIRC_MONTHLY_RATE = 0.05  # 5% of reserves per month drips to operating treasury
+
+
+def wealth_tax_hourly_rate(k: float, t_hours: float) -> float:
+    """Hourly tax rate: k · ln(1 + t/S) / (S + t). Monotonically decreasing."""
+    if t_hours <= 0:
+        return 0.0
+    x = 1 + t_hours / WEALTH_TAX_S
+    return k * math.log(x) / (WEALTH_TAX_S * x)
+
+
+def calculate_wealth_tax(balance: int, hours_offline: float) -> int:
+    """Calculate one hourly tick of wealth tax across progressive marginal brackets.
+
+    Returns the integer amount to deduct.
+    """
+    if balance <= WEALTH_TAX_EXEMPT or hours_offline < 1:
+        return 0
+
+    tax = 0.0
+    prev = WEALTH_TAX_EXEMPT
+    for floor, ceiling, k in WEALTH_TAX_BRACKETS:
+        if balance <= prev:
+            break
+        taxable = min(balance, ceiling) - prev
+        if taxable > 0:
+            tax += taxable * wealth_tax_hourly_rate(k, hours_offline)
+        prev = ceiling
+
+    return max(int(tax), 0)
+
+
+def calculate_hourly_interest(balance: int, hours_offline: float) -> int:
+    """Calculate one hourly tick of interest for an offline player.
+
+    Mirrors calculate_wealth_tax — a pure function that returns the integer
+    interest amount for a given balance and offline duration.
+    """
+    if balance <= 0 or hours_offline <= 0:
+        return 0
+
+    rate = INTEREST_RATE
+
+    if hours_offline <= 1:
+        rate = ONLINE_INTEREST_MULTIPLIER * rate
+    else:
+        decay = 1.0 / (1.0 + INTEREST_DECAY_K * math.log10(hours_offline))
+        rate *= decay
+
+    excess = max(0, balance - INTEREST_THRESHOLD)
+    balance_multiplier = math.exp(-excess / INTEREST_SCALE)
+
+    amount = balance * rate * balance_multiplier / 24
+    return max(int(amount), 0)
+
+
+def get_crossover_accounts():
+    """Return bank accounts where hourly wealth tax exceeds hourly interest.
+
+    Each account in the result list is annotated with:
+    - hours_offline
+    - hourly_tax
+    - hourly_interest
+    - net_hourly_loss  (tax - interest)
+    """
+    now = timezone.now()
+    accounts = list(
+        Account.objects.filter(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character__isnull=False,
+            character__guid__isnull=False,
+            balance__gt=WEALTH_TAX_EXEMPT,
+        ).select_related("character", "character__player")
+    )
+
+    results = []
+    for account in accounts:
+        last_online_ts = account.character.last_online
+        if last_online_ts is None:
+            hours_offline = 365 * 24.0
+        else:
+            hours_offline = (now - last_online_ts).total_seconds() / 3600
+
+        tax = calculate_wealth_tax(int(account.balance), hours_offline)
+        interest = calculate_hourly_interest(int(account.balance), hours_offline)
+
+        if tax > interest:
+            account.hours_offline = hours_offline
+            account.hourly_tax = tax
+            account.hourly_interest = interest
+            account.net_hourly_loss = tax - interest
+            results.append(account)
+
+    return results
 
 
 def _bulk_create_interest_entries(entries_to_create, bank_expense_account, now):
@@ -888,6 +1071,7 @@ async def apply_interest_to_bank_accounts(
                 account_type=Account.AccountType.LIABILITY,
                 book=Account.Book.BANK,
                 character__isnull=False,
+                character__guid__isnull=False,
                 balance__gt=0,
             ).select_related("character")
         )
@@ -905,18 +1089,15 @@ async def apply_interest_to_bank_accounts(
         else:
             time_since_last_online = now - last_online_ts
 
-        if time_since_last_online <= timedelta(hours=1):
+        hours_offline = time_since_last_online.total_seconds() / 3600
+        if hours_offline <= 1:
             character_interest_rate = (
                 online_interest_multiplier * character_interest_rate
             )
-        elif time_since_last_online <= timedelta(days=7):
-            character_interest_rate = character_interest_rate
-        elif time_since_last_online <= timedelta(days=14):
-            character_interest_rate = character_interest_rate / 2
-        elif time_since_last_online <= timedelta(days=30):
-            character_interest_rate = character_interest_rate / 4
         else:
-            character_interest_rate = character_interest_rate / 8
+            # Smooth logarithmic decay: rate × 1/(1 + k·log₁₀(hours))
+            decay = 1.0 / (1.0 + INTEREST_DECAY_K * math.log10(hours_offline))
+            character_interest_rate *= decay
 
         # Apply balance-based fall-off: full interest up to threshold,
         # then exponentially decreasing
@@ -935,6 +1116,140 @@ async def apply_interest_to_bank_accounts(
     # Bulk create in single transaction
     await sync_to_async(_bulk_create_interest_entries)(
         entries_to_create, bank_expense_account, now
+    )
+
+
+def _bulk_create_wealth_tax_entries(entries_to_create, reserves_account, now):
+    """Create all wealth tax journal entries in a single transaction.
+
+    Each entry debits the character's LIABILITY account (reducing balance)
+    and debits the Sovereign Reserves ASSET account (increasing balance).
+    Standard double-entry: ASSET balance += debit - credit.
+    """
+    if not entries_to_create:
+        return
+
+    with transaction.atomic():
+        total_tax = Decimal(0)
+        for account, amount in entries_to_create:
+            je = JournalEntry.objects.create(
+                date=now,
+                description="Wealth Tax",
+                creator=account.character,
+            )
+            # Debit the player's checking account (LIABILITY: debit decreases balance)
+            LedgerEntry.objects.create(
+                journal_entry=je,
+                account=account,
+                debit=amount,
+                credit=0,
+            )
+            # Debit the reserves account (ASSET: debit increases balance)
+            LedgerEntry.objects.create(
+                journal_entry=je,
+                account=reserves_account,
+                debit=amount,
+                credit=0,
+            )
+            account.balance = cast(Any, F("balance") - amount)
+            account.save(update_fields=["balance"])
+            total_tax += amount
+
+        # Standard ASSET debit: balance += debit - credit = +total_tax
+        reserves_account.balance = cast(Any, F("balance") + total_tax)
+        reserves_account.save(update_fields=["balance"])
+
+
+async def apply_wealth_tax(ctx):
+    """Hourly cron: apply progressive wealth tax to offline characters.
+
+    Tax starts from hour 1 of being offline. Uses log-plateau decay
+    with marginal brackets (exempt < 500K, Low, Mid, High).
+    Revenue goes to Sovereign Reserves (locked, not operating treasury).
+    """
+    reserves_account, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Sovereign Reserves",
+    )
+
+    now = timezone.now()
+    accounts = await sync_to_async(
+        lambda: list(  # pyrefly: ignore
+            Account.objects.filter(
+                account_type=Account.AccountType.LIABILITY,
+                book=Account.Book.BANK,
+                character__isnull=False,
+                character__guid__isnull=False,
+                balance__gt=WEALTH_TAX_EXEMPT,
+            ).select_related("character")
+        )
+    )()
+
+    entries_to_create = []
+    for account in accounts:
+        last_online_ts = account.character.last_online  # pyrefly: ignore
+        if last_online_ts is None:
+            hours_offline = 365 * 24.0
+        else:
+            hours_offline = (now - last_online_ts).total_seconds() / 3600
+
+        tax = calculate_wealth_tax(int(account.balance), hours_offline)
+        if tax > 0 and tax <= account.balance - WEALTH_TAX_EXEMPT:
+            entries_to_create.append((account, Decimal(tax)))
+
+    await sync_to_async(_bulk_create_wealth_tax_entries)(
+        entries_to_create, reserves_account, now
+    )
+
+
+async def transfer_nirc(ctx):
+    """Daily cron: transfer NIRC (Net Investment Returns Contribution)
+    from Sovereign Reserves to Operating Treasury.
+
+    Transfers NIRC_ANNUAL_RATE / 365 of reserves balance daily.
+    """
+    reserves, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Sovereign Reserves",
+    )
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+
+    if reserves.balance <= 0:
+        return
+
+    daily_rate = Decimal(str(NIRC_MONTHLY_RATE)) / 30
+    amount = int(reserves.balance * daily_rate)
+    if amount <= 0:
+        return
+
+    amount_decimal = Decimal(amount)
+    now = timezone.now()
+
+    await sync_to_async(create_journal_entry, thread_sensitive=True)(
+        now,
+        "NIRC Transfer",
+        None,
+        [
+            {
+                "account": reserves,
+                "debit": 0,
+                "credit": amount_decimal,  # Credit reduces ASSET
+            },
+            {
+                "account": treasury_fund,
+                "debit": amount_decimal,  # Debit increases ASSET
+                "credit": 0,
+            },
+        ],
     )
 
 

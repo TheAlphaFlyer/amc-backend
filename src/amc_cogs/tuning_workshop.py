@@ -203,6 +203,72 @@ class TuningWorkshopCog(commands.Cog):
         )
         await channel.send(embed=embed)
 
+    @app_commands.command(
+        name="backfill_workshop",
+        description="Import existing tuning workshop threads from the last 30 days",
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def backfill_workshop(self, interaction: discord.Interaction):
+        """Backfill tuning workshop threads that predate the reward system."""
+        await interaction.response.defer(ephemeral=True)
+
+        forum = self.bot.get_channel(self.FORUM_CHANNEL_ID)
+        if not isinstance(forum, discord.ForumChannel):
+            await interaction.followup.send("❌ Forum channel not found.")
+            return
+
+        cutoff = timezone.now() - timedelta(days=30)
+
+        # Gather active + archived threads
+        threads = list(forum.threads)
+        async for thread in forum.archived_threads(limit=None):
+            threads.append(thread)
+
+        # Filter to recent threads only
+        threads = [t for t in threads if t.created_at and t.created_at >= cutoff]
+
+        backfilled = 0
+        skipped = 0
+        for thread in threads:
+            exists = await TuningWorkshopSubmission.objects.filter(
+                thread_id=thread.id
+            ).aexists()
+            if exists:
+                skipped += 1
+                continue
+
+            await TuningWorkshopSubmission.objects.acreate(
+                thread_id=thread.id,
+                author_discord_id=thread.owner_id,
+                created_at=thread.created_at,
+                skipped=False,
+            )
+
+            embed = discord.Embed(
+                title="🔧 Tuning Workshop",
+                description=(
+                    "This thread is now eligible for rewards! Here's how it works:\n\n"
+                    f"💰 **${self.REWARD_PER_REACTION:,}** per unique reaction from other members\n"
+                    "📈 Rewards **accumulate over time** — there's no deadline!\n"
+                    "⚡ Use `/claim_reward` in this thread whenever you want to cash out\n"
+                    "🔄 You can claim **multiple times** — each claim pays out only new reactions\n"
+                    "🎟️ You'll receive a voucher code to redeem in-game with `/claim_voucher <code>`"
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.set_footer(
+                text=f"Weekly limit: {self.MAX_POSTS_PER_WEEK} rewardable posts per user"
+            )
+            await thread.join()
+            await thread.send(embed=embed)
+            backfilled += 1
+
+        await interaction.followup.send(
+            f"✅ Backfill complete: **{backfilled}** threads imported, "
+            f"**{skipped}** already tracked.",
+            ephemeral=True,
+        )
+
     async def _count_unique_reactors(self, channel, author_id):
         """Count unique reactors across the starter message and author's image messages.
 

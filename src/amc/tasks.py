@@ -39,6 +39,9 @@ from amc.models import (
     Garage,
     WorldText,
     WorldObject,
+    NewsItem,
+    CriminalRecord,
+    FactionMembership,
 )
 from amc.game_server import announce, get_players
 from amc.utils import forward_to_discord
@@ -103,6 +106,53 @@ def enqueue_discord_message(channel_id: str, content: str, timestamp):
     _discord_queue.append((channel_id, content, timestamp))
     # Process immediately since we're using run_coroutine_threadsafe
     _process_discord_queue()
+
+
+async def _show_police_popup(http_client_mod, character_guid, player_id):
+    """Show police rules popup with a wanted list of online characters with active criminal records."""
+    try:
+        rules = """\
+<Title>Police Rules</>
+Using police cars does not require whitelisting on the server, but there are some rules:
+- <Warning>No ramming without consent</>
+- No spike strips unless it's part of group play
+
+Please communicate with the other players first to obtain permission to conduct police chases and arrests.
+Not everyone likes to be roughed up!"""
+
+        # Get online players from mod server API
+        from amc.mod_server import get_players as get_players_mod
+
+        now = timezone.now()
+        active_records = CriminalRecord.objects.filter(
+            expires_at__gt=now
+        ).select_related("character")
+
+        # Filter to online characters only
+        online_players = await get_players_mod(http_client_mod)
+        if online_players:
+            online_guids = {
+                p.get("CharacterGuid", "").upper()
+                for p in online_players
+                if p.get("CharacterGuid")
+            }
+            active_records = active_records.filter(
+                character__guid__in=online_guids
+            )
+
+        wanted_lines = []
+        async for record in active_records:
+            days_left = (record.expires_at - now).days
+            wanted_lines.append(
+                f"- {record.character.name} ({record.reason}) — expires in {days_left}d"
+            )
+
+        if wanted_lines:
+            rules += "\n\n<Bold>Wanted List</>\n" + "\n".join(wanted_lines)
+
+        await show_popup(http_client_mod, rules, character_guid=character_guid, player_id=player_id)
+    except Exception as e:
+        logger.exception(f"Failed to show police popup: {e}")
 
 
 async def on_vehicle_sold(character, vehicle_name, http_client_mod):
@@ -277,6 +327,20 @@ async def _login_guid_dependent_actions(
                 show_popup(
                     http_client_mod,
                     settings.WELCOME_TEXT,
+                    character_guid=character_guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+
+        # --- News popup ---
+        news_items = await NewsItem.aget_active()
+        if news_items:
+            from amc.commands.news import format_news_popup
+
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    format_news_popup(news_items),
                     character_guid=character_guid,
                     player_id=str(player.unique_id),
                 )
@@ -591,17 +655,8 @@ async def process_log_event(
             if action == PlayerVehicleLog.Action.ENTERED:
                 if "Police" in vehicle_name:
                     asyncio.create_task(
-                        show_popup(
+                        _show_police_popup(
                             http_client_mod,
-                            """\
-<Title>Police Rules</>
-Using police cars does not require whitelisting on the server, but there are some rules:
-- <Warning>No ramming without consent</>
-- No spike strips unless it's part of group play
-
-Please communicate with the other players first to obtain permission to conduct police chases and arrests.
-Not everyone likes to be roughed up!
-""",
                             character_guid=character.guid,
                             player_id=str(player.unique_id),
                         )
@@ -677,6 +732,23 @@ Not everyone likes to be roughed up!
                         character_created,
                     )
                 )
+
+                # Fire-and-forget: sync faction Discord role on login
+                if discord_client and player.discord_user_id:
+                    try:
+                        membership = await FactionMembership.objects.aget(player=player)
+                        guild = discord_client.get_guild(settings.DISCORD_GUILD_ID)
+                        if guild:
+                            member = guild.get_member(player.discord_user_id)
+                            if member:
+                                from amc_cogs.faction import sync_faction_discord_role
+                                asyncio.create_task(
+                                    sync_faction_discord_role(
+                                        guild, member, membership.faction
+                                    )
+                                )
+                    except FactionMembership.DoesNotExist:
+                        pass
 
             if (
                 discord_client

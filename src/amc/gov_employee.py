@@ -1,4 +1,3 @@
-import re
 from datetime import timedelta
 from django.db.models import F
 from django.utils import timezone
@@ -7,7 +6,6 @@ from amc.player_tags import refresh_player_name
 
 GOV_LEVEL_STEP = 500_000
 GOV_ROLE_DURATION = timedelta(hours=24)
-GOV_TAG_PATTERN = re.compile(r"\[GOV\d*\]\s*", re.IGNORECASE)
 
 
 def calculate_gov_level(contributions: int) -> int:
@@ -16,15 +14,17 @@ def calculate_gov_level(contributions: int) -> int:
     return (contributions // GOV_LEVEL_STEP) + 1
 
 
-def make_gov_name(base_name: str, level: int) -> str:
-    """Create the [GOV#] prefixed name."""
-    clean = GOV_TAG_PATTERN.sub("", base_name).strip()
-    return f"[GOV{level}] {clean}"
-
-
 def strip_gov_name(name: str) -> str:
-    """Remove the [GOV#] prefix from a name."""
-    return GOV_TAG_PATTERN.sub("", name).strip()
+    """Remove [GOVn] prefix from a name."""
+    from amc.player_tags import strip_all_tags
+
+    return strip_all_tags(name)
+
+
+def make_gov_name(name: str, level: int) -> str:
+    """Build a display name with a [GOVn] prefix."""
+    clean = strip_gov_name(name)
+    return f"[GOV{level}] {clean}"
 
 
 async def activate_gov_role(character, session):

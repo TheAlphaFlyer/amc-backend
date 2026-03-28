@@ -1,3 +1,4 @@
+import typing
 import re
 import logging
 from amc.models import CharacterVehicle
@@ -9,6 +10,114 @@ from amc.mod_detection import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Reverse lookup: slot name -> numeric value from VehiclePartSlot enum
+_SLOT_NAME_TO_INT = {slot.name: slot.value for slot in VehiclePartSlot}
+
+
+
+
+def workshop_export_to_db_config(json_data: dict) -> dict:
+    """Convert workshop API json_data (FMTGarageVehicleExport) to
+    CharacterVehicle.config-compatible format.
+
+    Workshop API (racers.co.kr) uses:
+      - camelCase keys (bHasPaint, paint, decal, parts)
+      - Named slot strings from EMTVehiclePartSlot (e.g. "Engine", "Tire0")
+
+    DB (CharacterVehicle.config) uses:
+      - PascalCase keys (Customization, Decal, Parts)
+      - Numeric slot indices as ints (e.g. 2, 19)
+
+    Returns a dict with "Parts", "Decal", and "Customization" keys matching
+    the DB format, suitable for direct comparison with CharacterVehicle.config.
+    """
+
+    result: typing.Dict[str, typing.Any] = {}
+
+    # ── Parts ──
+    # Workshop: {"parts": {"parts": [{"key": ..., "slot": "Engine", ...}]}}
+    # DB:       {"Parts": [{"Key": ..., "Slot": 2, ...}]}
+    ws_parts_wrapper = json_data.get("parts", {})
+    ws_parts = (
+        ws_parts_wrapper.get("parts", [])
+        if isinstance(ws_parts_wrapper, dict)
+        else ws_parts_wrapper
+    )
+    db_parts = []
+    for p in ws_parts:
+        slot_name = p.get("slot", "")
+        slot_int = _SLOT_NAME_TO_INT.get(slot_name, -1)
+        db_part = {
+            "Key": p.get("key", ""),
+            "Slot": slot_int,
+            "FloatValues": list(p.get("floatValues", {}).values()),
+            "Int64Values": list(p.get("int64Values", {}).values()),
+            "StringValues": list(p.get("stringValues", {}).values()),
+            "VectorValues": list(p.get("vectorValues", {}).values()),
+        }
+        db_parts.append(db_part)
+    result["Parts"] = db_parts
+
+    # ── Decal ──
+    # Workshop: {"decal": {"decal": {"decalLayers": [...]}}}
+    # DB:       {"Decal": {"DecalLayers": [...]}}
+    ws_decal = json_data.get("decal", {})
+    ws_decal_inner = ws_decal.get("decal", ws_decal) if isinstance(ws_decal, dict) else {}
+    ws_layers = ws_decal_inner.get("decalLayers", []) if isinstance(ws_decal_inner, dict) else []
+
+    db_layers = []
+    for layer in ws_layers:
+        db_layer = {
+            "DecalKey": layer.get("decalKey", ""),
+            "DecalScale": layer.get("decalScale", 0),
+            "Stretch": layer.get("stretch", 1),
+            "Coverage": layer.get("coverage", 1),
+            "Flags": layer.get("flags", 0),
+        }
+        # Color: {r,g,b,a} -> {R,G,B,A}
+        if color := layer.get("color"):
+            db_layer["Color"] = {
+                "R": color.get("r", 0),
+                "G": color.get("g", 0),
+                "B": color.get("b", 0),
+                "A": color.get("a", 255),
+            }
+        # Position: {x,y} -> {X,Y}
+        if pos := layer.get("position"):
+            db_layer["Position"] = {"X": pos.get("x", 0), "Y": pos.get("y", 0)}
+        # Rotation: {pitch,yaw,roll} -> {Pitch,Yaw,Roll}
+        if rot := layer.get("rotation"):
+            db_layer["Rotation"] = {
+                "Pitch": rot.get("pitch", 0),
+                "Yaw": rot.get("yaw", 0),
+                "Roll": rot.get("roll", 0),
+            }
+        db_layers.append(db_layer)
+    result["Decal"] = {"DecalLayers": db_layers}
+
+    # ── Customization (Paint) ──
+    # Workshop: {"paint": {"bodyMaterialIndex": 0, "bodyColors": [...]}}
+    # DB:       {"Customization": {"BodyMaterialIndex": 0, "BodyColors": [...]}}
+    ws_paint = json_data.get("paint", {})
+    if isinstance(ws_paint, dict):
+        db_colors = []
+        for c in ws_paint.get("bodyColors", []):
+            db_color = {"MaterialSlotName": c.get("materialSlotName", "")}
+            if color := c.get("color"):
+                db_color["Color"] = {
+                    "R": color.get("r", 0),
+                    "G": color.get("g", 0),
+                    "B": color.get("b", 0),
+                    "A": color.get("a", 255),
+                }
+            db_colors.append(db_color)
+        result["Customization"] = {
+            "BodyMaterialIndex": ws_paint.get("bodyMaterialIndex", 0),
+            "BodyColors": db_colors,
+        }
+
+    return result
 
 
 async def register_player_vehicles(http_client_mod, character, player, active=None):

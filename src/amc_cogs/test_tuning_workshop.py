@@ -450,6 +450,108 @@ class ClaimRewardCommandTestCase(TestCase):
         voucher = await Voucher.objects.afirst()
         self.assertEqual(voucher.amount, 100_000)  # Deduplicated: 1 unique reactor
 
+class BackfillWorkshopCommandTestCase(TestCase):
+    def setUp(self):
+        self.bot = MagicMock()
+        self.bot.user = MagicMock(id=999999)
+        self.cog = TuningWorkshopCog(self.bot)
+
+    def _make_thread(self, thread_id, owner_id, created_at):
+        thread = MagicMock()
+        thread.id = thread_id
+        thread.owner_id = owner_id
+        thread.created_at = created_at
+        thread.join = AsyncMock()
+        thread.send = AsyncMock()
+        return thread
+
+    def _make_interaction(self, forum_threads=None, archived_threads=None):
+        interaction = AsyncMock()
+        interaction.response = AsyncMock()
+
+        forum = MagicMock(spec=discord.ForumChannel)
+        forum.threads = forum_threads or []
+        forum.archived_threads = MagicMock(
+            return_value=AsyncIterator(archived_threads or [])
+        )
+        self.bot.get_channel = MagicMock(return_value=forum)
+
+        return interaction
+
+    async def test_backfill_new_threads(self):
+        """Backfills threads not already tracked."""
+        now = timezone.now()
+        thread = self._make_thread(12345, 67890, now - timedelta(days=5))
+        interaction = self._make_interaction(forum_threads=[thread])
+
+        await self.cog.backfill_workshop.callback(self.cog, interaction)
+
+        sub = await TuningWorkshopSubmission.objects.aget(thread_id=12345)
+        self.assertFalse(sub.skipped)
+        self.assertEqual(sub.author_discord_id, 67890)
+        self.assertIn("1", interaction.followup.send.call_args[0][0])  # 1 imported
+
+    async def test_backfill_skips_already_tracked(self):
+        """Already-tracked threads are skipped (idempotent)."""
+        now = timezone.now()
+        await TuningWorkshopSubmission.objects.acreate(
+            thread_id=12345, author_discord_id=67890, created_at=now,
+        )
+        thread = self._make_thread(12345, 67890, now - timedelta(days=5))
+        interaction = self._make_interaction(forum_threads=[thread])
+
+        await self.cog.backfill_workshop.callback(self.cog, interaction)
+
+        self.assertEqual(await TuningWorkshopSubmission.objects.acount(), 1)
+        self.assertIn("0", interaction.followup.send.call_args[0][0])  # 0 imported
+        self.assertIn("1", interaction.followup.send.call_args[0][0])  # 1 skipped
+
+    async def test_backfill_skips_old_threads(self):
+        """Threads older than 30 days are not imported."""
+        now = timezone.now()
+        old_thread = self._make_thread(11111, 67890, now - timedelta(days=31))
+        recent_thread = self._make_thread(22222, 67890, now - timedelta(days=10))
+        interaction = self._make_interaction(
+            forum_threads=[old_thread, recent_thread]
+        )
+
+        await self.cog.backfill_workshop.callback(self.cog, interaction)
+
+        self.assertEqual(await TuningWorkshopSubmission.objects.acount(), 1)
+        self.assertTrue(
+            await TuningWorkshopSubmission.objects.filter(thread_id=22222).aexists()
+        )
+        self.assertFalse(
+            await TuningWorkshopSubmission.objects.filter(thread_id=11111).aexists()
+        )
+
+    async def test_backfill_sends_welcome_embed(self):
+        """Welcome embed is sent to each backfilled thread."""
+        now = timezone.now()
+        thread = self._make_thread(12345, 67890, now - timedelta(days=5))
+        interaction = self._make_interaction(forum_threads=[thread])
+
+        await self.cog.backfill_workshop.callback(self.cog, interaction)
+
+        thread.join.assert_called_once()
+        thread.send.assert_called_once()
+        embed = thread.send.call_args.kwargs["embed"]
+        self.assertIn("eligible for rewards", embed.description)
+        self.assertEqual(embed.color, discord.Color.blue())
+
+    async def test_backfill_includes_archived_threads(self):
+        """Archived threads within 30 days are also imported."""
+        now = timezone.now()
+        active = self._make_thread(11111, 67890, now - timedelta(days=3))
+        archived = self._make_thread(22222, 67890, now - timedelta(days=15))
+        interaction = self._make_interaction(
+            forum_threads=[active], archived_threads=[archived],
+        )
+
+        await self.cog.backfill_workshop.callback(self.cog, interaction)
+
+        self.assertEqual(await TuningWorkshopSubmission.objects.acount(), 2)
+
 
 class ClaimVoucherCommandTestCase(TestCase):
     async def test_claim_voucher_by_code(self):

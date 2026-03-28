@@ -8,10 +8,28 @@ import pytest
 
 from amc.sse_client import (
     parse_sse_event,
+    parse_epoch_seq,
     _flush_loop,
     FLUSH_DEBOUNCE_SECONDS,
     FLUSH_MAX_BATCH_SIZE,
 )
+
+
+def _parse_and_build_event(lines):
+    """Helper: parse SSE lines and build event dict with _seq/_epoch injection (mirrors sse_client logic)."""
+    event_id, data = parse_sse_event(lines)
+    if data:
+        event_obj = json.loads(data)
+        if event_id:
+            try:
+                epoch, seq = parse_epoch_seq(event_id)
+                event_obj["_seq"] = seq
+                if epoch is not None:
+                    event_obj["_epoch"] = epoch
+            except ValueError:
+                pass
+        return event_obj
+    return None
 
 
 class TestParseSSEEvent:
@@ -263,3 +281,54 @@ async def test_flush_handles_process_exception(caplog):
             await task
         except asyncio.CancelledError:
             pass
+
+
+class TestSeqInjection:
+    """Tests that _seq and _epoch are injected from SSE id: field."""
+
+    def test_seq_injected_from_plain_event_id(self):
+        lines = ["id: 42", 'data: {"hook":"ServerCargoArrived","timestamp":1234}']
+        event = _parse_and_build_event(lines)
+        assert event is not None
+        assert event["_seq"] == 42
+        assert "_epoch" not in event
+        assert event["hook"] == "ServerCargoArrived"
+
+    def test_seq_and_epoch_injected_from_epoch_prefixed_id(self):
+        lines = ["id: 1711400000:42", 'data: {"hook":"ServerCargoArrived","timestamp":1234}']
+        event = _parse_and_build_event(lines)
+        assert event is not None
+        assert event["_seq"] == 42
+        assert event["_epoch"] == 1711400000
+        assert event["hook"] == "ServerCargoArrived"
+
+    def test_no_seq_when_no_event_id(self):
+        lines = ['data: {"hook":"ServerPassengerArrived","timestamp":5678}']
+        event = _parse_and_build_event(lines)
+        assert event is not None
+        assert "_seq" not in event
+        assert "_epoch" not in event
+
+
+class TestParseEpochSeq:
+    """Tests for parse_epoch_seq()."""
+
+    def test_epoch_seq_format(self):
+        assert parse_epoch_seq("1711400000:42") == (1711400000, 42)
+
+    def test_plain_integer_fallback(self):
+        assert parse_epoch_seq("42") == (None, 42)
+
+    def test_large_epoch_and_seq(self):
+        assert parse_epoch_seq("1743000000:999999") == (1743000000, 999999)
+
+    def test_invalid_input_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_epoch_seq("not_a_number")
+
+    def test_invalid_seq_part_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            parse_epoch_seq("1711400000:abc")
+

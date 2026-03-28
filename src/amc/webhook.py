@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import asyncio
 import itertools
@@ -12,7 +13,8 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character
+from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
+from amc.mod_detection import detect_custom_parts
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -23,7 +25,9 @@ from amc.subsidies import (
 from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
+    record_treasury_confiscation_income,
 )
+from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
 from amc.models import (
     Player,
@@ -38,9 +42,13 @@ from amc.models import (
     DeliveryPoint,
     DeliveryJob,
     Character,
+    Confiscation,
     MinistryTerm,
+    PoliceSession,
     SubsidyRule,
 )
+
+logger = logging.getLogger("amc.webhook")
 
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
 WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
@@ -223,6 +231,7 @@ async def handle_contract_signed(event, player, timestamp):
     await ServerSignContractLog.objects.acreate(
         timestamp=timestamp,
         player=player,
+        guid=event["data"].get("ContractGuid"),  # None for old mod, set for new mod
         cargo_key=contract["Item"],
         amount=contract["Amount"],
         payment=contract["CompletionPayment"]["BaseValue"],
@@ -231,39 +240,28 @@ async def handle_contract_signed(event, player, timestamp):
 
 
 async def handle_contract_delivered(event, player, timestamp):
-    contract = event.get("data")
-    if not contract:
-        # Is this possible? logic suggests it handles cases where contract data is missing
-        # but guid is present? Or maybe contract IS 'data'?
-        # Original code: contract = event['data']; if contract: ... else: try ...
-        # Wait, event['data'] is a dict. So contract IS the data dict apparently?
-        # "ServerContractCargoDelivered" data IS the contract?
-        # Let's assume yes based on original code usage.
-        pass
-
-    # If contract (event['data']) is present and has Item/Amount etc it's a "full" update
-    # If not, it might just be an update with GUID?
-
-    guid = event["data"].get("ContractGuid")
+    data = event.get("data", {})
+    guid = data.get("ContractGuid")
     if not guid:
         raise ValueError("Missing ContractGuid")
 
-    defaults = {}
-    if contract and "Item" in contract:
-        defaults = {
-            "timestamp": timestamp,
-            "player": player,
-            "cargo_key": contract["Item"],
-            "amount": contract["Amount"],
-            "payment": contract["CompletionPayment"],
-            "cost": contract.get("Cost", 0),
-            "data": contract,
-        }
-        log, _created = await ServerSignContractLog.objects.aget_or_create(
+    if "Item" in data:
+        # Old mod: contract data included in each delivery event.
+        # Create log if it doesn't exist (fallback for missing ServerSignContract).
+        log, _ = await ServerSignContractLog.objects.aget_or_create(
             guid=guid,
-            defaults=defaults,
+            defaults={
+                "timestamp": timestamp,
+                "player": player,
+                "cargo_key": data["Item"],
+                "amount": data["Amount"],
+                "payment": data["CompletionPayment"],
+                "cost": data.get("Cost", 0),
+                "data": data,
+            },
         )
     else:
+        # New mod: guid-only, log already exists from ServerSignContract hook.
         try:
             log = await ServerSignContractLog.objects.aget(guid=guid)
         except ServerSignContractLog.DoesNotExist:
@@ -397,6 +395,107 @@ async def handle_police_shift(event, player, timestamp, action):
     return 0, 0
 
 
+async def _announce_confiscation_after_delay(character_guid, http_client, delay=30):
+    """Wait for the debounce window, then announce the accumulated confiscation total."""
+    await asyncio.sleep(delay)
+    cache_key = f"money_confiscated:{character_guid}"
+    total = await cache.aget(cache_key, 0)
+    await cache.adelete(cache_key)
+    if total > 0:
+        await announce(
+            f"${total:,} has been confiscated by police",
+            http_client,
+            color="4A90D9",
+        )
+
+
+async def handle_pickup_cargo(event, character, http_client, http_client_mod):
+    """Handle ServerPickupCargo: confiscate Money if picker is police."""
+    cargo = event["data"].get("Cargo", {})
+    cargo_key = cargo.get("Net_CargoKey")
+    if cargo_key != "Money":
+        return
+
+    # Must be active police (on duty)
+    is_police = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).aexists()
+    if not is_police:
+        return
+
+    payment = cargo.get("Net_Payment", 0)
+    previous_owner_guid = cargo.get("PreviousOwnerCharacterGuid")
+    if not previous_owner_guid or payment <= 0:
+        return
+
+    # No self-confiscation
+    if str(character.guid).upper() == previous_owner_guid.upper():
+        return
+
+    # Look up previous owner
+    previous_owner = await (
+        Character.objects.select_related("player")
+        .filter(guid=previous_owner_guid)
+        .afirst()
+    )
+
+    is_prev_police = False
+    if previous_owner:
+        # No police-on-police confiscation
+        is_prev_police = await PoliceSession.objects.filter(
+            character=previous_owner, ended_at__isnull=True
+        ).aexists()
+    if is_prev_police:
+        return
+
+    # 1. Record confiscation
+    await Confiscation.objects.acreate(
+        character=previous_owner,
+        officer=character,
+        cargo_key=cargo_key,
+        amount=payment,
+    )
+
+    # 2. Charge previous owner
+    if previous_owner:
+        await transfer_money(
+            http_client_mod,
+            int(-payment),
+            "Money Confiscated",
+            str(previous_owner.player.unique_id),
+        )
+
+    # 3. Credit treasury
+    await record_treasury_confiscation_income(payment, "Police Confiscation")
+
+    # 4. Despawn the cargo from the police officer
+    try:
+        await despawn_player_cargo(http_client_mod, str(character.guid))
+    except Exception:
+        logger.warning("Failed to despawn cargo for %s after confiscation", character.guid)
+
+    # 5. Debounced announcement
+    if http_client:
+        cache_key = f"money_confiscated:{character.guid}"
+        prev_total = await cache.aget(cache_key, 0)
+        if prev_total == 0:
+            await cache.aset(cache_key, payment, timeout=60)
+            asyncio.create_task(
+                _announce_confiscation_after_delay(
+                    character.guid, http_client, delay=30
+                )
+            )
+        else:
+            await cache.aset(cache_key, prev_total + payment, timeout=60)
+
+    # 6. Track confiscation for police level
+    from amc.police import record_confiscation_for_level
+
+    await record_confiscation_for_level(
+        character, payment, http_client=http_client, session=http_client_mod
+    )
+
+
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
     if is_rp_mode and character.last_login < timestamp - timedelta(seconds=15):
         # await despawn_player_vehicle(http_client_mod, player.unique_id)
@@ -409,6 +508,8 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
         )
 
 
+
+
 async def handle_cargo_arrived(
     event,
     player,
@@ -418,7 +519,8 @@ async def handle_cargo_arrived(
     is_rp_mode,
     used_shortcut,
     http_client,
-    discord_client,
+    http_client_mod=None,
+    discord_client=None,
     active_term=None,
 ):
     valid_cargos = []
@@ -442,6 +544,11 @@ async def handle_cargo_arrived(
         log.payment += get_cargo_bonus(log.cargo_key, log.payment, log.damage or 0)
 
     await ServerCargoArrivedLog.objects.abulk_create(logs)
+
+    # --- Special cargo side effects (e.g. Money → criminal record, announcements) ---
+    from amc.special_cargo import run_special_cargo_handlers
+
+    await run_special_cargo_handlers(logs, character, http_client, http_client_mod)
 
     total_subsidy = 0
     total_payment = sum([log.payment for log in logs])
@@ -470,6 +577,32 @@ async def handle_cargo_arrived(
             if active_term:
                 await record_ministry_subsidy_spend(cargo_subsidy, active_term.id)
         cargo_name = group_list[0].get_cargo_key_display()
+
+        if cargo_key == "Money" and http_client_mod:
+            try:
+                vehicles = await list_player_vehicles(http_client_mod, str(character.player.unique_id), active=True, complete=True)
+                if vehicles:
+                    main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+                    if main_vehicle:
+                        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+                        if custom_parts:
+                            penalty = payment * quantity
+                            await transfer_money(
+                                http_client_mod,
+                                int(-penalty),
+                                "Modded Vehicle Penalty",
+                                str(character.player.unique_id),
+                            )
+                            asyncio.create_task(
+                                show_popup(
+                                    http_client_mod,
+                                    "Your criminal profits were zeroed out for using a modified vehicle.",
+                                    character_guid=character.guid,
+                                    player_id=str(character.player.unique_id),
+                                )
+                            )
+            except Exception as e:
+                logger.warning(f"Failed to check custom parts for money delivery penalty: {e}")
 
         job = await (
             DeliveryJob.objects.filter_active().filter_by_delivery(
@@ -681,9 +814,67 @@ async def split_party_payment(
     return result
 
 
+LAST_SEQ_CACHE_KEY = "webhook:last_processed_seq"
+LAST_TS_CACHE_KEY = "webhook:last_processed_ts"
+LAST_EPOCH_CACHE_KEY = "webhook:last_epoch"
+
+
 async def process_events(
     events, http_client=None, http_client_mod=None, discord_client=None
 ):
+    # ── Epoch-based reset ──
+    # If the game server restarted, events will carry a new _epoch.
+    # Detect this and reset the seq high-water mark so we don't
+    # silently drop events with lower seq numbers from the new session.
+    last_processed = cache.get(LAST_SEQ_CACHE_KEY, 0)
+    cached_epoch = cache.get(LAST_EPOCH_CACHE_KEY)
+    for event in events:
+        event_epoch = event.get("_epoch")
+        if event_epoch is not None:
+            if cached_epoch is not None and event_epoch != cached_epoch:
+                logger.warning(
+                    "Epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
+                    cached_epoch, event_epoch,
+                )
+                last_processed = 0
+                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+            elif cached_epoch is None:
+                # First SSE connection — LAST_SEQ may be stale from old
+                # polling system.  Reset to avoid dropping all events.
+                last_processed = 0
+                cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+            if event_epoch != cached_epoch:
+                cached_epoch = event_epoch
+                cache.set(LAST_EPOCH_CACHE_KEY, cached_epoch, timeout=None)
+            break  # Only need to check one event for epoch
+
+    # ── Seq-based deduplication ──
+    # Filter out events we've already processed, using the monotonic _seq
+    # assigned by the C++ EventManager.
+    new_events = []
+    max_seq = last_processed
+    for event in events:
+        seq = event.get("_seq")
+        if seq is not None:
+            if seq <= last_processed:
+                continue  # Already processed
+            max_seq = max(max_seq, seq)
+        new_events.append(event)
+    events = new_events
+
+    # ── Timestamp-floor deduplication (pre-sequence hotfix) ──
+    # For events without _seq (old mod), skip if timestamp <= last processed.
+    # This prevents full buffer replay on worker restart.
+    last_processed_ts = cache.get(LAST_TS_CACHE_KEY, 0)
+    if last_processed_ts:
+        events = [
+            e for e in events
+            if e.get("_seq") is not None or e["timestamp"] > last_processed_ts
+        ]
+
+    if not events:
+        return
+
     # Pre-process events to simplify keys
     for event in events:
         player_id = event["data"].get("CharacterGuid", "")
@@ -801,6 +992,14 @@ async def process_events(
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
 
+    # Persist high-water marks after successful processing
+    if max_seq > last_processed:
+        cache.set(LAST_SEQ_CACHE_KEY, max_seq, timeout=None)
+    # Timestamp floor for events without _seq
+    max_ts = max((e["timestamp"] for e in events if e.get("_seq") is None), default=0)
+    if max_ts and max_ts > last_processed_ts:
+        cache.set(LAST_TS_CACHE_KEY, max_ts, timeout=None)
+
 
 async def process_cargo_log(cargo, player, character, timestamp):
     sender_coord_raw = cargo["Net_SenderAbsoluteLocation"]
@@ -859,7 +1058,7 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
             # portion_of_payment = (quantity_to_add / delivery_data['quantity']) * delivery_data['payment']
             # but usually quantity_to_add == delivery_data['quantity']
 
-            multiplier = max(0, job.bonus_multiplier - 1)
+            multiplier = max(0, job.bonus_multiplier)
             bonus = int(
                 delivery_data["payment"]
                 * (quantity_to_add / delivery_data["quantity"])
@@ -870,6 +1069,34 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
 
         Delivery.objects.create(job=job, **delivery_data)
         return job
+
+
+async def handle_load_cargo(event, character, player, http_client_mod):
+    cargo = event["data"].get("Cargo", {})
+    if cargo.get("Net_CargoKey") != "Money":
+        return
+
+    try:
+        vehicles = await list_player_vehicles(http_client_mod, str(player.unique_id), active=True, complete=True)
+        if not vehicles:
+            return
+        
+        main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+        if not main_vehicle:
+            return
+        
+        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+        if custom_parts:
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    "You are not allowed to use modified vehicles for criminal gameplay!",
+                    character_guid=character.guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Failed to check custom parts for load cargo: {e}")
 
 
 async def process_event(
@@ -909,7 +1136,8 @@ async def process_event(
                 is_rp_mode,
                 used_shortcut,
                 http_client,
-                discord_client,
+                http_client_mod=http_client_mod,
+                discord_client=discord_client,
                 active_term=active_term,
             )
             base_payment += payment
@@ -951,5 +1179,12 @@ async def process_event(
 
         case "ServerRemovePolicePlayer":
             await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.END)
+
+        case "ServerPickupCargo":
+            await handle_pickup_cargo(event, character, http_client, http_client_mod)
+
+        case "ServerLoadCargo":
+            if http_client_mod:
+                await handle_load_cargo(event, character, player, http_client_mod)
 
     return base_payment, subsidy, contract_payment

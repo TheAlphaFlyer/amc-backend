@@ -218,9 +218,12 @@ async def get_webhook_events(session):
 
 
 async def get_webhook_events2(session):
+    # Note: ?since= filtering is not used because the C++ EventsRoute
+    # rejects URLs with query params (exact match bug). Deduplication
+    # is handled downstream by process_events' seq-based filtering.
     async with session.get("/events", timeout=FAST_TIMEOUT) as resp:
         data = await resp.json()
-        return data["events"]
+        return data.get("events", [])
 
 
 async def get_status(session):
@@ -299,6 +302,13 @@ async def force_exit_vehicle(session, character_guid):
     async with session.get(f"/player_vehicles/{character_guid}/exit") as resp:
         if resp.status != 200:
             raise Exception("Failed to exit vehicle")
+
+
+async def despawn_player_cargo(session, character_guid):
+    async with session.post(f"/players/{character_guid}/despawn_cargo") as resp:
+        if resp.status != 200:
+            raise Exception("Failed to despawn cargo")
+        return await resp.json()
 
 
 async def set_world_vehicle_decal(
