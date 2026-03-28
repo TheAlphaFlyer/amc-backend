@@ -398,3 +398,10 @@ DASHBOARD_JWT_EXPIRY_HOURS = int(os.environ.get("DASHBOARD_JWT_EXPIRY_HOURS", "2
 
 
 ADMINS = [("Admin", os.environ.get("ADMIN_EMAIL"))]
+
+# Temporary: use list_player_vehicles + teleport fallback for /tp vehicle
+# until new mod version with enter_last_vehicle is deployed.
+# Set to empty string or "0" to disable and use native mod endpoint.
+TP_VEHICLE_USE_TELEPORT_FALLBACK = bool(
+    os.environ.get("TP_VEHICLE_USE_TELEPORT_FALLBACK", "1")
+)
