@@ -54,13 +54,15 @@ async def cmd_wanted(ctx: CommandContext):
     # Calculate criminal level for each record
     entries = []
     for record in records:
-        level = calculate_criminal_level(record.character.criminal_laundered_total)
+        laundered = record.character.criminal_laundered_total
+        level = calculate_criminal_level(laundered)
         on_record = now - record.created_at
         entries.append(
             {
                 "name": record.character.name,
                 "guid": record.character.guid,
                 "level": level,
+                "laundered": laundered,
                 "on_record": on_record,
             }
         )
@@ -92,12 +94,12 @@ async def cmd_wanted(ctx: CommandContext):
     if online:
         msg += "<Title>Online</>\n<Secondary></>\n"
         for e in online:
-            msg += f"<Highlight>C{e['level']}</> - {e['name']} ({_format_duration(e['on_record'])})\n"
+            msg += f"<Highlight>C{e['level']}</> - {e['name']} <Secondary>${e['laundered']:,}</> ({_format_duration(e['on_record'])})\n"
         msg += "\n"
 
     if offline:
         msg += "<Title>Offline</>\n<Secondary></>\n"
         for e in offline:
-            msg += f"<Highlight>C{e['level']}</> - {e['name']} ({_format_duration(e['on_record'])})\n"
+            msg += f"<Highlight>C{e['level']}</> - {e['name']} <Secondary>${e['laundered']:,}</> ({_format_duration(e['on_record'])})\n"
 
     await ctx.reply(msg.rstrip())

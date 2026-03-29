@@ -203,21 +203,21 @@ class MoneyCargoHandlerTests(TestCase):
     async def test_criminal_level_increases_with_total(
         self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
     ):
-        """Criminal level increases after crossing 100k threshold."""
+        """Criminal level increases after crossing 50k threshold."""
         from amc.special_cargo import calculate_criminal_level
 
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        # First delivery: 50k → level 1
+        # First delivery: 50k → level 2
         event1 = self._money_event(character, payment=50_000)
         await process_event(event1, player, character)
         await character.arefresh_from_db()
-        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 1)
+        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 2)
 
-        # Second delivery: 60k → total 110k → level 2
+        # Second delivery: 60k → total 110k → level 3
         event2 = self._money_event(character, payment=60_000)
         await process_event(event2, player, character)
         await character.arefresh_from_db()
-        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 2)
+        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 3)

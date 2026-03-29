@@ -2388,17 +2388,17 @@ class ArrestCommandTestCase(TestCase):
         player_a = await Player.objects.acreate(unique_id="76561198000000101")
         char_online = await Character.objects.acreate(
             name="OnlineCriminal", player=player_a, guid="guid-online",
-            criminal_laundered_total=250_000,  # level 3
+            criminal_laundered_total=250_000,  # level 6
         )
         player_b = await Player.objects.acreate(unique_id="76561198000000102")
         char_offline = await Character.objects.acreate(
             name="OfflineCriminal", player=player_b, guid="guid-offline",
-            criminal_laundered_total=500_000,  # level 6
+            criminal_laundered_total=500_000,  # level 11
         )
         player_c = await Player.objects.acreate(unique_id="76561198000000103")
         char_online2 = await Character.objects.acreate(
             name="OnlineCriminal2", player=player_c, guid="guid-online2",
-            criminal_laundered_total=100_000,  # level 2
+            criminal_laundered_total=100_000,  # level 3
         )
 
         # Create active records
@@ -2435,14 +2435,19 @@ class ArrestCommandTestCase(TestCase):
         self.assertIn("Online", output)
         self.assertIn("Offline", output)
 
-        # Online section: C3 before C2 (higher level first)
-        online_pos_c3 = output.index("OnlineCriminal (")
-        online_pos_c2 = output.index("OnlineCriminal2")
-        self.assertLess(online_pos_c3, online_pos_c2)
+        # Online section: C6 before C3 (higher level first)
+        online_pos_c6 = output.index("OnlineCriminal <")
+        online_pos_c3 = output.index("OnlineCriminal2")
+        self.assertLess(online_pos_c6, online_pos_c3)
 
-        # Offline section: C6
+        # Offline section: C11
         self.assertIn("OfflineCriminal", output)
-        self.assertIn("C6", output)
+        self.assertIn("C11", output)
+
+        # Smuggled amounts shown
+        self.assertIn("$250,000", output)
+        self.assertIn("$500,000", output)
+        self.assertIn("$100,000", output)
 
         # Online section appears before Offline
         online_section = output.index("<Title>Online</>")

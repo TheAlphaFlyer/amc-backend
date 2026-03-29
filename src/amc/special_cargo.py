@@ -25,7 +25,7 @@ from amc_finance.services import record_treasury_expense
 
 logger = logging.getLogger("amc.special_cargo")
 
-CRIMINAL_LEVEL_STEP = 100_000
+CRIMINAL_LEVEL_STEP = 50_000
 
 
 def calculate_criminal_level(laundered_total: int) -> int:
