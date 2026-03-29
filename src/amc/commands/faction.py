@@ -238,6 +238,7 @@ async def cmd_arrest(ctx: CommandContext):
         return
 
     arrested_names = []
+    total_confiscated = 0
     for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
         # Exit vehicle
         if has_vehicle:
@@ -310,6 +311,7 @@ async def cmd_arrest(ctx: CommandContext):
                     ctx.character, confiscated_amount, http_client=ctx.http_client, session=ctx.http_client_mod
                 )
 
+                total_confiscated += confiscated_amount
                 await send_system_message(
                     ctx.http_client_mod,
                     gettext("Confiscated ${amount:,} in illegal earnings from {name}.").format(
@@ -330,9 +332,14 @@ async def cmd_arrest(ctx: CommandContext):
 
     # Announce and confirm
     names_arrested = ", ".join(arrested_names)
-    await ctx.announce(
-        f"{names_arrested} arrested by {ctx.character.name}!"
-    )
+    if total_confiscated > 0:
+        await ctx.announce(
+            f"{names_arrested} arrested by {ctx.character.name}! ${total_confiscated:,} confiscated."
+        )
+    else:
+        await ctx.announce(
+            f"{names_arrested} arrested by {ctx.character.name}!"
+        )
     await send_system_message(
         ctx.http_client_mod,
         gettext("{names} arrested and sent to jail.").format(names=names_arrested),
