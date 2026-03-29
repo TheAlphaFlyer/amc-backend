@@ -29,6 +29,9 @@ log = logging.getLogger(__name__)
 
 GAME_DB_PATH = os.environ.get("GAME_DB_PATH", "/var/lib/motortown/gamedata.db")
 
+# Attachment slots (cosmetic) should not count as modded parts
+ATTACHMENT_SLOT_MIN = VehiclePartSlot.Attachment0.value  # 148
+
 # Part key prefixes whitelisted for characters on active police duty
 POLICE_DUTY_WHITELIST: tuple[str, ...] = (
     "apf_",
@@ -222,6 +225,9 @@ def detect_custom_parts(
         key = part.get("Key", "")
         slot_value = part.get("Slot", 0)
         if not key:
+            continue
+        # Skip attachment slots — cosmetic items, not performance mods
+        if slot_value >= ATTACHMENT_SLOT_MIN:
             continue
         key_lower = key.lower()
         if key_lower in stock_keys:
