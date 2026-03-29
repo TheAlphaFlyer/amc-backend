@@ -423,6 +423,13 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
     if not is_police:
         return
 
+    # Police picking up money always despawns the cargo, regardless of
+    # whether the confiscation itself is valid (self-pickup, police-on-police, etc.)
+    try:
+        await despawn_player_cargo(http_client_mod, str(character.guid))
+    except Exception:
+        logger.warning("Failed to despawn money cargo for police %s", character.guid)
+
     payment = cargo.get("Net_Payment", 0)
     previous_owner_guid = cargo.get("PreviousOwnerCharacterGuid")
     if not previous_owner_guid or payment <= 0:
@@ -468,13 +475,7 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
     # 3. Credit treasury
     await record_treasury_confiscation_income(payment, "Police Confiscation")
 
-    # 4. Despawn the cargo from the police officer
-    try:
-        await despawn_player_cargo(http_client_mod, str(character.guid))
-    except Exception:
-        logger.warning("Failed to despawn cargo for %s after confiscation", character.guid)
-
-    # 5. Debounced announcement
+    # 4. Debounced announcement
     if http_client:
         cache_key = f"money_confiscated:{character.guid}"
         prev_total = await cache.aget(cache_key, 0)
@@ -488,7 +489,7 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
         else:
             await cache.aset(cache_key, prev_total + payment, timeout=60)
 
-    # 6. Track confiscation for police level
+    # 5. Track confiscation for police level
     from amc.police import record_confiscation_for_level
 
     await record_confiscation_for_level(
