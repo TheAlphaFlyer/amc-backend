@@ -108,32 +108,13 @@ def enqueue_discord_message(channel_id: str, content: str, timestamp):
     _process_discord_queue()
 
 
-async def _show_police_popup(http_client_mod, character, http_client=None):
-    """Auto-activate police duty and show rules popup with wanted list."""
+async def _show_police_popup(http_client_mod, character_guid, player_id):
+    """Show police rules popup with a wanted list of online characters with active criminal records."""
     try:
-        from amc.police import is_police, activate_police, calculate_police_level
-        from amc.game_server import announce as game_announce
-
-        # Auto-activate police duty if not already on duty
-        already_on_duty = await is_police(character)
-        if not already_on_duty:
-            await activate_police(character, http_client_mod)
-            level = calculate_police_level(character.police_confiscated_total)
-            if http_client:
-                asyncio.create_task(
-                    game_announce(
-                        f"{character.name} is now on police duty (P{level})!",
-                        http_client,
-                        color="4A90D9",
-                    )
-                )
-            status_line = f"Your police shift has been activated <Highlight>[P{level}]</>"
-        else:
-            status_line = "You are already on police duty."
-
-        rules = f"""\
+        rules = """\
 <Title>Police Rules</>
-{status_line}
+To begin your police shift, type <Highlight>/police</> in chat.
+This will activate your [Pn] tag and enable police commands.
 
 <Bold>Commands (while on duty)</>
 - <Highlight>/arrest</> — Arrest nearby suspects
@@ -175,7 +156,7 @@ async def _show_police_popup(http_client_mod, character, http_client=None):
         if wanted_lines:
             rules += "\n\n<Bold>Wanted List</>\n" + "\n".join(wanted_lines)
 
-        await show_popup(http_client_mod, rules, character_guid=character.guid, player_id=str(character.player_id))
+        await show_popup(http_client_mod, rules, character_guid=character_guid, player_id=player_id)
     except Exception as e:
         logger.exception(f"Failed to show police popup: {e}")
 
@@ -682,8 +663,8 @@ async def process_log_event(
                     asyncio.create_task(
                         _show_police_popup(
                             http_client_mod,
-                            character,
-                            http_client=http_client,
+                            character_guid=character.guid,
+                            player_id=str(player.unique_id),
                         )
                     )
 
