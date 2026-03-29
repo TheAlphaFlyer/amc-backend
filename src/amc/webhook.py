@@ -509,6 +509,93 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
         )
 
 
+TELEPORT_PENALTY_WINDOW = 10  # minutes — same as ARREST_CONFISCATION_WINDOW
+
+
+async def handle_teleport_or_respawn(event, character, timestamp, http_client_mod, http_client):
+    """Penalise criminals who teleport/reset within the confiscation window.
+
+    Uses the same linear decay formula as police arrest confiscation:
+    rate = max(0, 1 - elapsed_minutes / window). The penalty is deducted
+    from the player's wallet and criminal_laundered_total is reversed.
+    """
+    # Skip police officers — they don't deliver Money
+    is_police = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).aexists()
+    if is_police:
+        return
+
+    # Find recent Money deliveries within the penalty window
+    window_start = timestamp - timedelta(minutes=TELEPORT_PENALTY_WINDOW)
+    recent_deliveries = [
+        d async for d in Delivery.objects.filter(
+            character=character,
+            cargo_key="Money",
+            timestamp__gte=window_start,
+        )
+    ]
+    if not recent_deliveries:
+        return
+
+    # Calculate penalty using linear decay per delivery
+    penalty = 0
+    for delivery in recent_deliveries:
+        elapsed_minutes = (timestamp - delivery.timestamp).total_seconds() / 60
+        rate = max(0.0, 1.0 - elapsed_minutes / TELEPORT_PENALTY_WINDOW)
+        penalty += round(delivery.payment * rate)
+
+    if penalty <= 0:
+        return
+
+    # 1. Deduct from wallet
+    if http_client_mod:
+        await transfer_money(
+            http_client_mod,
+            int(-penalty),
+            "Teleport Penalty",
+            str(character.player.unique_id),
+        )
+
+    # 2. Reverse criminal_laundered_total (clamp to 0)
+    await character.arefresh_from_db(fields=["criminal_laundered_total"])
+    new_total = max(0, character.criminal_laundered_total - penalty)
+    character.criminal_laundered_total = new_total
+    await character.asave(update_fields=["criminal_laundered_total"])
+
+    # 3. Record as Confiscation with officer=None (self-inflicted)
+    #    This suppresses the "money is now safe" announcement in special_cargo.py
+    await Confiscation.objects.acreate(
+        character=character,
+        officer=None,
+        cargo_key="Money",
+        amount=penalty,
+    )
+
+    # 4. Refresh player name tag (criminal level may have dropped)
+    from amc.player_tags import refresh_player_name
+    await refresh_player_name(character, http_client_mod)
+
+    # 5. Popup + announcement
+    if http_client_mod:
+        asyncio.create_task(
+            show_popup(
+                http_client_mod,
+                f"You lost ${penalty:,} for teleporting during criminal cooldown.",
+                character_guid=character.guid,
+                player_id=str(character.player.unique_id),
+            )
+        )
+    if http_client:
+        asyncio.create_task(
+            announce(
+                f"{character.name} lost ${penalty:,} for teleporting during criminal cooldown",
+                http_client,
+                color="E74C3C",
+            )
+        )
+
+
 
 
 async def handle_cargo_arrived(
@@ -1190,6 +1277,9 @@ async def process_event(
 
         case "ServerResetVehicleAt":
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
+
+        case "ServerTeleportCharacter" | "ServerTeleportVehicle" | "ServerRespawnCharacter":
+            await handle_teleport_or_respawn(event, character, timestamp, http_client_mod, http_client)
 
         case "ServerArrivedAtPolicePatrolPoint":
             await handle_patrol_arrived(event, player, timestamp, http_client_mod)
