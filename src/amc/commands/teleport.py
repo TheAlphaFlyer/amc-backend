@@ -126,8 +126,8 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 name__iexact=name,
             )
 
-            # Block police on duty from using dasa
-            if teleport_point.name.lower() == "dasa":
+            # Block police on duty from using restricted locations
+            if teleport_point.name.lower() in ("dasa", "harbor"):
                 is_police = await PoliceSession.objects.filter(
                     character=ctx.character, ended_at__isnull=True
                 ).aexists()
