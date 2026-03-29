@@ -40,15 +40,17 @@ SpecialCargoHandler = Callable[
 ]
 
 
-async def _announce_laundered_after_delay(character_guid, http_client, delay=30):
+async def _announce_laundered_after_delay(character_guid, http_client, delay=15):
     """Wait for the debounce window, then announce the accumulated total."""
     await asyncio.sleep(delay)
     cache_key = f"money_laundered:{character_guid}"
-    total = await cache.aget(cache_key, 0)
+    data = await cache.aget(cache_key)
     await cache.adelete(cache_key)
-    if total > 0:
+    if data and data.get("total", 0) > 0:
+        total = data["total"]
+        name = data.get("name", "Unknown")
         await announce(
-            f"${total:,} has been laundered",
+            f"${total:,} has been laundered by {name}",
             http_client,
             color="FFA500",
         )
@@ -64,7 +66,7 @@ async def handle_money_cargo(
 
     - Create or reset criminal record (7 days from now)
     - Refresh player name tag ([C])
-    - Debounced laundering announcement (30s window)
+    - Debounced laundering announcement (15s window)
     - Record 20% treasury cost
     """
     # --- Accumulate laundered total for criminal level ---
@@ -97,18 +99,21 @@ async def handle_money_cargo(
     if money_payment > 0:
         if http_client:
             cache_key = f"money_laundered:{character.guid}"
-            prev_total = await cache.aget(cache_key, 0)
-            if prev_total == 0:
-                await cache.aset(cache_key, money_payment, timeout=60)
+            prev_data = await cache.aget(cache_key)
+            if not prev_data:
+                await cache.aset(
+                    cache_key,
+                    {"total": money_payment, "name": character.name},
+                    timeout=60,
+                )
                 asyncio.create_task(
                     _announce_laundered_after_delay(
-                        character.guid, http_client, delay=30
+                        character.guid, http_client, delay=15
                     )
                 )
             else:
-                await cache.aset(
-                    cache_key, prev_total + money_payment, timeout=60
-                )
+                prev_data["total"] = prev_data.get("total", 0) + money_payment
+                await cache.aset(cache_key, prev_data, timeout=60)
         laundering_cost = int(money_payment * 0.20)
         if laundering_cost > 0:
             await record_treasury_expense(laundering_cost, "Money Laundering Cost")
