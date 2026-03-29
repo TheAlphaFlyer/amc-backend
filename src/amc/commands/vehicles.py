@@ -113,6 +113,23 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
             has_custom_parts=bool(custom or incompatible),
         )
 
+    # Build drivetrain summary from DriveInfo
+    drive_info = vehicle.get("DriveInfo", {})
+    drive_line = ""
+    if drive_info:
+        drive_type = drive_info.get("drive_type", "Unknown")
+        effective = drive_info.get("effective_drive_type", drive_type)
+        driven = drive_info.get("driven_wheel_count", 0)
+        total = drive_info.get("total_wheel_count", 0)
+        axles = drive_info.get("total_axle_count", 0)
+        driven_axles = len(drive_info.get("driven_axle_indices", []))
+
+        label = drive_type
+        if effective != drive_type:
+            label = f"{drive_type} ({effective})"
+
+        drive_line = f"\nDrivetrain: {label} — {driven}/{total} wheels, {driven_axles}/{axles} axles"
+
     issues = []
     if custom:
         issues.append(
@@ -131,9 +148,10 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
 
     if issues:
         await ctx.reply(
-            _("<Title>Mod Check</>\n\n<Bold>{name}</> — {vehicle}{issues}").format(
+            _("<Title>Mod Check</>\n\n<Bold>{name}</> — {vehicle}{drive}{issues}").format(
                 name=target_player_name,
                 vehicle=vehicle_name,
+                drive=drive_line,
                 issues="\n".join(issues),
             )
         )
@@ -141,10 +159,11 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         await ctx.reply(
             _(
                 "<Title>Parts Check</>"
-                "\n\n<Bold>{name}</> — {vehicle}"
+                "\n\n<Bold>{name}</> — {vehicle}{drive}"
                 "\n\nAll stock parts."
             ).format(
                 name=target_player_name,
                 vehicle=vehicle_name,
+                drive=drive_line,
             )
         )

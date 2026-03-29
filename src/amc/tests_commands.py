@@ -1812,6 +1812,86 @@ class CommandsTestCase(TestCase):
             self.assertIn("Mod Check", output)
             self.assertIn("incompatible", output)
 
+    async def test_cmd_check_mods_shows_drive_info(self):
+        """DriveInfo from the mod server should appear in the output."""
+
+        mock_vehicles = {
+            "4004": {
+                "fullName": "Jemusi_C Default__Jemusi",
+                "classFullName": "Class /Game/Vehicles/Jemusi",
+                "parts": [{"Key": "StockEngine", "Slot": 0}],
+                "isLastVehicle": True,
+                "index": 0,
+                "DriveInfo": {
+                    "drive_type": "RWD",
+                    "effective_drive_type": "RWD",
+                    "driven_wheel_count": 2,
+                    "total_wheel_count": 4,
+                    "driven_axle_indices": [1],
+                    "total_axle_count": 2,
+                    "num_differentials": 1,
+                },
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch("amc.commands.vehicles.detect_custom_parts", return_value=[]),
+            patch("amc.commands.vehicles.detect_incompatible_parts", return_value=[]),
+        ):
+            await cmd_check_mods(self.ctx)
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Drivetrain: RWD", output)
+            self.assertIn("2/4 wheels", output)
+            self.assertIn("1/2 axles", output)
+
+    async def test_cmd_check_mods_shows_parttime_awd(self):
+        """Part-time AWD should show the effective drive type in parentheses."""
+
+        mock_vehicles = {
+            "5005": {
+                "fullName": "Longhorn_C Default__Longhorn",
+                "classFullName": "Class /Game/Vehicles/Longhorn",
+                "parts": [{"Key": "CustomTurbo_XYZ", "Slot": 5}],
+                "isLastVehicle": True,
+                "index": 0,
+                "DriveInfo": {
+                    "drive_type": "AWD",
+                    "effective_drive_type": "Part-time",
+                    "driven_wheel_count": 4,
+                    "total_wheel_count": 4,
+                    "driven_axle_indices": [0, 1],
+                    "total_axle_count": 2,
+                    "num_differentials": 3,
+                    "current_disconnected_diffs": ["FrontDiff"],
+                },
+            }
+        }
+
+        with (
+            patch(
+                "amc.commands.vehicles.list_player_vehicles",
+                new=AsyncMock(return_value=mock_vehicles),
+            ),
+            patch(
+                "amc.commands.vehicles.detect_custom_parts",
+                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+            ),
+            patch("amc.commands.vehicles.detect_incompatible_parts", return_value=[]),
+        ):
+            await cmd_check_mods(self.ctx)
+
+            self.ctx.reply.assert_called()
+            output = self.ctx.reply.call_args[0][0]
+            self.assertIn("Mod Check", output)
+            self.assertIn("AWD (Part-time)", output)
+            self.assertIn("4/4 wheels", output)
+            self.assertIn("2/2 axles", output)
 
 class ArrestCommandTestCase(TestCase):
     """Tests for /arrest command."""
@@ -2204,7 +2284,7 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_confiscation_5min_half(self):
         """Delivery at 5 minutes → 50% confiscation."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2253,7 +2333,7 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_confiscation_9min_minimal(self):
         """Delivery at 9 minutes → 10% confiscation."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
