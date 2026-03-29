@@ -756,7 +756,7 @@ async def process_log_event(
                             member = guild.get_member(player.discord_user_id)
                             if member:
                                 from amc_cogs.faction import sync_faction_discord_role
-                                asyncio.create_task(
+                                discord_client.loop.create_task(
                                     sync_faction_discord_role(
                                         guild, member, membership.faction
                                     )
@@ -953,7 +953,7 @@ async def process_log_event(
             asyncio.create_task(delay(spawn_garages(), 25))
 
         case UnknownLogEntry():
-            raise ValueError("Unknown log entry")
+            logger.warning("Unknown log entry: %s", event)
         case SecurityAlertLogEvent():
             pass
         case _:
