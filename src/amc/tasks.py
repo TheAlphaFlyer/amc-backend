@@ -125,7 +125,10 @@ This will activate your [Pn] tag and enable police commands.
 <Bold>Rules</>
 - Ramming and spike strips are allowed against suspected criminals <Highlight>[C]</>
 - <Warning>No ramming or spike strips against non-criminals without consent</>
-- Communicate with other players before conducting chases"""
+- Communicate with other players before conducting chases
+
+<Bold>Discord</Bold>
+Use <Highlight>/faction</Highlight> on Discord to join the Police faction and gain access to the police-only channel."""
 
         # Get online players from mod server API
         from amc.mod_server import get_players as get_players_mod
