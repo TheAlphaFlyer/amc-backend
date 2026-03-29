@@ -10,14 +10,15 @@ from amc_finance.services import record_treasury_confiscation_income
 from amc.police import record_confiscation_for_level
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Sum
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
-ARREST_RADIUS = 2250  # 22.5m — cop must be within 22.5m of suspect
+ARREST_RADIUS_ON_FOOT = 5000  # 50m — cop on foot must be within 50m of suspect
+ARREST_RADIUS_IN_VEHICLE = 3375  # 33.75m — cop in vehicle (50% more than original 22.5m)
 SUSPECT_SPEED_LIMIT = 500  # 5m per poll tick — suspects moving faster are removed
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 0  # seconds between arrests per cop
+ARREST_CONFISCATION_WINDOW = 10  # minutes — deliveries older than this are safe
 
 _LOC_RE = re.compile(
     r"X=(?P<x>[-\d.]+)\s+Y=(?P<y>[-\d.]+)\s+Z=(?P<z>[-\d.]+)"
@@ -125,13 +126,14 @@ async def cmd_arrest(ctx: CommandContext):
         await send_system_message(ctx.http_client_mod, gettext("No suspects nearby."), character_guid=ctx.character.guid)
         return
 
-    # Filter to suspects within ARREST_RADIUS
+    # Filter to suspects within arrest radius (depends on whether cop is on foot or in vehicle)
+    arrest_radius = ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else ARREST_RADIUS_ON_FOOT
     targets = {}  # guid → (unique_id, initial_loc, has_vehicle)
     for guid in suspect_guids:
         if guid not in locations:
             continue
         dist = _distance_3d(cop_loc, locations[guid][1])
-        if dist <= ARREST_RADIUS:
+        if dist <= arrest_radius:
             targets[guid] = locations[guid]
 
     if not targets:
@@ -205,7 +207,8 @@ async def cmd_arrest(ctx: CommandContext):
                     continue
 
             # Proximity check: cop must stay within radius of suspect
-            if _distance_3d(current_cop_loc, current_criminal_loc) > ARREST_RADIUS:
+            current_radius = ARREST_RADIUS_IN_VEHICLE if cop_veh else ARREST_RADIUS_ON_FOOT
+            if _distance_3d(current_cop_loc, current_criminal_loc) > current_radius:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
                 await send_system_message(
                     ctx.http_client_mod,
@@ -262,17 +265,25 @@ async def cmd_arrest(ctx: CommandContext):
         name = target_chars[guid].name if guid in target_chars else "Unknown"
         arrested_names.append(name)
 
-        # Money confiscation logic
+        # Money confiscation logic — linear scaling by evasion time
         suspect_char = target_chars.get(guid)
         if suspect_char:
-            five_mins_ago = timezone.now() - timedelta(minutes=5)
-            recent_deliveries = await Delivery.objects.filter(
-                character=suspect_char,
-                cargo_key="Money",
-                timestamp__gte=five_mins_ago
-            ).aaggregate(total_payment=Sum("payment"))
-            
-            confiscated_amount = recent_deliveries["total_payment"] or 0
+            now = timezone.now()
+            window_start = now - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
+            recent_deliveries = [
+                d async for d in Delivery.objects.filter(
+                    character=suspect_char,
+                    cargo_key="Money",
+                    timestamp__gte=window_start,
+                )
+            ]
+
+            confiscated_amount = 0
+            for delivery in recent_deliveries:
+                elapsed_minutes = (now - delivery.timestamp).total_seconds() / 60
+                rate = max(0.0, 1.0 - elapsed_minutes / ARREST_CONFISCATION_WINDOW)
+                confiscated_amount += round(delivery.payment * rate)
+
             if confiscated_amount > 0:
                 await Confiscation.objects.acreate(
                     character=suspect_char,
@@ -280,25 +291,25 @@ async def cmd_arrest(ctx: CommandContext):
                     cargo_key="Money",
                     amount=confiscated_amount,
                 )
-                
+
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
                 new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)
                 suspect_char.criminal_laundered_total = new_criminal_total
                 await suspect_char.asave(update_fields=["criminal_laundered_total"])
-                
+
                 await transfer_money(
                     ctx.http_client_mod,
                     int(-confiscated_amount),
                     "Money Confiscated",
                     str(suspect_char.player_id),
                 )
-                
+
                 await record_treasury_confiscation_income(confiscated_amount, "Police Confiscation")
-                
+
                 await record_confiscation_for_level(
                     ctx.character, confiscated_amount, http_client=ctx.http_client, session=ctx.http_client_mod
                 )
-                
+
                 await send_system_message(
                     ctx.http_client_mod,
                     gettext("Confiscated ${amount:,} in illegal earnings from {name}.").format(

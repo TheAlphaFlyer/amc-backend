@@ -2132,7 +2132,7 @@ class ArrestCommandTestCase(TestCase):
             mock_cache.set.assert_called()
 
     async def test_cmd_arrest_retroactive_confiscates_money(self):
-        """Happy path: criminal arrested and recent Money deliveries are seized retroactively."""
+        """Criminal arrested — 1-min-old Money delivery seized at 90% (linear scaling)."""
         from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
         from django.contrib.gis.geos import Point
 
@@ -2143,18 +2143,16 @@ class ArrestCommandTestCase(TestCase):
         await TeleportPoint.objects.acreate(
             name="jail", location=Point(1000, 2000, 3000)
         )
-        
-        # Setup criminal's current progression
+
         self.criminal_character.criminal_laundered_total = 50_000
         await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
-        
-        # Inject an illegal Delivery that happened natively 1 minute ago
+
+        fixed_now = timezone.now().replace(microsecond=0)
+        # Delivery 1 minute ago → 90% rate → int(25000 * 0.9) = 22500
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money",
-            payment=25_000,
-            quantity=1,
-            timestamp=timezone.now() - timezone.timedelta(minutes=1)
+            cargo_key="Money", payment=25_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=1),
         )
 
         mock_players = self._make_player_list(
@@ -2163,10 +2161,7 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch(
-                "amc.commands.faction.get_players",
-                new=AsyncMock(return_value=mock_players),
-            ),
+            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
@@ -2176,41 +2171,246 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()) as mock_prog,
+            patch("amc.commands.faction.timezone") as mock_tz,
         ):
+            mock_tz.now.return_value = fixed_now
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            # Verification assertions
             mock_transfer.assert_called_once_with(
-                self.ctx.http_client_mod,
-                -25000,
-                "Money Confiscated",
-                str(self.criminal_player.unique_id)
+                self.ctx.http_client_mod, -22500,
+                "Money Confiscated", str(self.criminal_player.unique_id),
             )
-            mock_treasury.assert_called_once_with(25000, "Police Confiscation")
+            mock_treasury.assert_called_once_with(22500, "Police Confiscation")
             mock_prog.assert_called_once_with(
-                self.character,
-                25000,
-                http_client=self.ctx.http_client,
-                session=self.ctx.http_client_mod
+                self.character, 22500,
+                http_client=self.ctx.http_client, session=self.ctx.http_client_mod,
             )
-            
-            # Check criminal ranking reversal
+
             await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 25_000)
-            
-            # Ensure Confiscation record was logged
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 27_500)
+
             self.assertTrue(
                 await Confiscation.objects.filter(
-                    amount=25000, officer=self.character, character=self.criminal_character
+                    amount=22500, officer=self.character, character=self.criminal_character,
                 ).aexists()
             )
-            
-            # Check for financial messages
+
             msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("Confiscated $25,000" in m for m in msgs),
-                f"Expected confiscation alert in msgs: {msgs}"
+                any("Confiscated $22,500" in m for m in msgs),
+                f"Expected confiscation alert in msgs: {msgs}",
+            )
+
+    async def test_cmd_arrest_confiscation_5min_half(self):
+        """Delivery at 5 minutes → 50% confiscation."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        fixed_now = timezone.now().replace(microsecond=0)
+        # 5 min ago → 50% rate → int(20000 * 0.5) = 10000
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money", payment=20_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=5),
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()),
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
+            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
+            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.timezone") as mock_tz,
+        ):
+            mock_tz.now.return_value = fixed_now
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            mock_transfer.assert_called_once_with(
+                self.ctx.http_client_mod, -10000, "Money Confiscated",
+                str(self.criminal_player.unique_id),
+            )
+            mock_treasury.assert_called_once_with(10000, "Police Confiscation")
+
+    async def test_cmd_arrest_confiscation_9min_minimal(self):
+        """Delivery at 9 minutes → 10% confiscation."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        fixed_now = timezone.now().replace(microsecond=0)
+        # 9 min ago → 10% rate → int(50000 * 0.1) = 5000
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money", payment=50_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=9),
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()),
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
+            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
+            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.timezone") as mock_tz,
+        ):
+            mock_tz.now.return_value = fixed_now
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            mock_transfer.assert_called_once_with(
+                self.ctx.http_client_mod, -5000, "Money Confiscated",
+                str(self.criminal_player.unique_id),
+            )
+            mock_treasury.assert_called_once_with(5000, "Police Confiscation")
+
+    async def test_cmd_arrest_confiscation_expired(self):
+        """Delivery at 11 minutes (outside window) → $0 confiscated."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        fixed_now = timezone.now().replace(microsecond=0)
+        # 11 min ago — outside the 10-minute window entirely
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money", payment=100_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=11),
+        )
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()),
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
+            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
+            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.timezone") as mock_tz,
+        ):
+            mock_tz.now.return_value = fixed_now
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            mock_transfer.assert_not_called()
+            mock_treasury.assert_not_called()
+            self.assertEqual(await Confiscation.objects.acount(), 0)
+
+    async def test_cmd_arrest_confiscation_multi_delivery_scaling(self):
+        """Multiple deliveries at different ages — each scaled independently."""
+        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from django.contrib.gis.geos import Point
+
+        await PoliceSession.objects.acreate(character=self.character)
+        await FactionMembership.objects.acreate(
+            player=self.criminal_player, faction=FactionChoice.CRIMINAL
+        )
+        await TeleportPoint.objects.acreate(
+            name="jail", location=Point(1000, 2000, 3000)
+        )
+
+        self.criminal_character.criminal_laundered_total = 200_000
+        await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
+
+        fixed_now = timezone.now().replace(microsecond=0)
+        # Delivery A: 2 min ago, $50,000 → 80% → int(50000*0.8) = 40000
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money", payment=50_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=2),
+        )
+        # Delivery B: 8 min ago, $30,000 → 20% → int(30000*0.2) = 6000
+        await Delivery.objects.acreate(
+            character=self.criminal_character,
+            cargo_key="Money", payment=30_000, quantity=1,
+            timestamp=fixed_now - timedelta(minutes=8),
+        )
+        # Total: 40000 + 6000 = 46000
+
+        mock_players = self._make_player_list(
+            cop_loc=(100, 200, 300),
+            criminals=[((200, 200, 300), False)],
+        )
+
+        with (
+            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
+            patch("amc.commands.faction.cache") as mock_cache,
+            patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()),
+            patch("amc.commands.faction.show_popup", new=AsyncMock()),
+            patch("amc.commands.faction.send_system_message", new=AsyncMock()),
+            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
+            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
+            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.timezone") as mock_tz,
+        ):
+            mock_tz.now.return_value = fixed_now
+            mock_cache.get.return_value = None
+            await cmd_arrest(self.ctx)
+
+            mock_transfer.assert_called_once_with(
+                self.ctx.http_client_mod, -46000, "Money Confiscated",
+                str(self.criminal_player.unique_id),
+            )
+            mock_treasury.assert_called_once_with(46000, "Police Confiscation")
+
+            await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 154_000)
+
+            self.assertTrue(
+                await Confiscation.objects.filter(amount=46000).aexists()
             )
 
     async def test_cmd_arrest_no_jail(self):
