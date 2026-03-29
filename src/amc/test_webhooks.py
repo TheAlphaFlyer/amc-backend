@@ -2164,3 +2164,209 @@ class SeqDeduplicationTests(TestCase):
 
         cache.delete("webhook:last_processed_seq")
         cache.delete("webhook:last_epoch")
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class SecurityBonusTests(TestCase):
+    """Test Security Bonus on Money deliveries based on active online police."""
+
+    def _make_money_event(self, player, character):
+        return {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "Money",
+                        "Net_Payment": 10_000,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 1000, "Y": 1000, "Z": 0},
+                    }
+                ],
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_money_delivery_no_police_no_bonus(
+        self, mock_list_vehicles, mock_get_treasury, mock_get_rp_mode
+    ):
+        """0 police on duty → 0% security bonus."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        event = self._make_money_event(player, character)
+        http_client_mod = MagicMock()
+        payment, subsidy, _ = await process_event(
+            event, player, character, http_client_mod=http_client_mod
+        )
+
+        self.assertEqual(payment, 10_000)
+        # No police → no security bonus; subsidy is 0 (no subsidy rules)
+        self.assertEqual(subsidy, 0)
+
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_money_delivery_one_police_20pct_bonus(
+        self, mock_list_vehicles, mock_get_treasury, mock_get_rp_mode
+    ):
+        """1 police on duty and online → 20% security bonus."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+
+        from amc.models import PoliceSession
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        # Create a police officer who is on duty and online
+        cop_player = await sync_to_async(PlayerFactory)()
+        cop_char = await sync_to_async(CharacterFactory)(
+            player=cop_player, last_online=timezone.now()
+        )
+        await PoliceSession.objects.acreate(character=cop_char)
+
+        event = self._make_money_event(player, character)
+        http_client_mod = MagicMock()
+        payment, subsidy, _ = await process_event(
+            event, player, character, http_client_mod=http_client_mod
+        )
+
+        self.assertEqual(payment, 10_000)
+        # 1 police * 20% * 10,000 = 2,000 security bonus
+        self.assertEqual(subsidy, 2_000)
+
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_money_delivery_offline_police_no_bonus(
+        self, mock_list_vehicles, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Police on duty but offline (stale last_online) → no bonus."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+
+        from amc.models import PoliceSession
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        # Create a police officer on duty but last_online is 5 minutes ago (stale)
+        cop_player = await sync_to_async(PlayerFactory)()
+        cop_char = await sync_to_async(CharacterFactory)(
+            player=cop_player, last_online=timezone.now() - timedelta(minutes=5)
+        )
+        await PoliceSession.objects.acreate(character=cop_char)
+
+        event = self._make_money_event(player, character)
+        http_client_mod = MagicMock()
+        payment, subsidy, _ = await process_event(
+            event, player, character, http_client_mod=http_client_mod
+        )
+
+        self.assertEqual(payment, 10_000)
+        # Offline police → not counted → no bonus
+        self.assertEqual(subsidy, 0)
+
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_money_delivery_two_police_40pct_bonus(
+        self, mock_list_vehicles, mock_get_treasury, mock_get_rp_mode
+    ):
+        """2 police on duty and online → 40% security bonus."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+
+        from amc.models import PoliceSession
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        now = timezone.now()
+        for _ in range(2):
+            cp = await sync_to_async(PlayerFactory)()
+            cc = await sync_to_async(CharacterFactory)(player=cp, last_online=now)
+            await PoliceSession.objects.acreate(character=cc)
+
+        event = self._make_money_event(player, character)
+        http_client_mod = MagicMock()
+        payment, subsidy, _ = await process_event(
+            event, player, character, http_client_mod=http_client_mod
+        )
+
+        self.assertEqual(payment, 10_000)
+        # 2 police * 20% * 10,000 = 4,000
+        self.assertEqual(subsidy, 4_000)
+
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_money_delivery_bonus_capped_at_100pct(
+        self, mock_list_vehicles, mock_get_treasury, mock_get_rp_mode
+    ):
+        """6 police → would be 120%, but capped at 100%."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+
+        from amc.models import PoliceSession
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="1", name="mine", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(
+            guid="2", name="factory", coord=Point(1000, 1000, 0)
+        )
+
+        now = timezone.now()
+        for _ in range(6):
+            cp = await sync_to_async(PlayerFactory)()
+            cc = await sync_to_async(CharacterFactory)(player=cp, last_online=now)
+            await PoliceSession.objects.acreate(character=cc)
+
+        event = self._make_money_event(player, character)
+        http_client_mod = MagicMock()
+        payment, subsidy, _ = await process_event(
+            event, player, character, http_client_mod=http_client_mod
+        )
+
+        self.assertEqual(payment, 10_000)
+        # Capped at 100%: 10,000 * 1.0 = 10,000
+        self.assertEqual(subsidy, 10_000)
+
