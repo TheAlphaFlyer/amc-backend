@@ -14,7 +14,7 @@ from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
 from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
-from amc.mod_detection import detect_custom_parts
+from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.subsidies import (
     repay_loan_for_profit,
     set_aside_player_savings,
@@ -584,7 +584,14 @@ async def handle_cargo_arrived(
                 if vehicles:
                     main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
                     if main_vehicle:
-                        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+                        # Whitelist police parts for officers on active duty
+                        whitelist = None
+                        is_on_duty = await PoliceSession.objects.filter(
+                            character=character, ended_at__isnull=True
+                        ).aexists()
+                        if is_on_duty:
+                            whitelist = POLICE_DUTY_WHITELIST
+                        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
                         if custom_parts:
                             penalty = payment * quantity
                             await transfer_money(
@@ -1085,7 +1092,14 @@ async def handle_load_cargo(event, character, player, http_client_mod):
         if not main_vehicle:
             return
         
-        custom_parts = detect_custom_parts(main_vehicle.get("parts", []))
+        # Whitelist police parts for officers on active duty
+        whitelist = None
+        is_on_duty = await PoliceSession.objects.filter(
+            character=character, ended_at__isnull=True
+        ).aexists()
+        if is_on_duty:
+            whitelist = POLICE_DUTY_WHITELIST
+        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
         if custom_parts:
             asyncio.create_task(
                 show_popup(

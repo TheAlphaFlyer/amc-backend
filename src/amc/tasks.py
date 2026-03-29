@@ -42,6 +42,7 @@ from amc.models import (
     NewsItem,
     CriminalRecord,
     FactionMembership,
+    PoliceSession,
 )
 from amc.game_server import announce, get_players
 from amc.utils import forward_to_discord
@@ -62,7 +63,7 @@ from amc_finance.services import (
     player_donation,
     get_player_loan_balance,
 )
-from amc.mod_detection import detect_custom_parts, detect_incompatible_parts
+from amc.mod_detection import detect_custom_parts, detect_incompatible_parts, POLICE_DUTY_WHITELIST
 from amc.player_tags import refresh_player_name
 from amc.webhook import on_player_profit
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
@@ -449,7 +450,14 @@ async def handle_player_vehicle_mod_check(
             return
 
         parts = main_vehicle.get("parts", [])
-        custom_parts = detect_custom_parts(parts)
+        # Whitelist police parts for officers on active duty
+        whitelist = None
+        is_on_duty = await PoliceSession.objects.filter(
+            character=character, ended_at__isnull=True
+        ).aexists()
+        if is_on_duty:
+            whitelist = POLICE_DUTY_WHITELIST
+        custom_parts = detect_custom_parts(parts, whitelist=whitelist)
         incompatible_parts = detect_incompatible_parts(
             parts, main_vehicle["fullName"]
         )

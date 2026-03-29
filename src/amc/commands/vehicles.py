@@ -8,7 +8,9 @@ from amc.mod_detection import (
     detect_incompatible_parts,
     format_custom_parts_game,
     format_incompatible_parts_game,
+    POLICE_DUTY_WHITELIST,
 )
+from amc.models import PoliceSession
 from amc.player_tags import refresh_player_name
 from amc.utils import fuzzy_find_player
 from django.utils.translation import gettext as _, gettext_lazy
@@ -94,7 +96,14 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         return
     vehicle_name = format_vehicle_name(vehicle["fullName"])
     parts = vehicle.get("parts", [])
-    custom = detect_custom_parts(parts)
+    # Whitelist police parts for officers on active duty
+    whitelist = None
+    is_on_duty = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
+    ).aexists()
+    if is_on_duty:
+        whitelist = POLICE_DUTY_WHITELIST
+    custom = detect_custom_parts(parts, whitelist=whitelist)
     incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
 
     # Recalculate [MODS] tag when checking own vehicle
