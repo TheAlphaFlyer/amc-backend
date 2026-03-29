@@ -19,7 +19,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from amc.game_server import announce
-from amc.models import CriminalRecord, ServerCargoArrivedLog
+from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog
 from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
 
@@ -53,6 +53,36 @@ async def _announce_laundered_after_delay(character_guid, http_client, delay=15)
             f"${total:,} has been laundered by {name}",
             http_client,
             color="FFA500",
+        )
+
+
+async def _announce_money_secured_after_delay(character_guid, version, http_client, delay):
+    """Wait for the confiscation window, then announce if money wasn't confiscated."""
+    await asyncio.sleep(delay)
+    cache_key = f"money_secured:{character_guid}"
+    data = await cache.aget(cache_key)
+    if not data or data.get("version") != version:
+        return  # superseded by a newer delivery
+    await cache.adelete(cache_key)
+
+    # Check if any confiscation happened during the window
+    from amc.commands.faction import ARREST_CONFISCATION_WINDOW
+
+    window_start = timezone.now() - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
+    was_confiscated = await Confiscation.objects.filter(
+        character__guid=character_guid,
+        created_at__gte=window_start,
+    ).aexists()
+    if was_confiscated:
+        return
+
+    total = data.get("total", 0)
+    name = data.get("name", "Unknown")
+    if total > 0:
+        await announce(
+            f"{name}'s ${total:,} is now safe from police",
+            http_client,
+            color="43B581",
         )
 
 
@@ -117,6 +147,37 @@ async def handle_money_cargo(
         laundering_cost = int(money_payment * 0.20)
         if laundering_cost > 0:
             await record_treasury_expense(laundering_cost, "Money Laundering Cost")
+
+    # --- Debounced "money secured" announcement after confiscation window ---
+    if money_payment > 0 and http_client:
+        from amc.commands.faction import ARREST_CONFISCATION_WINDOW
+
+        secured_cache_key = f"money_secured:{character.guid}"
+        prev_secured = await cache.aget(secured_cache_key)
+        version = (prev_secured.get("version", 0) + 1) if prev_secured else 1
+        secured_total = (
+            (prev_secured.get("total", 0) + money_payment)
+            if prev_secured
+            else money_payment
+        )
+        secured_data = {
+            "total": secured_total,
+            "name": character.name,
+            "version": version,
+        }
+        await cache.aset(
+            secured_cache_key,
+            secured_data,
+            timeout=ARREST_CONFISCATION_WINDOW * 60 + 120,
+        )
+        asyncio.create_task(
+            _announce_money_secured_after_delay(
+                character.guid,
+                version,
+                http_client,
+                delay=ARREST_CONFISCATION_WINDOW * 60,
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
