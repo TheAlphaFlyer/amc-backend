@@ -244,7 +244,7 @@ async def cmd_arrest(ctx: CommandContext):
         if has_vehicle:
             try:
                 await force_exit_vehicle(ctx.http_client_mod, guid)
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(1.5)
             except Exception:
                 pass
 
