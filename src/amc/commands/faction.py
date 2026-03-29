@@ -15,7 +15,7 @@ from django.utils.translation import gettext as gettext, gettext_lazy
 # 100 game units = 1 metre
 ARREST_RADIUS_ON_FOOT = 5000  # 50m — cop on foot must be within 50m of suspect
 ARREST_RADIUS_IN_VEHICLE = 3375  # 33.75m — cop in vehicle (50% more than original 22.5m)
-SUSPECT_SPEED_LIMIT = 500  # 5m per poll tick — suspects moving faster are removed
+SUSPECT_SPEED_LIMIT = 1500  # 15m per poll tick — suspects moving faster are removed
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 0  # seconds between arrests per cop
 ARREST_CONFISCATION_WINDOW = 10  # minutes — deliveries older than this are safe

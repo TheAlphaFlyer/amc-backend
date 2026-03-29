@@ -1993,7 +1993,7 @@ class ArrestCommandTestCase(TestCase):
             self.assertIn("No players nearby", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_criminal_out_of_range(self):
-        """Suspect exists but is too far away (>1500 units / 15m)."""
+        """Suspect exists but is too far away (>5000 units / 50m on foot)."""
         from amc.models import FactionMembership, FactionChoice
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2002,7 +2002,7 @@ class ArrestCommandTestCase(TestCase):
         )
 
         mock_players = self._make_player_list(
-            cop_loc=(100, 200, 300), criminals=[((2100, 200, 300), False)]
+            cop_loc=(100, 200, 300), criminals=[((6200, 200, 300), False)]
         )
 
         with (
@@ -2017,7 +2017,7 @@ class ArrestCommandTestCase(TestCase):
             self.assertIn("within arrest range", mock_sys.call_args[0][1])
 
     async def test_cmd_arrest_suspect_speeding(self):
-        """Suspect moves too fast (>500 units/tick) → removed from arrest."""
+        """Suspect moves too fast (>1500 units/tick) → removed from arrest."""
         from amc.models import FactionMembership, FactionChoice
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2025,13 +2025,13 @@ class ArrestCommandTestCase(TestCase):
             player=self.criminal_player, faction=FactionChoice.CRIMINAL
         )
 
-        # Criminal starts at (200,200,300), then jumps 600 units (>SUSPECT_SPEED_LIMIT=500)
+        # Criminal starts at (200,200,300), then jumps 2000 units (>SUSPECT_SPEED_LIMIT=1500)
         # Criminal must be in a vehicle for speed check to apply
         initial_players = self._make_player_list(
             cop_loc=(100, 200, 300), criminals=[((200, 200, 300), True)]
         )
         speeding_players = self._make_player_list(
-            cop_loc=(100, 200, 300), criminals=[((800, 200, 300), True)]
+            cop_loc=(100, 200, 300), criminals=[((2200, 200, 300), True)]
         )
 
         with (
