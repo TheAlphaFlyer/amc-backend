@@ -232,10 +232,10 @@ async def handle_contract_signed(event, player, timestamp):
         timestamp=timestamp,
         player=player,
         guid=event["data"].get("ContractGuid"),  # None for old mod, set for new mod
-        cargo_key=contract["Item"],
-        amount=contract["Amount"],
-        payment=contract["CompletionPayment"]["BaseValue"],
-        cost=contract["Cost"]["BaseValue"],
+        cargo_key=contract.get("Item", ""),
+        amount=contract.get("Amount", 0),
+        payment=contract.get("CompletionPayment", {}).get("BaseValue", 0),
+        cost=contract.get("Cost", {}).get("BaseValue", 0),
     )
 
 
