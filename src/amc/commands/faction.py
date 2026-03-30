@@ -6,7 +6,7 @@ from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint, Delivery, Confiscation
 from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player, transfer_money
-from amc_finance.services import record_treasury_confiscation_income
+from amc_finance.services import record_treasury_confiscation_income, send_fund_to_player_wallet
 from amc.police import record_confiscation_for_level
 from django.utils import timezone
 from datetime import timedelta
@@ -52,6 +52,133 @@ def _build_player_locations(players: list) -> dict[str, tuple[str, tuple[float, 
         has_vehicle = "vehicle" in pdata
         result[guid] = (pdata["unique_id"], loc, has_vehicle)
     return result
+
+
+async def execute_arrest(
+    officer_character,
+    targets: dict,
+    target_chars: dict,
+    http_client,
+    http_client_mod,
+) -> tuple[list[str], int]:
+    """Execute arrest: teleport to jail, confiscate money, announce.
+
+    Args:
+        officer_character: The arresting officer's Character model.
+        targets: guid -> (unique_id, location, has_vehicle) for each suspect.
+        target_chars: guid -> Character model for each suspect.
+        http_client: Game server HTTP client (for announcements).
+        http_client_mod: Mod server HTTP client (for teleport, money, messages).
+
+    Returns:
+        (arrested_names, total_confiscated) tuple.
+    """
+    try:
+        jail_tp = await TeleportPoint.objects.aget(name__iexact="jail")
+        jail_location = {"X": jail_tp.location.x, "Y": jail_tp.location.y, "Z": jail_tp.location.z}
+    except TeleportPoint.DoesNotExist:
+        raise ValueError("Jail teleport point not configured.")
+
+    arrested_names = []
+    total_confiscated = 0
+    for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
+        # Exit vehicle
+        if has_vehicle:
+            try:
+                await force_exit_vehicle(http_client_mod, guid)
+                await asyncio.sleep(1.5)
+            except Exception:
+                pass
+
+        # Teleport to jail
+        await teleport_player(
+            http_client_mod,
+            crim_uid,
+            jail_location,
+            no_vehicles=True,
+        )
+
+        # Popup notification
+        await show_popup(
+            http_client_mod,
+            "You have been arrested!",
+            player_id=crim_uid,
+        )
+
+        name = target_chars[guid].name if guid in target_chars else "Unknown"
+        arrested_names.append(name)
+
+        # Money confiscation logic — linear scaling by evasion time
+        suspect_char = target_chars.get(guid)
+        if suspect_char:
+            now = timezone.now()
+            window_start = now - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
+            recent_deliveries = [
+                d async for d in Delivery.objects.filter(
+                    character=suspect_char,
+                    cargo_key="Money",
+                    timestamp__gte=window_start,
+                )
+            ]
+
+            confiscated_amount = 0
+            for delivery in recent_deliveries:
+                elapsed_minutes = (now - delivery.timestamp).total_seconds() / 60
+                rate = max(0.0, 1.0 - elapsed_minutes / ARREST_CONFISCATION_WINDOW)
+                confiscated_amount += round(delivery.payment * rate)
+
+            if confiscated_amount > 0:
+                await Confiscation.objects.acreate(
+                    character=suspect_char,
+                    officer=officer_character,
+                    cargo_key="Money",
+                    amount=confiscated_amount,
+                )
+
+                await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
+                new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)
+                suspect_char.criminal_laundered_total = new_criminal_total
+                await suspect_char.asave(update_fields=["criminal_laundered_total"])
+
+                await transfer_money(
+                    http_client_mod,
+                    int(-confiscated_amount),
+                    "Money Confiscated",
+                    str(suspect_char.player_id),
+                )
+
+                await record_treasury_confiscation_income(confiscated_amount, "Police Confiscation")
+
+                await record_confiscation_for_level(
+                    officer_character, confiscated_amount, http_client=http_client, session=http_client_mod
+                )
+
+                # Reward officer with confiscated amount
+                await transfer_money(
+                    http_client_mod,
+                    int(confiscated_amount),
+                    "Confiscation Reward",
+                    str(officer_character.player_id),
+                )
+                await send_fund_to_player_wallet(confiscated_amount, officer_character, "Confiscation Reward")
+
+                total_confiscated += confiscated_amount
+                await send_system_message(
+                    http_client_mod,
+                    gettext("Confiscated ${amount:,} in illegal earnings from {name}. You earned ${amount:,} confiscation reward.").format(
+                        amount=confiscated_amount, name=name
+                    ),
+                    character_guid=officer_character.guid
+                )
+                await send_system_message(
+                    http_client_mod,
+                    gettext("Police confiscated ${amount:,} in illegal earnings from your account.").format(
+                        amount=confiscated_amount
+                    ),
+                    character_guid=suspect_char.guid
+                )
+
+    return arrested_names, total_confiscated
 
 
 @registry.register(
@@ -229,103 +356,22 @@ async def cmd_arrest(ctx: CommandContext):
             await send_system_message(ctx.http_client_mod, gettext("All targets escaped. Arrest cancelled."), character_guid=ctx.character.guid)
             return
 
-    # 7. Execute arrests — teleport to jail
+    # 7. Execute arrests
     try:
-        jail_tp = await TeleportPoint.objects.aget(name__iexact="jail")
-        jail_location = {"X": jail_tp.location.x, "Y": jail_tp.location.y, "Z": jail_tp.location.z}
-    except TeleportPoint.DoesNotExist:
-        await send_system_message(ctx.http_client_mod, gettext("Jail teleport point not configured. Contact an admin."), character_guid=ctx.character.guid)
+        arrested_names, total_confiscated = await execute_arrest(
+            officer_character=ctx.character,
+            targets=targets,
+            target_chars=target_chars,
+            http_client=ctx.http_client,
+            http_client_mod=ctx.http_client_mod,
+        )
+    except ValueError as e:
+        await send_system_message(ctx.http_client_mod, gettext(str(e)), character_guid=ctx.character.guid)
         return
 
-    arrested_names = []
-    total_confiscated = 0
-    for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
-        # Exit vehicle
-        if has_vehicle:
-            try:
-                await force_exit_vehicle(ctx.http_client_mod, guid)
-                await asyncio.sleep(1.5)
-            except Exception:
-                pass
-
-        # Teleport to jail
-        await teleport_player(
-            ctx.http_client_mod,
-            crim_uid,
-            jail_location,
-            no_vehicles=True,
-        )
-
-        # Popup notification
-        await show_popup(
-            ctx.http_client_mod,
-            "You have been arrested!",
-            player_id=crim_uid,
-        )
-
-        name = target_chars[guid].name if guid in target_chars else "Unknown"
-        arrested_names.append(name)
-
-        # Money confiscation logic — linear scaling by evasion time
-        suspect_char = target_chars.get(guid)
-        if suspect_char:
-            now = timezone.now()
-            window_start = now - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
-            recent_deliveries = [
-                d async for d in Delivery.objects.filter(
-                    character=suspect_char,
-                    cargo_key="Money",
-                    timestamp__gte=window_start,
-                )
-            ]
-
-            confiscated_amount = 0
-            for delivery in recent_deliveries:
-                elapsed_minutes = (now - delivery.timestamp).total_seconds() / 60
-                rate = max(0.0, 1.0 - elapsed_minutes / ARREST_CONFISCATION_WINDOW)
-                confiscated_amount += round(delivery.payment * rate)
-
-            if confiscated_amount > 0:
-                await Confiscation.objects.acreate(
-                    character=suspect_char,
-                    officer=ctx.character,
-                    cargo_key="Money",
-                    amount=confiscated_amount,
-                )
-
-                await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
-                new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)
-                suspect_char.criminal_laundered_total = new_criminal_total
-                await suspect_char.asave(update_fields=["criminal_laundered_total"])
-
-                await transfer_money(
-                    ctx.http_client_mod,
-                    int(-confiscated_amount),
-                    "Money Confiscated",
-                    str(suspect_char.player_id),
-                )
-
-                await record_treasury_confiscation_income(confiscated_amount, "Police Confiscation")
-
-                await record_confiscation_for_level(
-                    ctx.character, confiscated_amount, http_client=ctx.http_client, session=ctx.http_client_mod
-                )
-
-                total_confiscated += confiscated_amount
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext("Confiscated ${amount:,} in illegal earnings from {name}.").format(
-                        amount=confiscated_amount, name=name
-                    ),
-                    character_guid=ctx.character.guid
-                )
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext("Police confiscated ${amount:,} in illegal earnings from your account.").format(
-                        amount=confiscated_amount
-                    ),
-                    character_guid=suspect_char.guid
-                )
+    if not arrested_names:
+        await send_system_message(ctx.http_client_mod, gettext("All targets escaped. Arrest cancelled."), character_guid=ctx.character.guid)
+        return
 
     # Set cooldown
     cache.set(cooldown_key, True, timeout=ARREST_COOLDOWN)
