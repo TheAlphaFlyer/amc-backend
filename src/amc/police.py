@@ -8,7 +8,7 @@ from django.db.models import F
 from django.utils import timezone
 from amc.player_tags import refresh_player_name
 
-POLICE_LEVEL_STEP = 50_000
+POLICE_LEVEL_STEP = 10_000
 
 # Risk premium: extra payout on Money deliveries per active online police officer.
 SECURITY_BONUS_RATE = 0.20  # 20% per officer
