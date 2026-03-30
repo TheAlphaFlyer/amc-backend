@@ -545,6 +545,34 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
 
 
 TELEPORT_PENALTY_WINDOW = 10  # minutes — same as ARREST_CONFISCATION_WINDOW
+TELEPORT_PENALTY_ANNOUNCE_DELAY = 10  # seconds — debounce window for announcements
+
+
+async def _announce_teleport_penalty_after_delay(
+    character_guid, character_name, player_unique_id, http_client, http_client_mod, delay=TELEPORT_PENALTY_ANNOUNCE_DELAY,
+):
+    """Wait for the debounce window, then announce the accumulated teleport penalty."""
+    await asyncio.sleep(delay)
+    cache_key = f"teleport_penalty:{character_guid}"
+    total = await cache.aget(cache_key, 0)
+    await cache.adelete(cache_key)
+    if total <= 0:
+        return
+    if http_client_mod:
+        asyncio.create_task(
+            show_popup(
+                http_client_mod,
+                f"You lost ${total:,} for teleporting during criminal cooldown.",
+                character_guid=character_guid,
+                player_id=player_unique_id,
+            )
+        )
+    if http_client:
+        await announce(
+            f"{character_name} lost ${total:,} for teleporting during criminal cooldown",
+            http_client,
+            color="E74C3C",
+        )
 
 
 async def handle_teleport_or_respawn(event, character, timestamp, http_client_mod, http_client):
@@ -611,22 +639,19 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
     from amc.player_tags import refresh_player_name
     await refresh_player_name(character, http_client_mod)
 
-    # 5. Popup + announcement
-    if http_client_mod:
+    # 5. Debounced popup + announcement
+    cache_key = f"teleport_penalty:{character.guid}"
+    prev_total = await cache.aget(cache_key, 0)
+    new_total = prev_total + penalty
+    await cache.aset(cache_key, new_total, timeout=30)
+    if prev_total == 0:
         asyncio.create_task(
-            show_popup(
-                http_client_mod,
-                f"You lost ${penalty:,} for teleporting during criminal cooldown.",
-                character_guid=character.guid,
-                player_id=str(character.player.unique_id),
-            )
-        )
-    if http_client:
-        asyncio.create_task(
-            announce(
-                f"{character.name} lost ${penalty:,} for teleporting during criminal cooldown",
+            _announce_teleport_penalty_after_delay(
+                character.guid,
+                character.name,
+                str(character.player.unique_id),
                 http_client,
-                color="E74C3C",
+                http_client_mod,
             )
         )
 
