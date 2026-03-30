@@ -280,7 +280,7 @@ async def handle_contract_delivered(event, player, timestamp):
     return payment, 0
 
 
-async def handle_passenger_arrived(event, player, timestamp):
+async def handle_passenger_arrived(event, player, timestamp, character=None, http_client_mod=None):
     passenger = event["data"].get("Passenger")
     passenger_data = passenger or {}
     base_payment = passenger_data.get("Net_Payment", 0)
@@ -288,6 +288,16 @@ async def handle_passenger_arrived(event, player, timestamp):
 
     if base_payment < 0:
         raise ValueError(f"Negative payment for passenger: {passenger_data}")
+
+    # Exploit detection: passengers picked up on a modded server have
+    # Net_StartLocation at the world origin (0,0,0).  Log for audit but
+    # claw back the game-deposited payment and suppress all payouts.
+    start_loc = passenger_data.get("Net_StartLocation", {})
+    is_exploit = (
+        start_loc.get("X", 1) == 0
+        and start_loc.get("Y", 1) == 0
+        and start_loc.get("Z", 1) == 0
+    )
 
     log = ServerPassengerArrivedLog(
         timestamp=timestamp,
@@ -304,6 +314,31 @@ async def handle_passenger_arrived(event, player, timestamp):
         urgent_rating=passenger_data.get("Net_TimeLimitPoint"),
         data=passenger_data,
     )
+
+    if is_exploit:
+        log.payment = 0
+        await log.asave()
+        # Claw back the payment the game already deposited
+        if base_payment > 0 and character and http_client_mod:
+            await transfer_money(
+                http_client_mod,
+                int(-base_payment),
+                "Invalid Passenger",
+                str(character.player.unique_id),
+            )
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    "Passenger delivery rejected: invalid origin.",
+                    character_guid=character.guid,
+                    player_id=str(character.player.unique_id),
+                )
+            )
+        logger.warning(
+            "Exploit detected: passenger with zero start location for player %s (payment=%s)",
+            player.unique_id, base_payment,
+        )
+        return 0, 0
 
     if log.passenger_type == ServerPassengerArrivedLog.PassengerType.Taxi:
         if log.comfort:
@@ -1266,7 +1301,10 @@ async def process_event(
             contract_payment += payment
 
         case "ServerPassengerArrived":
-            payment, sub = await handle_passenger_arrived(event, player, timestamp)
+            payment, sub = await handle_passenger_arrived(
+                event, player, timestamp,
+                character=character, http_client_mod=http_client_mod,
+            )
             base_payment += payment
             subsidy += sub
 
