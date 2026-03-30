@@ -353,13 +353,18 @@ class Confiscation(models.Model):
     cargo_key = models.CharField(max_length=100)
     amount = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
+    deliveries = models.ManyToManyField(
+        "Delivery", blank=True, related_name="confiscations",
+    )
 
     class Meta:
         indexes = [models.Index(fields=["character", "created_at"])]
 
     @override
     def __str__(self):
-        return f"{self.officer.name} confiscated {self.cargo_key} (${self.amount:,}) from {self.character.name}"
+        officer_name = self.officer.name if self.officer else "Teleport penalty"
+        char_name = self.character.name if self.character else "Unknown"
+        return f"{officer_name} confiscated {self.cargo_key} (${self.amount:,}) from {char_name}"
 
 
 class FactionChoice(models.TextChoices):

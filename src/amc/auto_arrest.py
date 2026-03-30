@@ -15,7 +15,6 @@ import logging
 from datetime import timedelta
 
 from django.core.cache import cache
-
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 
@@ -38,12 +37,13 @@ PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
 
 
 async def _has_recent_money_deliveries(character) -> bool:
-    """Check if a character delivered Money within the arrest confiscation window."""
+    """Check if a character has un-confiscated Money deliveries within the window."""
     window_start = timezone.now() - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
     return await Delivery.objects.filter(
         character=character,
         cargo_key="Money",
         timestamp__gte=window_start,
+        confiscations__isnull=True,  # not yet confiscated
     ).aexists()
 
 
@@ -145,6 +145,8 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
                 if suspect_speed > SUSPECT_SPEED_LIMIT:
                     continue
 
+
+
             # Must have recent money deliveries
             sus_char = suspect_chars.get(sus_guid)
             if not sus_char:
@@ -199,8 +201,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
                     )
                 )
 
-            # Remove arrested suspects from this tick's candidate pool
-            # so they aren't double-arrested by another nearby cop
+            # Remove arrested suspects from this tick's pool
             for g in arrestable_targets:
                 suspect_guids.discard(g)
 

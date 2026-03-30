@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
@@ -42,6 +43,10 @@ def _make_players_list(player_datas):
 @patch("amc.commands.faction.show_popup", new_callable=AsyncMock)
 class AutoArrestPatrolTests(TestCase):
     """Tests for _patrol_tick auto-arrest behavior."""
+
+    def setUp(self):
+        cache.clear()
+
 
     async def _setup_world(self):
         """Create jail teleport point, officer, and criminal."""
@@ -324,6 +329,42 @@ class AutoArrestPatrolTests(TestCase):
         self.assertTrue(len(officer_calls) >= 1)
         self.assertIn("auto-arrested", officer_calls[0][0][1])
 
+    async def test_cooldown_prevents_rearrest(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """After auto-arrest, suspect is NOT arrested again on the next tick."""
+        officer, criminal = await self._setup_world()
+
+        await Delivery.objects.acreate(
+            character=criminal,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        # First tick: should arrest
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            locations = await _patrol_tick(mock_http, mock_http_mod, {})
+
+        self.assertEqual(mock_teleport.call_count, 1)
+
+        # Second tick: should NOT arrest (cooldown active)
+        mock_teleport.reset_mock()
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            await _patrol_tick(mock_http, mock_http_mod, locations)
+
+        mock_teleport.assert_not_called()
+
 
 class HasRecentMoneyDeliveriesTests(TestCase):
     """Unit tests for _has_recent_money_deliveries helper."""
@@ -372,3 +413,27 @@ class HasRecentMoneyDeliveriesTests(TestCase):
         )
         result = await _has_recent_money_deliveries(character)
         self.assertFalse(result)
+
+    async def test_returns_false_when_delivery_already_confiscated(self):
+        """Deliveries linked to an existing Confiscation are excluded."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        delivery = await Delivery.objects.acreate(
+            character=character,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+        # Link delivery to a confiscation
+        conf = await Confiscation.objects.acreate(
+            character=character,
+            officer=None,
+            cargo_key="Money",
+            amount=80_000,
+        )
+        await conf.deliveries.aset([delivery.id])
+
+        result = await _has_recent_money_deliveries(character)
+        self.assertFalse(result)
+

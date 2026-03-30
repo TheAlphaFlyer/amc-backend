@@ -82,21 +82,33 @@ async def execute_arrest(
     arrested_names = []
     total_confiscated = 0
     for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
-        # Exit vehicle
-        if has_vehicle:
-            try:
-                await force_exit_vehicle(http_client_mod, guid)
-                await asyncio.sleep(1.5)
-            except Exception:
-                pass
+        # Always attempt to exit vehicle — snapshot may be stale
+        try:
+            await force_exit_vehicle(http_client_mod, guid)
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
 
-        # Teleport to jail
-        await teleport_player(
-            http_client_mod,
-            crim_uid,
-            jail_location,
-            no_vehicles=True,
-        )
+        # Teleport to jail — try without vehicle first, fallback to with-vehicle
+        try:
+            await teleport_player(
+                http_client_mod,
+                crim_uid,
+                jail_location,
+                no_vehicles=True,
+            )
+        except Exception:
+            # Player still in vehicle — teleport with vehicle as fallback
+            try:
+                await teleport_player(
+                    http_client_mod,
+                    crim_uid,
+                    jail_location,
+                    no_vehicles=False,
+                )
+            except Exception:
+                continue  # skip confiscation if teleport completely failed
+
 
         # Popup notification
         await show_popup(
@@ -118,6 +130,7 @@ async def execute_arrest(
                     character=suspect_char,
                     cargo_key="Money",
                     timestamp__gte=window_start,
+                    confiscations__isnull=True,  # not yet confiscated
                 )
             ]
 
@@ -128,12 +141,14 @@ async def execute_arrest(
                 confiscated_amount += round(delivery.payment * rate)
 
             if confiscated_amount > 0:
-                await Confiscation.objects.acreate(
+                conf = await Confiscation.objects.acreate(
                     character=suspect_char,
                     officer=officer_character,
                     cargo_key="Money",
                     amount=confiscated_amount,
                 )
+                # Link to the deliveries this confiscation was calculated from
+                await conf.deliveries.aset([d.id for d in recent_deliveries])
 
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
                 new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)

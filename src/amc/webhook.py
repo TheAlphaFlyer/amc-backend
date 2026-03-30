@@ -635,13 +635,14 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
         await cache.aset(cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60)
         return
 
-    # Find recent Money deliveries within the penalty window
+    # Find recent un-confiscated Money deliveries within the penalty window
     window_start = timestamp - timedelta(minutes=TELEPORT_PENALTY_WINDOW)
     recent_deliveries = [
         d async for d in Delivery.objects.filter(
             character=character,
             cargo_key="Money",
             timestamp__gte=window_start,
+            confiscations__isnull=True,  # not yet confiscated
         )
     ]
     if not recent_deliveries:
@@ -673,13 +674,14 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
     await character.asave(update_fields=["criminal_laundered_total"])
 
     # 3. Record as Confiscation with officer=None (self-inflicted)
-    #    This suppresses the "money is now safe" announcement in special_cargo.py
-    await Confiscation.objects.acreate(
+    #    Link to the deliveries this penalty was calculated from
+    conf = await Confiscation.objects.acreate(
         character=character,
         officer=None,
         cargo_key="Money",
         amount=penalty,
     )
+    await conf.deliveries.aset([d.id for d in recent_deliveries])
 
     # 4. Refresh player name tag (criminal level may have dropped)
     from amc.player_tags import refresh_player_name

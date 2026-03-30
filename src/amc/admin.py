@@ -625,6 +625,7 @@ class ConfiscationAdmin(admin.ModelAdmin):
     list_select_related = ["character", "character__player", "officer", "officer__player"]
     search_fields = ["character__name", "officer__name", "character__player__unique_id"]
     readonly_fields = ["character", "officer"]
+    filter_horizontal = ["deliveries"]
     ordering = ["-created_at"]
 
 
