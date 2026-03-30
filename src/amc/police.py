@@ -10,7 +10,7 @@ from amc.player_tags import refresh_player_name
 
 POLICE_LEVEL_STEP = 50_000
 
-# Security bonus: extra subsidy on Money deliveries per active online police officer.
+# Risk premium: extra payout on Money deliveries per active online police officer.
 SECURITY_BONUS_RATE = 0.20  # 20% per officer
 SECURITY_BONUS_MAX = 1.0  # capped at 100%
 

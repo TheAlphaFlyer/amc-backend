@@ -791,13 +791,15 @@ async def handle_cargo_arrived(
         )
         delivery_subsidy = delivery_data["subsidy"] + sc_bonus
 
-        # Security bonus: Money deliveries get extra subsidy based on active police count
+        # Risk premium: Money deliveries get extra payout based on active police count
+        security_bonus = 0
         if cargo_key == "Money":
             from amc.police import get_active_police_count, SECURITY_BONUS_RATE, SECURITY_BONUS_MAX
             police_count = await get_active_police_count()
             bonus_rate = min(police_count * SECURITY_BONUS_RATE, SECURITY_BONUS_MAX)
             security_bonus = int(payment * quantity * bonus_rate)
-            delivery_subsidy += security_bonus
+            if security_bonus > 0 and character:
+                await subsidise_player(security_bonus, character, http_client_mod, message="Risk Premium")
 
         if discord_client:
             asyncio.create_task(
@@ -809,7 +811,7 @@ async def handle_cargo_arrived(
                     delivery_source,
                     delivery_destination,
                     payment * quantity,
-                    delivery_subsidy,
+                    delivery_subsidy + security_bonus,
                     vehicle_key,
                     job=job,
                     delivery_id=delivery_obj.id if delivery_obj else None,
