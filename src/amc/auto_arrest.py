@@ -14,6 +14,8 @@ import logging
 
 from datetime import timedelta
 
+from django.core.cache import cache
+
 from django.contrib.gis.geos import Point
 from django.utils import timezone
 
@@ -113,6 +115,11 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
             ).aexists()
             if not in_zone:
                 continue
+
+        # Teleport cooldown: skip cops who recently teleported
+        tp_cooldown_key = f"police_teleport_cooldown:{cop_guid}"
+        if await cache.aget(tp_cooldown_key):
+            continue
 
         cop_char = cop_chars.get(cop_guid)
         if not cop_char:

@@ -1532,6 +1532,22 @@ class PoliceShiftLog(models.Model):
 
 
 @final
+class ServerTeleportLog(models.Model):
+    timestamp = models.DateTimeField()
+    player = models.ForeignKey(
+        Player, on_delete=models.SET_NULL, null=True, related_name="teleport_logs"
+    )
+    character = models.ForeignKey(
+        Character, on_delete=models.SET_NULL, null=True, related_name="teleport_logs"
+    )
+    hook = models.CharField(max_length=50)
+    data = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "-timestamp"])]
+
+
+@final
 class TeleportPoint(models.Model):
     name = models.CharField(max_length=20)
     character = models.ForeignKey(

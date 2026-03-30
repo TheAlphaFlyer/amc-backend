@@ -36,6 +36,7 @@ from amc.models import (
     ServerSignContractLog,
     ServerPassengerArrivedLog,
     ServerTowRequestArrivedLog,
+    ServerTeleportLog,
     PolicePatrolLog,
     PolicePenaltyLog,
     PoliceShiftLog,
@@ -577,6 +578,7 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
 
 TELEPORT_PENALTY_WINDOW = 10  # minutes — same as ARREST_CONFISCATION_WINDOW
 TELEPORT_PENALTY_ANNOUNCE_DELAY = 10  # seconds — debounce window for announcements
+POLICE_TELEPORT_ARREST_COOLDOWN = 5  # minutes — cops can't arrest after teleporting
 
 
 async def _announce_teleport_penalty_after_delay(
@@ -613,11 +615,24 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
     rate = max(0, 1 - elapsed_minutes / window). The penalty is deducted
     from the player's wallet and criminal_laundered_total is reversed.
     """
+    # Log ALL teleports (including police) for audit
+    hook_name = event.get("hook", "") if isinstance(event, dict) else ""
+    await ServerTeleportLog.objects.acreate(
+        timestamp=timestamp,
+        player=character.player,
+        character=character,
+        hook=hook_name,
+        data=event.get("data"),
+    )
+
     # Skip police officers — they don't deliver Money
     is_police = await PoliceSession.objects.filter(
         character=character, ended_at__isnull=True
     ).aexists()
     if is_police:
+        # Set cooldown to block this officer from arresting
+        cooldown_key = f"police_teleport_cooldown:{character.guid}"
+        await cache.aset(cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60)
         return
 
     # Find recent Money deliveries within the penalty window

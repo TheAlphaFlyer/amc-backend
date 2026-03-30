@@ -196,6 +196,12 @@ async def cmd_arrest(ctx: CommandContext):
         await send_system_message(ctx.http_client_mod, gettext("You must be on police duty to use this command. Use /police to start."), character_guid=ctx.character.guid)
         return
 
+    # 1b. Teleport cooldown: cops cannot arrest within 5 min of teleporting
+    tp_cooldown_key = f"police_teleport_cooldown:{ctx.character.guid}"
+    if cache.get(tp_cooldown_key):
+        await send_system_message(ctx.http_client_mod, gettext("You cannot arrest within 5 minutes of teleporting."), character_guid=ctx.character.guid)
+        return
+
     # 2. Cooldown check
     cooldown_key = f"arrest_cooldown:{ctx.player.unique_id}"
     if cache.get(cooldown_key):
