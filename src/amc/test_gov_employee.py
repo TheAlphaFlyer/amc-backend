@@ -68,7 +68,7 @@ class ActivateDeactivateTests(TestCase):
         self.assertIsNotNone(character.gov_employee_until)
         self.assertTrue(character.is_gov_employee)
         self.assertEqual(character.gov_employee_level, 1)
-        self.assertIn("[GOV1]", character.custom_name)
+        self.assertIn("[G1]", character.custom_name)
         mock_set_name.assert_awaited_once()
 
     @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
@@ -82,7 +82,7 @@ class ActivateDeactivateTests(TestCase):
 
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_level, 4)
-        self.assertIn("[GOV4]", character.custom_name)
+        self.assertIn("[G4]", character.custom_name)
 
     @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_deactivate_gov_role(self, mock_set_name):

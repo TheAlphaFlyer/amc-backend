@@ -60,8 +60,8 @@ def build_display_name(
     if police_level > 0:
         tag += f"P{police_level}"
 
-    # C is suppressed when police is active
-    if criminal_level > 0 and police_level == 0:
+    # C is suppressed when police or gov is active
+    if criminal_level > 0 and police_level == 0 and gov_level == 0:
         tag += f"C{criminal_level}"
 
     if gov_level > 0:
