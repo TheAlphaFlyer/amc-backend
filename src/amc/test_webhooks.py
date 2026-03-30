@@ -3,6 +3,7 @@ import asyncio
 from typing import Any
 from datetime import timedelta
 from unittest.mock import patch, MagicMock, AsyncMock
+from django.core.cache import cache
 from django.test import TestCase
 from django.contrib.gis.geos import Point
 import unittest
@@ -668,6 +669,9 @@ class ProcessEventTests(TestCase):
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
 class ProcessEventsTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     async def test_process_events_integration(
         self, mock_get_treasury, mock_get_rp_mode
     ):
@@ -777,6 +781,9 @@ class ProcessEventsTests(TestCase):
 @patch("amc.webhook.announce", new_callable=AsyncMock)
 @patch("amc.webhook.show_popup", new_callable=AsyncMock)
 class ExtraWebhookTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     async def test_cargo_aggregation_same_event(
         self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
@@ -1437,6 +1444,9 @@ class ExtraWebhookTests(TestCase):
 @patch("amc.webhook.announce", new_callable=AsyncMock)
 @patch("amc.webhook.show_popup", new_callable=AsyncMock)
 class SubsidyIntegrationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     async def test_subsidy_rule_integration(
         self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
@@ -1617,9 +1627,10 @@ class SubsidyIntegrationTests(TestCase):
         # AND Filtering for the Delivery Point itself (Webhook logic) uses buffer(1)
 
         # 1. Test EXACT Location -> Should Match
+        base_ts = int(time.time())
         event_exact = {
             "hook": "ServerCargoArrived",
-            "timestamp": int(time.time()),
+            "timestamp": base_ts,
             "data": {
                 "CharacterGuid": str(character.guid),
                 "Cargos": [
@@ -1655,7 +1666,7 @@ class SubsidyIntegrationTests(TestCase):
 
         event_near = {
             "hook": "ServerCargoArrived",
-            "timestamp": int(time.time()),
+            "timestamp": base_ts + 1,
             "data": {
                 "CharacterGuid": str(character.guid),
                 "Cargos": [
@@ -1677,9 +1688,9 @@ class SubsidyIntegrationTests(TestCase):
             d2.subsidy, 100, "0.9 distance should resolve point and get subsidy"
         )
 
-        # 3. Test Outside Tolerance (1.1) -> Should NOT Match
-        # Point(1.1, 0, 0).buffer(1) -> Circle from 0.1 to 2.1.
-        # Zero point (0,0,0) is NOT covered.
+        # 3. Test Outside Tolerance (2.1) -> Should NOT Match
+        # Point(2.1, 0, 0).buffer(1) -> Circle from 1.1 to 3.1.
+        # Zero point (0,0,0) is clearly NOT covered (distance 2.1 >> radius 1).
         # So 'sender_point' will be None.
         # SubsidyRule loop: if cargo.sender_point is None:
         #   rules = rules.filter(source_areas__isnull=True, source_delivery_points__isnull=True)
@@ -1687,7 +1698,7 @@ class SubsidyIntegrationTests(TestCase):
 
         event_far = {
             "hook": "ServerCargoArrived",
-            "timestamp": int(time.time()),
+            "timestamp": base_ts + 2,
             "data": {
                 "CharacterGuid": str(character.guid),
                 "Cargos": [
@@ -1696,7 +1707,7 @@ class SubsidyIntegrationTests(TestCase):
                         "Net_Payment": 100,
                         "Net_Weight": 10.0,
                         "Net_Damage": 0.0,
-                        "Net_SenderAbsoluteLocation": {"X": 1.1, "Y": 0, "Z": 0},
+                        "Net_SenderAbsoluteLocation": {"X": 2.1, "Y": 0, "Z": 0},
                         "Net_DestinationLocation": {"X": 100, "Y": 100, "Z": 0},
                     }
                 ],
@@ -1708,7 +1719,7 @@ class SubsidyIntegrationTests(TestCase):
         self.assertEqual(
             d3.subsidy,
             0,
-            "1.1 distance should NOT resolve point and thus NOT get subsidy",
+            "2.1 distance should NOT resolve point and thus NOT get subsidy",
         )
 
     async def test_subsidy_zero_treasury(
@@ -2077,6 +2088,9 @@ class OnPlayerProfitTests(TestCase):
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
 class SeqDeduplicationTests(TestCase):
     """Tests for _seq-based idempotency in process_events."""
+
+    def setUp(self):
+        cache.clear()
 
     def _make_cargo_event(self, character_guid, seq=None):
         event = {
