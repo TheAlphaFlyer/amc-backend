@@ -580,6 +580,90 @@ class ProcessEventTests(TestCase):
         mock_show_popup.assert_called_once()
         self.assertIn("not allowed to use modified vehicles", mock_show_popup.call_args[0][1])
 
+    @patch("amc.webhook.SMUGGLING_TIPOFF_ENABLED", True)
+    @patch("amc.webhook._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_load_cargo_money_smuggling_tipoff(
+        self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
+    ):
+        """First Money load triggers a smuggling tip-off announcement."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+        mock_detect.return_value = []
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {"Net_CargoKey": "Money", "Net_Payment": 10_000},
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client = MagicMock()
+        http_client_mod = MagicMock()
+
+        await process_event(
+            event, player, character,
+            http_client=http_client, http_client_mod=http_client_mod,
+        )
+        # Let background task run
+        await asyncio.sleep(0)
+
+        mock_announce_tipoff.assert_called_once_with(http_client, delay=15)
+
+    @patch("amc.webhook.SMUGGLING_TIPOFF_ENABLED", True)
+    @patch("amc.webhook._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch("amc.webhook.detect_custom_parts")
+    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    async def test_load_cargo_money_smuggling_tipoff_throttled(
+        self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
+    ):
+        """Second Money load within 60s cooldown does NOT trigger another tip-off."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_list_vehicles.return_value = {}
+        mock_detect.return_value = []
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {"Net_CargoKey": "Money", "Net_Payment": 10_000},
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client = MagicMock()
+        http_client_mod = MagicMock()
+
+        # First load — triggers tip-off
+        await process_event(
+            event, player, character,
+            http_client=http_client, http_client_mod=http_client_mod,
+        )
+        await asyncio.sleep(0)
+        self.assertEqual(mock_announce_tipoff.call_count, 1)
+
+        mock_announce_tipoff.reset_mock()
+
+        # Second load — should be throttled (no new announcement)
+        await process_event(
+            event, player, character,
+            http_client=http_client, http_client_mod=http_client_mod,
+        )
+        await asyncio.sleep(0)
+
+        mock_announce_tipoff.assert_not_called()
+
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)

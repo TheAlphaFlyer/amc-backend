@@ -2251,21 +2251,28 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()) as mock_prog,
+            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()) as mock_fund_wallet,
             patch("amc.commands.faction.timezone") as mock_tz,
         ):
             mock_tz.now.return_value = fixed_now
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            mock_transfer.assert_called_once_with(
+            self.assertEqual(mock_transfer.call_count, 2)
+            mock_transfer.assert_any_call(
                 self.ctx.http_client_mod, -22500,
                 "Money Confiscated", str(self.criminal_player.unique_id),
+            )
+            mock_transfer.assert_any_call(
+                self.ctx.http_client_mod, 22500,
+                "Confiscation Reward", str(self.player.unique_id),
             )
             mock_treasury.assert_called_once_with(22500, "Police Confiscation")
             mock_prog.assert_called_once_with(
                 self.character, 22500,
                 http_client=self.ctx.http_client, session=self.ctx.http_client_mod,
             )
+            mock_fund_wallet.assert_called_once_with(22500, self.character, "Confiscation Reward")
 
             await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
             self.assertEqual(self.criminal_character.criminal_laundered_total, 27_500)
@@ -2280,6 +2287,10 @@ class ArrestCommandTestCase(TestCase):
             self.assertTrue(
                 any("Confiscated $22,500" in m for m in msgs),
                 f"Expected confiscation alert in msgs: {msgs}",
+            )
+            self.assertTrue(
+                any("confiscation reward" in m for m in msgs),
+                f"Expected reward notification in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_confiscation_5min_half(self):
@@ -2319,13 +2330,14 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
             patch("amc.commands.faction.timezone") as mock_tz,
         ):
             mock_tz.now.return_value = fixed_now
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            mock_transfer.assert_called_once_with(
+            mock_transfer.assert_any_call(
                 self.ctx.http_client_mod, -10000, "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
@@ -2368,13 +2380,14 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
             patch("amc.commands.faction.timezone") as mock_tz,
         ):
             mock_tz.now.return_value = fixed_now
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            mock_transfer.assert_called_once_with(
+            mock_transfer.assert_any_call(
                 self.ctx.http_client_mod, -5000, "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
@@ -2417,6 +2430,7 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
             patch("amc.commands.faction.timezone") as mock_tz,
         ):
             mock_tz.now.return_value = fixed_now
@@ -2474,13 +2488,14 @@ class ArrestCommandTestCase(TestCase):
             patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
             patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
             patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
             patch("amc.commands.faction.timezone") as mock_tz,
         ):
             mock_tz.now.return_value = fixed_now
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
-            mock_transfer.assert_called_once_with(
+            mock_transfer.assert_any_call(
                 self.ctx.http_client_mod, -46000, "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )

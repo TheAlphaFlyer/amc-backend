@@ -13,7 +13,7 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import despawn_player_cargo, get_webhook_events2, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
+from amc.mod_server import despawn_player_cargo, get_webhook_events2, send_system_message, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.subsidies import (
     repay_loan_for_profit,
@@ -26,6 +26,7 @@ from amc_finance.services import (
     get_treasury_fund_balance,
     record_ministry_subsidy_spend,
     record_treasury_confiscation_income,
+    send_fund_to_player_wallet,
 )
 from django.core.cache import cache
 from amc.jobs import on_delivery_job_fulfilled
@@ -430,6 +431,21 @@ async def handle_police_shift(event, player, timestamp, action):
     return 0, 0
 
 
+SMUGGLING_TIPOFF_ENABLED = os.environ.get("SMUGGLING_TIPOFF_ENABLED", "").lower() in ("1", "true", "yes")
+SMUGGLING_TIPOFF_DELAY = 15  # seconds — delay before broadcasting
+SMUGGLING_TIPOFF_COOLDOWN = 60  # seconds — throttle window per player
+
+
+async def _announce_smuggling_tipoff_after_delay(http_client, delay=SMUGGLING_TIPOFF_DELAY):
+    """Wait for the delay, then announce a vague smuggling tip-off."""
+    await asyncio.sleep(delay)
+    await announce(
+        "Intelligence reports suggest a smuggling operation is underway",
+        http_client,
+        color="E67E22",
+    )
+
+
 async def _announce_confiscation_after_delay(character_guid, http_client, delay=30):
     """Wait for the debounce window, then announce the accumulated confiscation total."""
     await asyncio.sleep(delay)
@@ -530,6 +546,21 @@ async def handle_pickup_cargo(event, character, http_client, http_client_mod):
     await record_confiscation_for_level(
         character, payment, http_client=http_client, session=http_client_mod
     )
+
+    # 6. Reward officer with confiscated amount
+    if http_client_mod:
+        await transfer_money(
+            http_client_mod,
+            int(payment),
+            "Confiscation Reward",
+            str(character.player.unique_id),
+        )
+        await send_fund_to_player_wallet(payment, character, "Confiscation Reward")
+        await send_system_message(
+            http_client_mod,
+            f"You earned ${payment:,} confiscation reward.",
+            character_guid=character.guid,
+        )
 
 
 async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
@@ -1236,10 +1267,22 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
         return job
 
 
-async def handle_load_cargo(event, character, player, http_client_mod):
+async def handle_load_cargo(event, character, player, http_client_mod, http_client=None):
     cargo = event["data"].get("Cargo", {})
     if cargo.get("Net_CargoKey") != "Money":
         return
+
+    # --- Throttled smuggling tip-off announcement ---
+    if SMUGGLING_TIPOFF_ENABLED and http_client:
+        tipoff_cache_key = f"smuggling_tipoff:{character.guid}"
+        already_tipped = await cache.aget(tipoff_cache_key)
+        if not already_tipped:
+            await cache.aset(tipoff_cache_key, True, timeout=SMUGGLING_TIPOFF_COOLDOWN)
+            asyncio.create_task(
+                _announce_smuggling_tipoff_after_delay(
+                    http_client, delay=SMUGGLING_TIPOFF_DELAY,
+                )
+            )
 
     try:
         vehicles = await list_player_vehicles(http_client_mod, str(player.unique_id), active=True, complete=True)
@@ -1363,6 +1406,6 @@ async def process_event(
 
         case "ServerLoadCargo":
             if http_client_mod:
-                await handle_load_cargo(event, character, player, http_client_mod)
+                await handle_load_cargo(event, character, player, http_client_mod, http_client=http_client)
 
     return base_payment, subsidy, contract_payment
