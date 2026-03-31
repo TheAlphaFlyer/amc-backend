@@ -15,7 +15,7 @@ from django.utils.translation import gettext as gettext, gettext_lazy
 # 100 game units = 1 metre
 ARREST_RADIUS_ON_FOOT = 5000  # 50m — cop on foot must be within 50m of suspect
 ARREST_RADIUS_IN_VEHICLE = 3375  # 33.75m — cop in vehicle (50% more than original 22.5m)
-SUSPECT_SPEED_LIMIT = 1500  # 15m per poll tick — suspects moving faster are removed
+SUSPECT_SPEED_LIMIT = 556  # ~5.56m/s ≈ 20km/h — suspects moving faster are immune
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 0  # seconds between arrests per cop
 ARREST_CONFISCATION_WINDOW = 10  # minutes — deliveries older than this are safe
@@ -339,20 +339,19 @@ async def cmd_arrest(ctx: CommandContext):
 
             crim_uid, current_criminal_loc, crim_veh = current_locations[guid]
 
-            # Speed check: only applies to suspects in vehicles
-            if crim_veh:
-                prev_loc = prev_suspect_locs[guid]
-                suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
-                if suspect_speed > SUSPECT_SPEED_LIMIT:
-                    name = target_chars[guid].name if guid in target_chars else "Unknown"
-                    await send_system_message(
-                        ctx.http_client_mod,
-                        gettext("{name} is moving too fast. Removed from arrest.").format(name=name),
-                        character_guid=ctx.character.guid,
-                    )
-                    del targets[guid]
-                    prev_suspect_locs.pop(guid, None)
-                    continue
+            # Speed check: suspect must be below ~30 km/h
+            prev_loc = prev_suspect_locs[guid]
+            suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
+            if suspect_speed > SUSPECT_SPEED_LIMIT:
+                name = target_chars[guid].name if guid in target_chars else "Unknown"
+                await send_system_message(
+                    ctx.http_client_mod,
+                    gettext("{name} is moving too fast. Removed from arrest.").format(name=name),
+                    character_guid=ctx.character.guid,
+                )
+                del targets[guid]
+                prev_suspect_locs.pop(guid, None)
+                continue
 
             # Proximity check: cop must stay within radius of suspect
             current_radius = ARREST_RADIUS_IN_VEHICLE if cop_veh else ARREST_RADIUS_ON_FOOT
