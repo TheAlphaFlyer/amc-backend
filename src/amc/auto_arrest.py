@@ -20,8 +20,6 @@ from django.utils import timezone
 
 from amc.commands.faction import (
     ARREST_CONFISCATION_WINDOW,
-    ARREST_RADIUS_IN_VEHICLE,
-    ARREST_RADIUS_ON_FOOT,
     SUSPECT_SPEED_LIMIT,
     _build_player_locations,
     _distance_3d,
@@ -34,6 +32,9 @@ from amc.models import ArrestZone, Character, Delivery, PoliceSession
 logger = logging.getLogger("amc.auto_arrest")
 
 PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
+AUTO_ARREST_STILL_TICKS = 5  # ticks the suspect must be still + in range (5 × 0.5s = 2.5s)
+AUTO_ARREST_RADIUS_ON_FOOT = 1500   # 15m — cop on foot, checked only on first contact
+AUTO_ARREST_RADIUS_IN_VEHICLE = 1000  # 10m — cop in vehicle, checked only on first contact
 
 
 async def _has_recent_money_deliveries(character) -> bool:
@@ -47,7 +48,7 @@ async def _has_recent_money_deliveries(character) -> bool:
     ).aexists()
 
 
-async def _patrol_tick(http_client, http_client_mod, prev_locations):
+async def _patrol_tick(http_client, http_client_mod, prev_locations, still_counters=None):
     """Single patrol tick: poll players, find police, auto-arrest nearby suspects.
 
     Args:
@@ -55,17 +56,21 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
         http_client_mod: Mod server HTTP client for teleport/money/messages.
         prev_locations: dict of guid -> (unique_id, (x,y,z), has_vehicle) from
             the previous tick, used for suspect speed checks.
+        still_counters: dict of (cop_guid, suspect_guid) -> int counting
+            consecutive ticks the suspect has been still & in range of this cop.
 
     Returns:
-        Current locations dict for use as prev_locations in the next tick.
+        (current_locations, still_counters) tuple.
     """
+    if still_counters is None:
+        still_counters = {}
     players = await get_players(http_client)
     if not players:
-        return prev_locations
+        return prev_locations, still_counters
 
     locations = _build_player_locations(players)
     if not locations:
-        return {}
+        return {}, {}
 
     # Identify on-duty police officers
     online_threshold = timezone.now() - timedelta(seconds=60)
@@ -76,11 +81,11 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
         ).select_related("character", "character__player")
     ]
     if not police_sessions:
-        return locations
+        return locations, still_counters
 
     cop_guids = {ps.character.guid for ps in police_sessions if ps.character.guid in locations}
     if not cop_guids:
-        return locations
+        return locations, still_counters
 
     # Build cop character lookup
     cop_chars = {ps.character.guid: ps.character for ps in police_sessions}
@@ -90,7 +95,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
     suspect_guids = all_guids - cop_guids
 
     if not suspect_guids:
-        return locations
+        return locations, still_counters
 
     # Batch-load suspect Characters (need player_id for money transfer)
     suspect_chars = {}
@@ -102,10 +107,13 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
     # Check ArrestZone enforcement
     zones_exist = await ArrestZone.objects.filter(active=True).aexists()
 
+    # Track which (cop, suspect) pairs are still valid this tick
+    active_pairs = set()
+
     # For each cop, find nearby suspects eligible for auto-arrest
     for cop_guid in cop_guids:
         cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
-        arrest_radius = ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else ARREST_RADIUS_ON_FOOT
+        arrest_radius = AUTO_ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else AUTO_ARREST_RADIUS_ON_FOOT
 
         # Zone check — cop must be inside an active ArrestZone
         if zones_exist:
@@ -134,18 +142,24 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
                 continue
 
             sus_uid, sus_loc, sus_has_vehicle = locations[sus_guid]
-            dist = _distance_3d(cop_loc, sus_loc)
-            if dist > arrest_radius:
-                continue
+            pair_key = (cop_guid, sus_guid)
+            already_tracking = pair_key in still_counters
 
-            # Speed check: only for suspects in vehicles
-            if sus_has_vehicle and sus_guid in prev_locations:
-                prev_uid, prev_loc, _ = prev_locations[sus_guid]
-                suspect_speed = _distance_3d(prev_loc, sus_loc)
-                if suspect_speed > SUSPECT_SPEED_LIMIT:
+            # Radius check: only on first contact (not yet tracking)
+            if not already_tracking:
+                dist = _distance_3d(cop_loc, sus_loc)
+                if dist > arrest_radius:
                     continue
 
-
+            # Speed check: normalize to units/second for consistent behavior
+            if sus_guid in prev_locations:
+                prev_uid, prev_loc, _ = prev_locations[sus_guid]
+                distance_moved = _distance_3d(prev_loc, sus_loc)
+                speed_per_second = distance_moved / PATROL_POLL_INTERVAL
+                if speed_per_second > SUSPECT_SPEED_LIMIT:
+                    # Moving too fast — reset counter
+                    still_counters.pop(pair_key, None)
+                    continue
 
             # Must have recent money deliveries
             sus_char = suspect_chars.get(sus_guid)
@@ -156,8 +170,13 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
             if not has_money:
                 continue
 
-            arrestable_targets[sus_guid] = (sus_uid, sus_loc, sus_has_vehicle)
-            arrestable_chars[sus_guid] = sus_char
+            # Increment stillness counter for this cop-suspect pair
+            active_pairs.add(pair_key)
+            still_counters[pair_key] = still_counters.get(pair_key, 0) + 1
+
+            if still_counters[pair_key] >= AUTO_ARREST_STILL_TICKS:
+                arrestable_targets[sus_guid] = (sus_uid, sus_loc, sus_has_vehicle)
+                arrestable_chars[sus_guid] = sus_char
 
         if not arrestable_targets:
             continue
@@ -173,7 +192,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
             )
         except ValueError as e:
             logger.warning(f"Auto-arrest skipped: {e}")
-            return locations
+            return locations, still_counters
 
         if arrested_names:
             names_arrested = ", ".join(arrested_names)
@@ -201,11 +220,20 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations):
                     )
                 )
 
-            # Remove arrested suspects from this tick's pool
+            # Remove arrested suspects from this tick's pool and reset counters
             for g in arrestable_targets:
                 suspect_guids.discard(g)
+                # Clear all still_counters involving this suspect
+                for key in list(still_counters):
+                    if key[1] == g:
+                        del still_counters[key]
 
-    return locations
+    # Prune stale counters for pairs no longer active
+    for key in list(still_counters):
+        if key not in active_pairs:
+            del still_counters[key]
+
+    return locations, still_counters
 
 
 async def run_patrol_loop(http_client, http_client_mod):
@@ -216,11 +244,12 @@ async def run_patrol_loop(http_client, http_client_mod):
     """
     logger.info("Auto-arrest patrol loop started")
     prev_locations = {}
+    still_counters = {}
 
     while True:
         try:
-            prev_locations = await _patrol_tick(
-                http_client, http_client_mod, prev_locations
+            prev_locations, still_counters = await _patrol_tick(
+                http_client, http_client_mod, prev_locations, still_counters
             )
         except asyncio.CancelledError:
             logger.info("Auto-arrest patrol loop shutting down")

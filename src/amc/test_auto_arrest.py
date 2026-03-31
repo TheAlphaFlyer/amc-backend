@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
-from amc.auto_arrest import _has_recent_money_deliveries, _patrol_tick
+from amc.auto_arrest import AUTO_ARREST_STILL_TICKS, _has_recent_money_deliveries, _patrol_tick
 from amc.factories import CharacterFactory, PlayerFactory
 from amc.models import Confiscation, Delivery, PoliceSession, TeleportPoint
 
@@ -75,7 +75,7 @@ class AutoArrestPatrolTests(TestCase):
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Patrol tick arrests a suspect near police who has recent Money deliveries."""
+        """Patrol tick arrests a suspect near police after enough still ticks."""
         officer, criminal = await self._setup_world()
 
         # Criminal has a recent Money delivery
@@ -96,8 +96,14 @@ class AutoArrestPatrolTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
+        # Must accumulate enough still ticks before arrest triggers
+        prev_locations = {}
+        still_counters = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev_locations, still_counters = await _patrol_tick(
+                    mock_http, mock_http_mod, prev_locations, still_counters
+                )
 
         # Criminal should have been teleported to jail
         mock_teleport.assert_called_once()
@@ -126,7 +132,10 @@ class AutoArrestPatrolTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            prev = {}
+            sc = {}
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
         self.assertEqual(await Confiscation.objects.acount(), 0)
@@ -146,7 +155,7 @@ class AutoArrestPatrolTests(TestCase):
             timestamp=timezone.now() - timedelta(minutes=2),
         )
 
-        # Criminal is 100m away (10000 game units > 5000 arrest radius)
+        # Criminal is 100m away (10000 game units > 1500 auto-arrest radius on foot)
         players = _make_players_list([
             _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
             _make_player_data(criminal.player.unique_id, criminal.guid, 11000, 1000, 0),
@@ -156,7 +165,10 @@ class AutoArrestPatrolTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            prev = {}
+            sc = {}
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
 
@@ -192,7 +204,10 @@ class AutoArrestPatrolTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            prev = {}
+            sc = {}
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
 
@@ -200,7 +215,7 @@ class AutoArrestPatrolTests(TestCase):
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Suspects moving too fast in vehicles are NOT auto-arrested."""
+        """Suspects moving too fast are NOT auto-arrested (speed > 30 km/h)."""
         officer, criminal = await self._setup_world()
 
         await Delivery.objects.acreate(
@@ -211,24 +226,34 @@ class AutoArrestPatrolTests(TestCase):
             timestamp=timezone.now() - timedelta(minutes=2),
         )
 
-        # Previous position (from prior tick)
         from amc.commands.faction import _build_player_locations
+
+        # Simulate continuous fast movement: 600 units per tick at 0.5s = 1200 u/s > 556 u/s limit
+        # Build prev_locations for the first tick
         prev_criminal_data = _make_player_data(
-            criminal.player.unique_id, criminal.guid, 1000, 1000, 0, vehicle="truck"
+            criminal.player.unique_id, criminal.guid, 1500, 1000, 0, vehicle="truck"
         )
         prev_locations = _build_player_locations([(prev_criminal_data["unique_id"], prev_criminal_data)])
 
-        # Current position: criminal moved 2000 units (> 1500 speed limit) in one tick
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 3000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 3000, 1000, 0, vehicle="truck"),
-        ])
+        # Each call to get_players returns suspect shifted 600 units further
+        tick_counter = [0]
+        def make_players_for_tick(*args, **kwargs):
+            tick_counter[0] += 1
+            x = 1500 + 600 * tick_counter[0]
+            return _make_players_list([
+                _make_player_data(officer.player.unique_id, officer.guid, x, 1000, 0),
+                _make_player_data(criminal.player.unique_id, criminal.guid, x, 1000, 0, vehicle="truck"),
+            ])
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, prev_locations)
+        sc = {}
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_players_for_tick):
+            for _ in range(AUTO_ARREST_STILL_TICKS + 2):
+                prev_locations, sc = await _patrol_tick(
+                    mock_http, mock_http_mod, prev_locations, sc
+                )
 
         mock_teleport.assert_not_called()
 
@@ -257,7 +282,10 @@ class AutoArrestPatrolTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            prev = {}
+            sc = {}
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
 
@@ -265,7 +293,7 @@ class AutoArrestPatrolTests(TestCase):
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Server announcement fires on auto-arrest."""
+        """Server announcement fires on auto-arrest after enough still ticks."""
         officer, criminal = await self._setup_world()
 
         await Delivery.objects.acreate(
@@ -284,8 +312,11 @@ class AutoArrestPatrolTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
+        prev = {}
+        sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # announce() is called via asyncio.create_task, check it was called
         mock_announce.assert_called_once()
@@ -316,8 +347,11 @@ class AutoArrestPatrolTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
+        prev = {}
+        sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, {})
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # System message to officer about auto-arrest
         mock_sys_msg.assert_called()
@@ -333,7 +367,7 @@ class AutoArrestPatrolTests(TestCase):
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """After auto-arrest, suspect is NOT arrested again on the next tick."""
+        """After auto-arrest, suspect is NOT arrested again on subsequent ticks."""
         officer, criminal = await self._setup_world()
 
         await Delivery.objects.acreate(
@@ -352,18 +386,95 @@ class AutoArrestPatrolTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        # First tick: should arrest
+        # Accumulate still ticks until arrest fires
+        prev = {}
+        sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            locations = await _patrol_tick(mock_http, mock_http_mod, {})
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         self.assertEqual(mock_teleport.call_count, 1)
 
-        # Second tick: should NOT arrest (cooldown active)
+        # Additional ticks: should NOT arrest again (delivery already confiscated)
         mock_teleport.reset_mock()
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            await _patrol_tick(mock_http, mock_http_mod, locations)
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
+
+    async def test_single_tick_does_not_arrest(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """A single tick is NOT enough to trigger auto-arrest."""
+        officer, criminal = await self._setup_world()
+
+        await Delivery.objects.acreate(
+            character=criminal,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            await _patrol_tick(mock_http, mock_http_mod, {})
+
+        # Should NOT have arrested on a single tick
+        mock_teleport.assert_not_called()
+
+    async def test_arrest_still_works_after_drifting_beyond_radius(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """Suspect starting within radius but drifting beyond it slowly is still arrested.
+
+        Radius is only checked on first contact. Subsequent ticks only enforce speed.
+        """
+        officer, criminal = await self._setup_world()
+
+        await Delivery.objects.acreate(
+            character=criminal,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+
+
+        # Tick 1: suspect starts within radius (500 units apart, well within 1500)
+        # Ticks 2-5: suspect drifts slowly beyond radius (200 units per tick = 400 u/s < 556 limit)
+        tick_counter = [0]
+        def make_drifting_players(*args, **kwargs):
+            tick_counter[0] += 1
+            # Suspect starts at 500 units from officer, drifts 200u per tick
+            sus_x = 1000 + 500 + 200 * (tick_counter[0] - 1)
+            return _make_players_list([
+                _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
+                _make_player_data(criminal.player.unique_id, criminal.guid, sus_x, 1000, 0),
+            ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        prev = {}
+        sc = {}
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_drifting_players):
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
+
+        # By tick 5, suspect is at 1500+800=2300 units away — beyond the 1500 radius
+        # But arrest should still fire because radius was only checked on tick 1
+        mock_teleport.assert_called_once()
 
 
 class HasRecentMoneyDeliveriesTests(TestCase):
