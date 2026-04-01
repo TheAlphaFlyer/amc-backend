@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import datetime
 from ninja import Router
 from django.http import StreamingHttpResponse
@@ -9,9 +10,13 @@ from django.conf import settings
 import redis.asyncio as aioredis
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 # Redis channel name for bot events
 BOT_EVENTS_CHANNEL = "bot_events"
+
+# Shared Redis client for emit_bot_event (lazy-initialized)
+_redis_client: aioredis.Redis | None = None
 
 
 def _get_redis_url() -> str:
@@ -22,13 +27,21 @@ def _get_redis_url() -> str:
     return f"redis://{host}:{port}"
 
 
+async def _get_redis_client() -> aioredis.Redis:
+    """Get or create the shared Redis client."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(_get_redis_url())
+    return _redis_client
+
+
 async def emit_bot_event(event: dict):
     """Called from tasks.py to emit events to the bot via Redis pub/sub."""
-    redis_client = aioredis.from_url(_get_redis_url())
     try:
+        redis_client = await _get_redis_client()
         await redis_client.publish(BOT_EVENTS_CHANNEL, json.dumps(event))
-    finally:
-        await redis_client.aclose()
+    except Exception:
+        logger.warning("Failed to emit bot event", exc_info=True)
 
 
 @router.get("/")

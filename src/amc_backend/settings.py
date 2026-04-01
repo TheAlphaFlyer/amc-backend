@@ -48,6 +48,11 @@ DISCORD_ERRORS_WEBHOOK = os.environ.get("DISCORD_ERRORS_WEBHOOK")
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "require_debug_false": {
+            "()": "django.utils.log.RequireDebugFalse",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
@@ -55,6 +60,7 @@ LOGGING = {
         "discord": {
             "class": "amc_backend.discord_error_handler.DiscordExceptionHandler",
             "level": "ERROR",
+            "filters": ["require_debug_false"],
         },
     },
     "root": {
@@ -62,15 +68,29 @@ LOGGING = {
         "level": "WARNING",
     },
     "loggers": {
-        "django.request": {
-            "handlers": ["discord"],
+        "django": {
+            "handlers": ["console"]
+            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
-            "propagate": True,
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console"]
+            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "level": "ERROR",
+            "propagate": False,
         },
         "django.security": {
-            "handlers": ["discord"],
+            "handlers": ["console"]
+            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
-            "propagate": True,
+            "propagate": False,
+        },
+        "amc": {
+            "handlers": ["console"]
+            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "level": "ERROR",
+            "propagate": False,
         },
         "amc.sse": {
             "handlers": ["console"],

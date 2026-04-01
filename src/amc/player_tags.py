@@ -151,4 +151,4 @@ async def refresh_player_name(
         try:
             await set_character_name(session, character.guid, new_name)
         except Exception as e:
-            logger.exception(f"Failed to set character name for {character.name}: {e}")
+            logger.warning(f"Failed to set character name for {character.name}: {e}")

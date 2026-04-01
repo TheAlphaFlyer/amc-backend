@@ -32,7 +32,8 @@ from amc.models import ArrestZone, Character, Delivery, PoliceSession
 logger = logging.getLogger("amc.auto_arrest")
 
 PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
-AUTO_ARREST_STILL_TICKS = 5  # ticks the suspect must be still + in range (5 × 0.5s = 2.5s)
+AUTO_ARREST_STILL_TICKS = 10  # ticks the suspect must be still + in range (10 × 0.5s = 5s)
+AUTO_ARREST_WARNING_TICK = 4  # warn suspect at this tick (4 × 0.5s = 2s into tracking)
 AUTO_ARREST_RADIUS_ON_FOOT = 1500   # 15m — cop on foot, checked only on first contact
 AUTO_ARREST_RADIUS_IN_VEHICLE = 1000  # 10m — cop in vehicle, checked only on first contact
 
@@ -172,7 +173,18 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
 
             # Increment stillness counter for this cop-suspect pair
             active_pairs.add(pair_key)
-            still_counters[pair_key] = still_counters.get(pair_key, 0) + 1
+            prev_count = still_counters.get(pair_key, 0)
+            still_counters[pair_key] = prev_count + 1
+
+            # Warn suspect when tracking reaches the warning threshold
+            if prev_count < AUTO_ARREST_WARNING_TICK <= still_counters[pair_key]:
+                asyncio.create_task(
+                    send_system_message(
+                        http_client_mod,
+                        "⚠️ A police officer is attempting to arrest you! Flee now!",
+                        character_guid=sus_guid,
+                    )
+                )
 
             if still_counters[pair_key] >= AUTO_ARREST_STILL_TICKS:
                 arrestable_targets[sus_guid] = (sus_uid, sus_loc, sus_has_vehicle)

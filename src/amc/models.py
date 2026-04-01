@@ -19,6 +19,7 @@ from django.db.models import (
 )
 from django.db.models.functions import RowNumber, Lead, Lag
 from django.db.models.lookups import GreaterThan, GreaterThanOrEqual
+from django.db import IntegrityError
 from decimal import Decimal
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.postgres.fields import ArrayField
@@ -189,9 +190,15 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
             # Now, use aupdate_or_create with the GUID as the definitive lookup key.
             # This will find the character (either pre-existing or the one just updated)
             # and update its name if it has changed, or create a new character if none exists.
-            character, character_created = await self.get_queryset().aupdate_or_create(
-                guid=character_guid, player=player, defaults={"name": player_name}
-            )
+            # Handle race condition: concurrent log lines for the same player may both
+            # attempt to create the character simultaneously.
+            try:
+                character, character_created = await self.get_queryset().aupdate_or_create(
+                    guid=character_guid, player=player, defaults={"name": player_name}
+                )
+            except IntegrityError:
+                character = await self.get_queryset().aget(guid=character_guid)
+                character_created = False
         else:
             # No GUID provided. We look up by name.
             # Use filter instead of aget_or_create to handle potential duplicates.

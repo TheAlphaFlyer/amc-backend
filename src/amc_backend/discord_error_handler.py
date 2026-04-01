@@ -19,7 +19,7 @@ class DiscordExceptionHandler(logging.Handler):
             getattr(settings, "ERROR_REPORT_DIR", "/var/lib/amc/error-reports")
         )
         self.admin_domain = getattr(
-            settings, "SITE_DOMAIN", "https://www.aseanmotorclub.com"
+            settings, "ERROR_REPORT_DOMAIN", "https://server.aseanmotorclub.com"
         )
         logging.Handler.__init__(self)
 
