@@ -11,8 +11,8 @@ from amc.player_tags import refresh_player_name
 POLICE_LEVEL_STEP = 10_000
 
 # Risk premium: extra payout on Money deliveries per active online police officer.
-SECURITY_BONUS_RATE = 0.20  # 20% per officer
-SECURITY_BONUS_MAX = 1.0  # capped at 100%
+SECURITY_BONUS_RATE = 0.50  # 50% per officer
+SECURITY_BONUS_MAX = 2.5  # capped at 250% (max 5 police)
 
 
 async def get_active_police_count() -> int:
