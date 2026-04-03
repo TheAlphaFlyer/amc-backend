@@ -38,8 +38,9 @@ async def _get_redis_client() -> aioredis.Redis:
 async def emit_bot_event(event: dict):
     """Called from tasks.py to emit events to the bot via Redis pub/sub."""
     try:
-        redis_client = await _get_redis_client()
+        redis_client = aioredis.from_url(_get_redis_url())
         await redis_client.publish(BOT_EVENTS_CHANNEL, json.dumps(event))
+        await redis_client.aclose()
     except Exception:
         logger.warning("Failed to emit bot event", exc_info=True)
 

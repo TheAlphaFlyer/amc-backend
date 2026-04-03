@@ -395,12 +395,12 @@ class CalculateLoanRepaymentTest(TestCase):
 class RepayLoanNPLExitTest(TestCase):
     """Tests for NPL exit announcement in repay_loan_for_profit."""
 
-    @patch("amc.subsidies.announce", new_callable=AsyncMock)
-    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
-    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
+    @patch("amc_finance.loans.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_npl_exit_triggers_announcement(
         self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
         mock_repay, mock_announce,
@@ -430,12 +430,12 @@ class RepayLoanNPLExitTest(TestCase):
         self.assertIn("Non-Performing Loan", call_msg)
         self.assertEqual(mock_announce.call_args[1]["color"], "00FF00")
 
-    @patch("amc.subsidies.announce", new_callable=AsyncMock)
-    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
-    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
+    @patch("amc_finance.loans.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_no_announcement_when_still_npl(
         self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
         mock_repay, mock_announce,
@@ -459,12 +459,12 @@ class RepayLoanNPLExitTest(TestCase):
         await asyncio.sleep(0.1)
         mock_announce.assert_not_called()
 
-    @patch("amc.subsidies.announce", new_callable=AsyncMock)
-    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_character_max_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
-    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
+    @patch("amc_finance.loans.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_character_max_loan", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_no_announcement_when_not_npl_before(
         self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
         mock_repay, mock_announce,
@@ -490,11 +490,11 @@ class RepayLoanNPLExitTest(TestCase):
         # is_character_npl should only be called once (before check only)
         self.assertEqual(mock_is_npl.call_count, 1)
 
-    @patch("amc.subsidies.announce", new_callable=AsyncMock)
-    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
-    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
+    @patch("amc_finance.loans.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_repayment_override_bypasses_calculation(
         self, mock_is_npl, mock_balance, mock_transfer,
         mock_repay, mock_announce,
@@ -521,11 +521,11 @@ class RepayLoanNPLExitTest(TestCase):
             session, -5_000, "ASEAN Loan Repayment", "101",
         )
 
-    @patch("amc.subsidies.announce", new_callable=AsyncMock)
-    @patch("amc.subsidies.register_player_repay_loan", new_callable=AsyncMock)
-    @patch("amc.subsidies.transfer_money", new_callable=AsyncMock)
-    @patch("amc.subsidies.get_player_loan_balance", new_callable=AsyncMock)
-    @patch("amc.subsidies.is_character_npl", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
+    @patch("amc_finance.loans.register_player_repay_loan", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
+    @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_game_session_used_for_announce(
         self, mock_is_npl, mock_balance, mock_transfer,
         mock_repay, mock_announce,

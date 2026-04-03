@@ -9,6 +9,10 @@ from amc.api.bot_events import emit_bot_event, BOT_EVENTS_CHANNEL
 class BotEventsRedisTest(TestCase):
     """Tests for the bot_events Redis pub/sub functionality."""
 
+    def setUp(self):
+        import amc.api.bot_events
+        amc.api.bot_events._redis_client = None
+
     @patch("amc.api.bot_events.aioredis")
     async def test_emit_bot_event_publishes_to_redis(self, mock_aioredis):
         """Test that emit_bot_event correctly publishes events to Redis."""

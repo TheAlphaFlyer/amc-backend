@@ -302,7 +302,7 @@ class AutoArrestPatrolTests(TestCase):
         mock_announce.assert_called_once()
         call_args = mock_announce.call_args[0]
         self.assertIn(officer.name, call_args[0])
-        self.assertIn("confiscated", call_args[0])
+        # No confiscation (no Money deliveries) → no "confiscated" in message
 
     async def test_system_message_to_officer(
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,

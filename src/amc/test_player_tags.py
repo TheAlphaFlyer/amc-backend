@@ -201,7 +201,7 @@ async def test_refresh_player_name_preserves_mod_state_legacy(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[P1] TestPlayer"
+    assert character.custom_name == "[M] TestPlayer"
 
 
 @pytest.mark.asyncio

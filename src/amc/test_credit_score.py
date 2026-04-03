@@ -150,7 +150,7 @@ class EvaluateCreditScoresTest(TestCase):
     def _mock_max_loan(self, max_loan=1_000_000):
         """Patch get_character_max_loan to return a controlled value."""
         return patch(
-            "amc_finance.services.get_character_max_loan",
+            "amc_finance.loans.get_character_max_loan",
             new_callable=AsyncMock,
             return_value=(max_loan, None),
         )

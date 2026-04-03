@@ -74,7 +74,7 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         mock_transfer.assert_called_once()
         assert mock_transfer.call_args[0][1] > 0  # positive amount
 
-    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
@@ -103,7 +103,7 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         self.assertEqual(call_kwargs[1]["repayment_override"], expected)
         self.assertIsNotNone(call_kwargs[1]["game_session"])
 
-    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
@@ -130,7 +130,7 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         call_kwargs = mock_repay.call_args
         self.assertEqual(call_kwargs[1]["repayment_override"], small_loan)
 
-    @patch("amc.subsidies.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)

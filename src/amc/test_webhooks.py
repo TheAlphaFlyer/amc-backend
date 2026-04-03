@@ -2264,8 +2264,6 @@ class SeqDeduplicationTests(TestCase):
         cache.delete("webhook:last_epoch")
 
 
-@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
-@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
 @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
 class SecurityBonusTests(TestCase):
     """Test Risk Premium on Money deliveries based on active online police."""
@@ -2292,11 +2290,9 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_no_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_get_treasury, mock_get_rp_mode
+        self, mock_list_vehicles, mock_subsidise,
     ):
         """0 police on duty → 0% risk premium."""
-        mock_get_rp_mode.return_value = False
-        mock_get_treasury.return_value = 100_000
         mock_list_vehicles.return_value = {}
 
         player = await sync_to_async(PlayerFactory)()
@@ -2322,11 +2318,9 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_one_police_20pct_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_get_treasury, mock_get_rp_mode
+        self, mock_list_vehicles, mock_subsidise,
     ):
-        """1 police on duty and online → 20% risk premium."""
-        mock_get_rp_mode.return_value = False
-        mock_get_treasury.return_value = 100_000
+        """1 police on duty and online → 50% risk premium."""
         mock_list_vehicles.return_value = {}
 
         from amc.models import PoliceSession
@@ -2357,18 +2351,16 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(payment, 10_000)
         # Risk premium paid directly, not in returned subsidy
         self.assertEqual(subsidy, 0)
-        # 1 police * 20% * 10,000 = 2,000 risk premium
+        # 1 police * 50% * 10,000 = 5,000 risk premium
         mock_subsidise.assert_called_once_with(
-            2_000, character, http_client_mod, message="Risk Premium"
+            5_000, character, http_client_mod, message="Risk Premium"
         )
 
     @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_offline_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_get_treasury, mock_get_rp_mode
+        self, mock_list_vehicles, mock_subsidise,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
-        mock_get_rp_mode.return_value = False
-        mock_get_treasury.return_value = 100_000
         mock_list_vehicles.return_value = {}
 
         from amc.models import PoliceSession
@@ -2403,11 +2395,9 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_two_police_40pct_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_get_treasury, mock_get_rp_mode
+        self, mock_list_vehicles, mock_subsidise,
     ):
-        """2 police on duty and online → 40% risk premium."""
-        mock_get_rp_mode.return_value = False
-        mock_get_treasury.return_value = 100_000
+        """2 police on duty and online → 100% risk premium."""
         mock_list_vehicles.return_value = {}
 
         from amc.models import PoliceSession
@@ -2437,18 +2427,16 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(payment, 10_000)
         # Risk premium paid directly, not in returned subsidy
         self.assertEqual(subsidy, 0)
-        # 2 police * 20% * 10,000 = 4,000 risk premium
+        # 2 police * 50% * 10,000 = 10,000 risk premium
         mock_subsidise.assert_called_once_with(
-            4_000, character, http_client_mod, message="Risk Premium"
+            10_000, character, http_client_mod, message="Risk Premium"
         )
 
     @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_bonus_capped_at_100pct(
-        self, mock_list_vehicles, mock_subsidise, mock_get_treasury, mock_get_rp_mode
+        self, mock_list_vehicles, mock_subsidise,
     ):
-        """6 police → would be 120%, but capped at 100%."""
-        mock_get_rp_mode.return_value = False
-        mock_get_treasury.return_value = 100_000
+        """6 police → would be 300%, but capped at 250%."""
         mock_list_vehicles.return_value = {}
 
         from amc.models import PoliceSession
@@ -2478,8 +2466,8 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(payment, 10_000)
         # Risk premium paid directly, not in returned subsidy
         self.assertEqual(subsidy, 0)
-        # Capped at 100%: 10,000 * 1.0 = 10,000 risk premium
+        # Capped at 250%: 10,000 * 2.5 = 25,000 risk premium
         mock_subsidise.assert_called_once_with(
-            10_000, character, http_client_mod, message="Risk Premium"
+            25_000, character, http_client_mod, message="Risk Premium"
         )
 

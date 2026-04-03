@@ -139,16 +139,17 @@ async def execute_arrest(
             for delivery in recent_deliveries:
                 confiscated_amount += round(delivery.payment * rate)
 
-            if confiscated_amount > 0:
-                conf = await Confiscation.objects.acreate(
-                    character=suspect_char,
-                    officer=officer_character,
-                    cargo_key="Money",
-                    amount=confiscated_amount,
-                )
-                # Link to the deliveries this confiscation was calculated from
+            # Always create a Confiscation record for the arrest
+            conf = await Confiscation.objects.acreate(
+                character=suspect_char,
+                officer=officer_character,
+                cargo_key="Money",
+                amount=confiscated_amount,
+            )
+            if recent_deliveries:
                 await conf.deliveries.aset([d.id for d in recent_deliveries])
 
+            if confiscated_amount > 0:
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
                 new_criminal_total = max(0, suspect_char.criminal_laundered_total - confiscated_amount)
                 suspect_char.criminal_laundered_total = new_criminal_total

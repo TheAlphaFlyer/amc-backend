@@ -76,7 +76,10 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
         guid = pdata.get("character_guid")
         if guid:
             vehicle = pdata.get("vehicle")
-            vehicle_names[guid] = vehicle.get("name") if vehicle else None
+            if isinstance(vehicle, dict):
+                vehicle_names[guid] = vehicle.get("name")
+            else:
+                vehicle_names[guid] = vehicle if vehicle else None
 
     # Identify on-duty police officers
     online_threshold = timezone.now() - timedelta(seconds=60)

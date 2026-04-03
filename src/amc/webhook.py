@@ -729,10 +729,11 @@ async def handle_cargo_arrived(
     for cargo in event["data"]["Cargos"]:
         if cargo["Net_Payment"] < 0:
             raise ValueError(f"Negative payment for cargo: {cargo}")
-        if cargo.get("Net_DeliveryId", 0) == 0:
-            # Zero-delivery cargo: game deposited it but we don't track it.
+        # Net_DeliveryId == 0: game deposited it but it's not a real delivery.
+        # Still process normally (logs, deliveries, jobs), but claw back the
+        # wallet deposit so it doesn't count as income.
+        if "Net_DeliveryId" in cargo and cargo["Net_DeliveryId"] == 0:
             clawback += cargo["Net_Payment"]
-            continue
         valid_cargos.append(cargo)
 
     logs = await asyncio.gather(
@@ -1198,7 +1199,10 @@ async def process_events(
                 )
                 raise e
 
-        # Claw back money deposited by the game for zero-delivery cargos
+        # Claw back money deposited by the game for zero-delivery cargos.
+        # The wallet transfer removes the money, and we subtract it from
+        # total_base_payment so profit splitting / loan repayment / savings
+        # only apply to the real (non-zero-delivery) portion.
         if total_clawback > 0 and http_client_mod:
             await transfer_money(
                 http_client_mod,
@@ -1206,6 +1210,7 @@ async def process_events(
                 "Non-Delivery Cargo",
                 str(character.player.unique_id),
             )
+            total_base_payment -= total_clawback
 
         # Party bonus + payment splitting
         party_result = await split_party_payment(
