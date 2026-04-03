@@ -82,6 +82,38 @@ def test_build_display_name_police_level_10():
     assert build_display_name("PlayerOne", police_level=10) == "[P10] PlayerOne"
 
 
+def test_build_display_name_wanted_only():
+    assert build_display_name("PlayerOne", wanted_minutes=5) == "[W5] PlayerOne"
+
+def test_build_display_name_wanted_multi_digit():
+    assert build_display_name("PlayerOne", wanted_minutes=12) == "[W12] PlayerOne"
+
+def test_build_display_name_wanted_and_crim():
+    assert build_display_name("PlayerOne", criminal_level=3, wanted_minutes=4) == "[C3W4] PlayerOne"
+
+def test_build_display_name_wanted_and_mods():
+    assert build_display_name("PlayerOne", has_custom_parts=True, wanted_minutes=2) == "[MW2] PlayerOne"
+
+def test_build_display_name_wanted_with_police():
+    """Wanted tag shows even when police is active."""
+    assert build_display_name("PlayerOne", police_level=1, wanted_minutes=5) == "[P1W5] PlayerOne"
+
+def test_build_display_name_wanted_with_gov():
+    """Wanted tag shows even when gov is active."""
+    assert build_display_name("PlayerOne", gov_level=3, wanted_minutes=5) == "[W5G3] PlayerOne"
+
+def test_build_display_name_wanted_with_police_and_gov():
+    """Wanted tag shows even when both police and gov are active."""
+    assert build_display_name("PlayerOne", police_level=1, gov_level=3, wanted_minutes=5) == "[P1W5G3] PlayerOne"
+
+def test_build_display_name_wanted_with_crim_police_gov():
+    """Wanted shows alongside police+gov; crim suppressed."""
+    assert build_display_name("PlayerOne", criminal_level=3, police_level=1, gov_level=3, wanted_minutes=5) == "[P1W5G3] PlayerOne"
+
+def test_build_display_name_wanted_with_crim_mods():
+    assert build_display_name("PlayerOne", criminal_level=1, has_custom_parts=True, wanted_minutes=3) == "[MC1W3] PlayerOne"
+
+
 # --- strip_all_tags ---
 
 def test_strip_new_format():
@@ -100,6 +132,11 @@ def test_strip_new_format():
     assert strip_all_tags("[C12] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MC2] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MC1G3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[W5] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[W12] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[C3W5] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[P1W5G3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[MC1W3] PlayerOne") == "PlayerOne"
 
 def test_strip_legacy_format():
     assert strip_all_tags("[MODS] PlayerOne") == "PlayerOne"
@@ -164,50 +201,105 @@ async def test_refresh_player_name_preserves_mod_state_legacy(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    # Should auto-heal to new format
-    assert character.custom_name == "[M] TestPlayer"
+    assert character.custom_name == "[P1] TestPlayer"
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_preserves_mod_state_new(mock_set_name):
-    """Preserves mod state from new [M] tag."""
+async def test_refresh_player_name_wanted(mock_set_name):
+    """Wanted record → [W5] tag (300s rounds up to 5 min)."""
     from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import Wanted
     from asgiref.sync import sync_to_async
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
         player=player,
         name="TestPlayer",
-        custom_name="[M] TestPlayer",
-        guid="test-guid-2b",
+        guid="test-guid-wanted-1",
     )
+
+    await Wanted.objects.acreate(character=character, protection_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[M] TestPlayer"
+    assert character.custom_name == "[W5] TestPlayer"
+    mock_set_name.assert_awaited_once_with(session, "test-guid-wanted-1", "[W5] TestPlayer")
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_removes_mod_state(mock_set_name):
+async def test_refresh_player_name_wanted_rounds_up(mock_set_name):
+    """241s remaining → ceil(241/60) = 5 → [W5]."""
     from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import Wanted
     from asgiref.sync import sync_to_async
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
         player=player,
         name="TestPlayer",
-        custom_name="[M] TestPlayer",
-        guid="test-guid-3",
+        guid="test-guid-wanted-2",
     )
 
+    await Wanted.objects.acreate(character=character, protection_remaining=241)
+
     session = MagicMock()
-    await refresh_player_name(character, session, has_custom_parts=False)
+    await refresh_player_name(character, session)
+
+    await character.arefresh_from_db()
+    assert character.custom_name == "[W5] TestPlayer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
+async def test_refresh_player_name_wanted_61s(mock_set_name):
+    """61s remaining → ceil(61/60) = 2 → [W2]."""
+    from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import Wanted
+    from asgiref.sync import sync_to_async
+
+    player = await sync_to_async(PlayerFactory)()
+    character = await sync_to_async(CharacterFactory)(
+        player=player,
+        name="TestPlayer",
+        guid="test-guid-wanted-3",
+    )
+
+    await Wanted.objects.acreate(character=character, protection_remaining=61)
+
+    session = MagicMock()
+    await refresh_player_name(character, session)
+
+    await character.arefresh_from_db()
+    assert character.custom_name == "[W2] TestPlayer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.django_db
+@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
+async def test_refresh_player_name_wanted_zero_protection(mock_set_name):
+    """Wanted with protection_remaining=0 → no tag."""
+    from amc.factories import CharacterFactory, PlayerFactory
+    from amc.models import Wanted
+    from asgiref.sync import sync_to_async
+
+    player = await sync_to_async(PlayerFactory)()
+    character = await sync_to_async(CharacterFactory)(
+        player=player,
+        name="TestPlayer",
+        guid="test-guid-wanted-4",
+    )
+
+    await Wanted.objects.acreate(character=character, protection_remaining=0)
+
+    session = MagicMock()
+    await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
     assert character.custom_name is None
@@ -216,10 +308,10 @@ async def test_refresh_player_name_removes_mod_state(mock_set_name):
 @pytest.mark.asyncio
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_adds_crim_tag(mock_set_name):
-    """Active criminal record → [C] tag."""
+async def test_refresh_player_name_wanted_with_crim(mock_set_name):
+    """Wanted + criminal record → [C1W5]."""
     from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import CriminalRecord
+    from amc.models import CriminalRecord, Wanted
     from asgiref.sync import sync_to_async
     from django.utils import timezone
     from datetime import timedelta
@@ -228,7 +320,7 @@ async def test_refresh_player_name_adds_crim_tag(mock_set_name):
     character = await sync_to_async(CharacterFactory)(
         player=player,
         name="TestPlayer",
-        guid="test-guid-crim-1",
+        guid="test-guid-wanted-crim-1",
     )
 
     await CriminalRecord.objects.acreate(
@@ -236,75 +328,39 @@ async def test_refresh_player_name_adds_crim_tag(mock_set_name):
         reason="Money delivery",
         expires_at=timezone.now() + timedelta(days=7),
     )
+    await Wanted.objects.acreate(character=character, protection_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[C1] TestPlayer"
-    mock_set_name.assert_awaited_once_with(session, "test-guid-crim-1", "[C1] TestPlayer")
+    assert character.custom_name == "[C1W5] TestPlayer"
 
 
 @pytest.mark.asyncio
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_crim_and_mods(mock_set_name):
-    """Criminal + mods → [CM]."""
+async def test_refresh_player_name_wanted_with_police(mock_set_name):
+    """Wanted + police → [P1W5] (wanted not suppressed)."""
     from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import CriminalRecord
+    from amc.models import PoliceSession, Wanted
     from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from datetime import timedelta
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
         player=player,
         name="TestPlayer",
-        guid="test-guid-crim-2",
+        guid="test-guid-wanted-police-1",
     )
 
-    await CriminalRecord.objects.acreate(
-        character=character,
-        reason="Money delivery",
-        expires_at=timezone.now() + timedelta(days=7),
-    )
-
-    session = MagicMock()
-    await refresh_player_name(character, session, has_custom_parts=True)
-
-    await character.arefresh_from_db()
-    assert character.custom_name == "[MC1] TestPlayer"
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_expired_crim_no_tag(mock_set_name):
-    """Expired criminal record → no [C] tag."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import CriminalRecord
-    from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from datetime import timedelta
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-crim-3",
-    )
-
-    await CriminalRecord.objects.acreate(
-        character=character,
-        reason="Money delivery",
-        expires_at=timezone.now() - timedelta(days=1),
-    )
+    await PoliceSession.objects.acreate(character=character)
+    await Wanted.objects.acreate(character=character, protection_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name is None
+    assert character.custom_name == "[P1W5] TestPlayer"
 
 
 @pytest.mark.asyncio

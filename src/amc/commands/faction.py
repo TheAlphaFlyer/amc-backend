@@ -4,12 +4,10 @@ import re
 from django.core.cache import cache
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
-from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint, Delivery, Confiscation
+from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint, Delivery, Confiscation, Wanted
 from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player, transfer_money
 from amc_finance.services import record_treasury_confiscation_income, send_fund_to_player_wallet
 from amc.police import record_confiscation_for_level
-from django.utils import timezone
-from datetime import timedelta
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 # 100 game units = 1 metre
@@ -18,7 +16,6 @@ ARREST_RADIUS_IN_VEHICLE = 3375  # 33.75m — cop in vehicle (50% more than orig
 SUSPECT_SPEED_LIMIT = 556  # ~5.56m/s ≈ 20km/h — suspects moving faster are immune
 ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
 ARREST_COOLDOWN = 0  # seconds between arrests per cop
-ARREST_CONFISCATION_WINDOW = 10  # minutes — deliveries older than this are safe
 
 _LOC_RE = re.compile(
     r"X=(?P<x>[-\d.]+)\s+Y=(?P<y>[-\d.]+)\s+Z=(?P<z>[-\d.]+)"
@@ -120,24 +117,26 @@ async def execute_arrest(
         name = target_chars[guid].name if guid in target_chars else "Unknown"
         arrested_names.append(name)
 
-        # Money confiscation logic — linear scaling by evasion time
+        # Money confiscation logic — rate based on Wanted protection remaining
         suspect_char = target_chars.get(guid)
         if suspect_char:
-            now = timezone.now()
-            window_start = now - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
+            try:
+                wanted = await Wanted.objects.aget(character=suspect_char)
+                rate = max(0.0, wanted.protection_remaining / Wanted.INITIAL_PROTECTION_SECONDS)
+            except Wanted.DoesNotExist:
+                rate = 0.0
+
+            # Find recent un-confiscated Money deliveries
             recent_deliveries = [
                 d async for d in Delivery.objects.filter(
                     character=suspect_char,
                     cargo_key="Money",
-                    timestamp__gte=window_start,
-                    confiscations__isnull=True,  # not yet confiscated
+                    confiscations__isnull=True,
                 )
             ]
 
             confiscated_amount = 0
             for delivery in recent_deliveries:
-                elapsed_minutes = (now - delivery.timestamp).total_seconds() / 60
-                rate = max(0.0, 1.0 - elapsed_minutes / ARREST_CONFISCATION_WINDOW)
                 confiscated_amount += round(delivery.payment * rate)
 
             if confiscated_amount > 0:
@@ -177,7 +176,6 @@ async def execute_arrest(
                 )
                 await send_fund_to_player_wallet(confiscated_amount, officer_character, "Confiscation Reward")
 
-                total_confiscated += confiscated_amount
                 await send_system_message(
                     http_client_mod,
                     gettext("Confiscated ${amount:,} in illegal earnings from {name}. You earned ${amount:,} confiscation reward.").format(
@@ -192,6 +190,11 @@ async def execute_arrest(
                     ),
                     character_guid=suspect_char.guid
                 )
+
+            total_confiscated += confiscated_amount
+
+            # Clear Wanted status after arrest
+            await Wanted.objects.filter(character=suspect_char).adelete()
 
     return arrested_names, total_confiscated
 

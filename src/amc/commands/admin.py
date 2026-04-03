@@ -308,6 +308,7 @@ BILL_MAX_LEVEL = 400
     "/bill",
     description=gettext_lazy("Bill a player (Admin)"),
     category="Admin",
+    deprecated=True,
 )
 async def cmd_bill(ctx: CommandContext, target_player_name: str):
     if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):

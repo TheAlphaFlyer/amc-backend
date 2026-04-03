@@ -66,9 +66,9 @@ async def _announce_money_secured_after_delay(character_guid, version, http_clie
     await cache.adelete(cache_key)
 
     # Check if any confiscation happened during the window
-    from amc.commands.faction import ARREST_CONFISCATION_WINDOW
+    from amc.models import Wanted
 
-    window_start = timezone.now() - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
+    window_start = timezone.now() - timedelta(seconds=Wanted.INITIAL_PROTECTION_SECONDS)
     was_confiscated = await Confiscation.objects.filter(
         character__guid=character_guid,
         created_at__gte=window_start,
@@ -150,7 +150,7 @@ async def handle_money_cargo(
 
     # --- Debounced "money secured" announcement after confiscation window ---
     if money_payment > 0 and http_client:
-        from amc.commands.faction import ARREST_CONFISCATION_WINDOW
+        from amc.models import Wanted
 
         secured_cache_key = f"money_secured:{character.guid}"
         prev_secured = await cache.aget(secured_cache_key)
@@ -168,14 +168,14 @@ async def handle_money_cargo(
         await cache.aset(
             secured_cache_key,
             secured_data,
-            timeout=ARREST_CONFISCATION_WINDOW * 60 + 120,
+            timeout=Wanted.INITIAL_PROTECTION_SECONDS + 120,
         )
         asyncio.create_task(
             _announce_money_secured_after_delay(
                 character.guid,
                 version,
                 http_client,
-                delay=ARREST_CONFISCATION_WINDOW * 60,
+                delay=Wanted.INITIAL_PROTECTION_SECONDS,
             )
         )
 

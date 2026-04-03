@@ -70,7 +70,7 @@ class ProcessEventTests(TestCase):
                 "CharacterGuid": str(character.guid),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         self.assertEqual(await ServerCargoArrivedLog.objects.acount(), 1)
         delivery = await ServerCargoArrivedLog.objects.select_related(
             "player", "sender_point", "destination_point"
@@ -110,7 +110,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         self.assertEqual(await ServerPassengerArrivedLog.objects.acount(), 1)
         log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
@@ -144,7 +144,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         self.assertEqual(await ServerPassengerArrivedLog.objects.acount(), 1)
         log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
@@ -178,7 +178,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         log = await ServerPassengerArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
         # No radius ratio → no bonus, payment stays at base
@@ -207,7 +207,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         self.assertEqual(await ServerTowRequestArrivedLog.objects.acount(), 1)
         log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
         self.assertIsNotNone(log)
@@ -237,7 +237,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
         # 0 damage: bonus = int(10_000 * 0.55) = 5_500, total payment = 15_500
         self.assertEqual(log.payment, 15_500)
@@ -266,7 +266,7 @@ class ProcessEventTests(TestCase):
                 "PlayerId": str(player.unique_id),
             },
         }
-        payment, subsidy, _ = await process_event(event, player, character)
+        payment, subsidy, _, _ = await process_event(event, player, character)
         log = await ServerTowRequestArrivedLog.objects.select_related("player").afirst()
         # bonus = int(10_000 * 0.55 * 0.5) = 2_750, total = 12_750
         self.assertEqual(log.payment, 12_750)
@@ -308,7 +308,7 @@ class ProcessEventTests(TestCase):
             },
         }
 
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, is_rp_mode=True, treasury_balance=100_000
         )
 
@@ -479,7 +479,7 @@ class ProcessEventTests(TestCase):
 
         # Deliveries 1, 2 — not complete yet
         for i in range(2):
-            _, _, contract_pay = await process_event(deliver_event, player, character)
+            _, _, contract_pay, _ = await process_event(deliver_event, player, character)
             self.assertEqual(contract_pay, 0)
 
         await log.arefresh_from_db()
@@ -487,7 +487,7 @@ class ProcessEventTests(TestCase):
         self.assertFalse(log.delivered)
 
         # Delivery 3 — completion
-        _, _, contract_pay = await process_event(deliver_event, player, character)
+        _, _, contract_pay, _ = await process_event(deliver_event, player, character)
         self.assertEqual(contract_pay, 75000)
 
         await log.arefresh_from_db()
@@ -579,7 +579,7 @@ class ProcessEventTests(TestCase):
         await process_event(event, player, character, http_client_mod=http_client_mod)
 
         mock_show_popup.assert_called_once()
-        self.assertIn("not allowed to use modified vehicles", mock_show_popup.call_args[0][1])
+        self.assertIn("now allowed to use modified vehicles", mock_show_popup.call_args[0][1])
 
     @patch("amc.webhook.SMUGGLING_TIPOFF_ENABLED", True)
     @patch("amc.webhook._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
@@ -2311,7 +2311,7 @@ class SecurityBonusTests(TestCase):
 
         event = self._make_money_event(player, character)
         http_client_mod = MagicMock()
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, http_client_mod=http_client_mod
         )
 
@@ -2350,7 +2350,7 @@ class SecurityBonusTests(TestCase):
 
         event = self._make_money_event(player, character)
         http_client_mod = MagicMock()
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, http_client_mod=http_client_mod
         )
 
@@ -2392,7 +2392,7 @@ class SecurityBonusTests(TestCase):
 
         event = self._make_money_event(player, character)
         http_client_mod = MagicMock()
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, http_client_mod=http_client_mod
         )
 
@@ -2430,7 +2430,7 @@ class SecurityBonusTests(TestCase):
 
         event = self._make_money_event(player, character)
         http_client_mod = MagicMock()
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, http_client_mod=http_client_mod
         )
 
@@ -2471,7 +2471,7 @@ class SecurityBonusTests(TestCase):
 
         event = self._make_money_event(player, character)
         http_client_mod = MagicMock()
-        payment, subsidy, _ = await process_event(
+        payment, subsidy, _, _ = await process_event(
             event, player, character, http_client_mod=http_client_mod
         )
 

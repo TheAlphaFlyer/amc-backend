@@ -58,7 +58,6 @@ logger = logging.getLogger("amc.webhook")
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
 WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
 PARTY_BONUS_RATE = 0.05  # 5% per extra party member
-INITIAL_PROTECTION_SECONDS = 300  # 5 minutes — Wanted countdown starting value
 
 
 async def on_player_profits(player_profits, session, http_client=None):
@@ -652,7 +651,7 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
 
     try:
         wanted = await Wanted.objects.aget(character=character)
-        rate = max(0.0, wanted.protection_remaining / INITIAL_PROTECTION_SECONDS)
+        rate = max(0.0, wanted.protection_remaining / Wanted.INITIAL_PROTECTION_SECONDS)
     except Wanted.DoesNotExist:
         rate = 0.0
 
@@ -889,7 +888,7 @@ async def handle_cargo_arrived(
             if character:
                 await Wanted.objects.aupdate_or_create(
                     character=character,
-                    defaults={"protection_remaining": INITIAL_PROTECTION_SECONDS},
+                    defaults={"protection_remaining": Wanted.INITIAL_PROTECTION_SECONDS},
                 )
 
         if discord_client:

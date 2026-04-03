@@ -1,5 +1,4 @@
 import time
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
@@ -7,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from amc.factories import PlayerFactory, CharacterFactory
-from amc.models import Confiscation, Delivery, PoliceSession
+from amc.models import Confiscation, Delivery, PoliceSession, Wanted
 from amc.webhook import process_events
 
 
@@ -44,11 +43,10 @@ class TeleportPenaltyTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player)
         return player, character
 
-    async def _deliver_money(self, character, payment=100_000, minutes_ago=0):
-        """Create a Money Delivery record as if the character just delivered."""
-        ts = timezone.now() - timedelta(minutes=minutes_ago)
+    async def _deliver_money(self, character, payment=100_000):
+        """Create a Money Delivery record."""
         return await Delivery.objects.acreate(
-            timestamp=ts,
+            timestamp=timezone.now(),
             character=character,
             cargo_key="Money",
             quantity=1,
@@ -62,20 +60,21 @@ class TeleportPenaltyTests(TestCase):
         http_client_mod = AsyncMock()
         await process_events(events, http_client=http_client, http_client_mod=http_client_mod)
 
-    async def test_teleport_immediately_after_delivery_full_penalty(
+    async def test_teleport_with_full_wanted_full_penalty(
         self, mock_announce, mock_popup, mock_transfer, mock_refresh,
         mock_treasury, mock_parties, mock_rp,
     ):
-        """Teleporting immediately after delivery → ~100% penalty."""
+        """Teleporting with full Wanted (300s) → ~100% penalty."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await self._deliver_money(character, payment=100_000)
+        await Wanted.objects.acreate(character=character, protection_remaining=300)
 
         await self._process_teleport(character)
 
-        # Should deduct full payment (minor variance from test timing)
+        # Should deduct full payment
         mock_transfer.assert_called_once()
         args = mock_transfer.call_args
-        self.assertAlmostEqual(args[0][1], -100_000, delta=500)
+        self.assertEqual(args[0][1], -100_000)
         self.assertEqual(args[0][2], "Teleport Penalty")
 
         # criminal_laundered_total should be 0
@@ -86,30 +85,34 @@ class TeleportPenaltyTests(TestCase):
         conf = await Confiscation.objects.filter(character=character).afirst()
         self.assertIsNotNone(conf)
         self.assertIsNone(conf.officer)
-        self.assertAlmostEqual(conf.amount, 100_000, delta=500)
+        self.assertEqual(conf.amount, 100_000)
 
-    async def test_teleport_after_half_window_linear_decay(
+        # Wanted should be deleted
+        self.assertFalse(await Wanted.objects.filter(character=character).aexists())
+
+    async def test_teleport_with_half_wanted_half_penalty(
         self, mock_announce, mock_popup, mock_transfer, mock_refresh,
         mock_treasury, mock_parties, mock_rp,
     ):
-        """Teleporting 5 minutes after delivery → 50% penalty."""
+        """Teleporting with 50% Wanted (150s) → 50% penalty."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=5)
+        await self._deliver_money(character, payment=100_000)
+        await Wanted.objects.acreate(character=character, protection_remaining=150)
 
         await self._process_teleport(character, hook="ServerTeleportVehicle")
 
         args = mock_transfer.call_args
         penalty = abs(args[0][1])
-        # rate = 1 - 5/10 = 0.5 → 50_000
-        self.assertAlmostEqual(penalty, 50_000, delta=1_000)
+        # rate = 300/600 = 0.5 → 50_000
+        self.assertEqual(penalty, 50_000)
 
-    async def test_teleport_after_window_no_penalty(
+    async def test_teleport_without_wanted_no_penalty(
         self, mock_announce, mock_popup, mock_transfer, mock_refresh,
         mock_treasury, mock_parties, mock_rp,
     ):
-        """Teleporting 11 minutes after delivery → no penalty."""
+        """Teleporting without Wanted → no penalty."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=11)
+        await self._deliver_money(character, payment=100_000)
 
         await self._process_teleport(character, hook="ServerRespawnCharacter")
 
@@ -142,7 +145,8 @@ class TeleportPenaltyTests(TestCase):
     ):
         """Active police officers are not penalised."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await self._deliver_money(character, payment=100_000)
+        await Wanted.objects.acreate(character=character, protection_remaining=300)
         await PoliceSession.objects.acreate(character=character)
 
         await self._process_teleport(character)
@@ -153,14 +157,13 @@ class TeleportPenaltyTests(TestCase):
         self, mock_announce, mock_popup, mock_transfer, mock_refresh,
         mock_treasury, mock_parties, mock_rp,
     ):
-        """Multiple recent deliveries are summed with per-delivery decay."""
+        """Multiple deliveries are summed at the same Wanted rate."""
         _, character = await self._setup_character()
-        # Delivery 1: 2 min ago → rate = 0.8 → 80_000 penalty
-        await self._deliver_money(character, payment=100_000, minutes_ago=2)
-        # Delivery 2: 8 min ago → rate = 0.2 → 10_000 penalty
-        await self._deliver_money(character, payment=50_000, minutes_ago=8)
+        await self._deliver_money(character, payment=100_000)
+        await self._deliver_money(character, payment=50_000)
+        # Wanted at 240s (80%) → 100000*0.8 + 50000*0.8 = 80000 + 40000 = 120000
+        await Wanted.objects.acreate(character=character, protection_remaining=240)
 
-        # Set criminal_laundered_total to match deliveries
         character.criminal_laundered_total = 150_000
         await character.asave(update_fields=["criminal_laundered_total"])
 
@@ -168,11 +171,8 @@ class TeleportPenaltyTests(TestCase):
 
         args = mock_transfer.call_args
         penalty = abs(args[0][1])
-        # 100_000 * 0.8 + 50_000 * 0.2 = 80_000 + 10_000 = 90_000
-        self.assertAlmostEqual(penalty, 90_000, delta=2_000)
+        self.assertEqual(penalty, 120_000)
 
         # criminal_laundered_total should be reduced
         await character.arefresh_from_db()
-        self.assertAlmostEqual(
-            character.criminal_laundered_total, 60_000, delta=2_000
-        )
+        self.assertEqual(character.criminal_laundered_total, 30_000)

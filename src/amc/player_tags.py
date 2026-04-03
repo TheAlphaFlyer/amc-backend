@@ -1,4 +1,5 @@
 import re
+import math
 import logging
 from amc.mod_server import set_character_name
 
@@ -6,9 +7,9 @@ logger = logging.getLogger(__name__)
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G/P, optionally followed by more letters/digits
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [P], [MP], [MPG3] — but NOT [123] or [ABC]
-    re.compile(r"\[(?=[CMGP])[CMGP\d]+\]\s*"),
+    # New compact format: must start with C/M/G/P/W, optionally followed by more letters/digits
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [W5], [CW3], [MP], [MPG3]
+    re.compile(r"\[(?=[CMGPW])[CMGPW\d]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
     re.compile(r"\[(?=[CMGP])[CMGP₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
     # Legacy formats (for players who logged in before the refactor)
@@ -35,13 +36,15 @@ def build_display_name(
     has_custom_parts: bool = False,
     police_level: int = 0,
     gov_level: int = 0,
+    wanted_minutes: int = 0,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MP1C1G3] BaseName  (order: M, P, C, G)
+    Tag format: [MP1C1W5G3] BaseName  (order: M, P, C, W, G)
       M = Modded vehicle parts
       P1 = Police level (active session)
       C1 = Criminal level (suppressed when police is active)
+      W5 = Wanted status with minutes remaining (always shown)
       G3 = Government employee level
 
     Args:
@@ -50,6 +53,7 @@ def build_display_name(
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
         police_level: Police level (0 = not on duty)
         gov_level: Government employee level (0 = not a gov employee)
+        wanted_minutes: Minutes remaining on wanted timer, rounded up (0 = not wanted)
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
@@ -63,6 +67,9 @@ def build_display_name(
     # C is suppressed when police or gov is active
     if criminal_level > 0 and police_level == 0 and gov_level == 0:
         tag += f"C{criminal_level}"
+
+    if wanted_minutes > 0:
+        tag += f"W{wanted_minutes}"
 
     if gov_level > 0:
         tag += f"G{gov_level}"
@@ -95,7 +102,7 @@ async def refresh_player_name(
         current_name = character.custom_name or character.name
         has_custom_parts = bool(
             re.search(r"\[MODS?\]", current_name, re.IGNORECASE)
-            or re.search(r"\[[CG0-9₀-₉]*M[G0-9₀-₉]*\]", current_name)
+            or re.search(r"\[[CGW0-9₀-₉]*M[CGW0-9₀-₉]*\]", current_name)
         )
 
     # Determine GOV state
@@ -120,6 +127,17 @@ async def refresh_player_name(
 
         criminal_level = calculate_criminal_level(character.criminal_laundered_total)
 
+    # Determine WANTED state
+    from amc.models import Wanted
+
+    wanted_minutes = 0
+    try:
+        wanted = await Wanted.objects.aget(character=character)
+        if wanted.protection_remaining > 0:
+            wanted_minutes = math.ceil(wanted.protection_remaining / 60)
+    except Wanted.DoesNotExist:
+        pass
+
     # Determine POLICE state
     from amc.police import is_police as check_police, calculate_police_level
 
@@ -134,6 +152,7 @@ async def refresh_player_name(
         has_custom_parts=has_custom_parts,
         police_level=police_level,
         gov_level=gov_level,
+        wanted_minutes=wanted_minutes,
     )
 
     # Save to DB if changed

@@ -1,6 +1,5 @@
 """Tests for the auto-arrest patrol loop (amc.auto_arrest)."""
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
@@ -8,9 +7,9 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
-from amc.auto_arrest import AUTO_ARREST_STILL_TICKS, _has_recent_money_deliveries, _patrol_tick
+from amc.auto_arrest import AUTO_ARREST_STILL_TICKS, _is_wanted, _patrol_tick
 from amc.factories import CharacterFactory, PlayerFactory
-from amc.models import Confiscation, Delivery, PoliceSession, TeleportPoint
+from amc.models import Confiscation, PoliceSession, TeleportPoint, Wanted
 
 from django.contrib.gis.geos import Point
 
@@ -47,7 +46,6 @@ class AutoArrestPatrolTests(TestCase):
     def setUp(self):
         cache.clear()
 
-
     async def _setup_world(self):
         """Create jail teleport point, officer, and criminal."""
         # Create jail teleport point
@@ -71,20 +69,17 @@ class AutoArrestPatrolTests(TestCase):
 
         return officer, criminal
 
-    async def test_auto_arrests_suspect_with_money_delivery(
+    async def test_auto_arrests_wanted_suspect(
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Patrol tick arrests a suspect near police after enough still ticks."""
+        """Patrol tick arrests a suspect with active Wanted after enough still ticks."""
         officer, criminal = await self._setup_world()
 
-        # Criminal has a recent Money delivery
-        await Delivery.objects.acreate(
+        # Criminal has active Wanted status
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         # Both players near each other (within 50m = 5000 game units)
@@ -115,14 +110,14 @@ class AutoArrestPatrolTests(TestCase):
         self.assertEqual(conf.officer_id, officer.id)
         self.assertEqual(conf.character_id, criminal.id)
 
-    async def test_no_arrest_without_money_delivery(
+    async def test_no_arrest_without_wanted_status(
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Patrol tick does NOT arrest suspects without recent Money deliveries."""
+        """Patrol tick does NOT arrest suspects without Wanted status."""
         officer, criminal = await self._setup_world()
 
-        # Criminal has NO Money deliveries
+        # Criminal has NO Wanted status
         players = _make_players_list([
             _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
             _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
@@ -147,12 +142,9 @@ class AutoArrestPatrolTests(TestCase):
         """Patrol tick does NOT arrest suspects who are too far from police."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         # Criminal is 100m away (10000 game units > 1500 auto-arrest radius on foot)
@@ -186,13 +178,10 @@ class AutoArrestPatrolTests(TestCase):
         await officer2.asave(update_fields=["last_online"])
         await PoliceSession.objects.acreate(character=officer2)
 
-        # Even if officer2 has money deliveries (shouldn't happen, but edge case)
-        await Delivery.objects.acreate(
+        # Even if officer2 has Wanted status (shouldn't happen, but edge case)
+        await Wanted.objects.acreate(
             character=officer2,
-            cargo_key="Money",
-            quantity=1,
-            payment=50_000,
-            timestamp=timezone.now() - timedelta(minutes=1),
+            protection_remaining=300,
         )
 
         players = _make_players_list([
@@ -218,12 +207,9 @@ class AutoArrestPatrolTests(TestCase):
         """Suspects moving too fast are NOT auto-arrested (speed > 30 km/h)."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         from amc.commands.faction import _build_player_locations
@@ -257,20 +243,17 @@ class AutoArrestPatrolTests(TestCase):
 
         mock_teleport.assert_not_called()
 
-    async def test_old_money_delivery_not_arrested(
+    async def test_expired_wanted_not_arrested(
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Money deliveries older than the confiscation window don't trigger arrest."""
+        """Wanted with protection_remaining=0 does not trigger arrest."""
         officer, criminal = await self._setup_world()
 
-        # Delivery is 15 minutes old (beyond 10 minute window)
-        await Delivery.objects.acreate(
+        # Wanted with zero protection remaining
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=15),
+            protection_remaining=0,
         )
 
         players = _make_players_list([
@@ -296,12 +279,9 @@ class AutoArrestPatrolTests(TestCase):
         """Server announcement fires on auto-arrest after enough still ticks."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         players = _make_players_list([
@@ -331,12 +311,9 @@ class AutoArrestPatrolTests(TestCase):
         """System message is sent to the officer on auto-arrest."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         players = _make_players_list([
@@ -370,12 +347,9 @@ class AutoArrestPatrolTests(TestCase):
         """After auto-arrest, suspect is NOT arrested again on subsequent ticks."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         players = _make_players_list([
@@ -395,7 +369,7 @@ class AutoArrestPatrolTests(TestCase):
 
         self.assertEqual(mock_teleport.call_count, 1)
 
-        # Additional ticks: should NOT arrest again (delivery already confiscated)
+        # Additional ticks: should NOT arrest again (Wanted already deleted)
         mock_teleport.reset_mock()
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
             for _ in range(AUTO_ARREST_STILL_TICKS):
@@ -410,12 +384,9 @@ class AutoArrestPatrolTests(TestCase):
         """A single tick is NOT enough to trigger auto-arrest."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         players = _make_players_list([
@@ -442,12 +413,9 @@ class AutoArrestPatrolTests(TestCase):
         """
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
 
@@ -483,12 +451,9 @@ class AutoArrestPatrolTests(TestCase):
         """Cop in a police vehicle can auto-arrest nearby suspects."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         # Cop is in a police vehicle
@@ -518,12 +483,9 @@ class AutoArrestPatrolTests(TestCase):
         """Cop in a civilian vehicle cannot auto-arrest suspects."""
         officer, criminal = await self._setup_world()
 
-        await Delivery.objects.acreate(
+        await Wanted.objects.acreate(
             character=criminal,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
+            protection_remaining=300,
         )
 
         # Cop is in a civilian vehicle
@@ -547,74 +509,25 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_not_called()
 
 
-class HasRecentMoneyDeliveriesTests(TestCase):
-    """Unit tests for _has_recent_money_deliveries helper."""
+class IsWantedTests(TestCase):
+    """Unit tests for _is_wanted helper."""
 
-    async def test_returns_true_with_recent_delivery(self):
+    async def test_returns_true_with_active_wanted(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        await Delivery.objects.acreate(
-            character=character,
-            cargo_key="Money",
-            quantity=1,
-            payment=50_000,
-            timestamp=timezone.now() - timedelta(minutes=5),
-        )
-        result = await _has_recent_money_deliveries(character)
+        await Wanted.objects.acreate(character=character, protection_remaining=300)
+        result = await _is_wanted(character)
         self.assertTrue(result)
 
-    async def test_returns_false_without_delivery(self):
+    async def test_returns_false_without_wanted(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        result = await _has_recent_money_deliveries(character)
+        result = await _is_wanted(character)
         self.assertFalse(result)
 
-    async def test_returns_false_with_old_delivery(self):
+    async def test_returns_false_with_expired_wanted(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        await Delivery.objects.acreate(
-            character=character,
-            cargo_key="Money",
-            quantity=1,
-            payment=50_000,
-            timestamp=timezone.now() - timedelta(minutes=15),
-        )
-        result = await _has_recent_money_deliveries(character)
+        await Wanted.objects.acreate(character=character, protection_remaining=0)
+        result = await _is_wanted(character)
         self.assertFalse(result)
-
-    async def test_returns_false_with_non_money_delivery(self):
-        player = await sync_to_async(PlayerFactory)()
-        character = await sync_to_async(CharacterFactory)(player=player)
-        await Delivery.objects.acreate(
-            character=character,
-            cargo_key="C::Stone",
-            quantity=1,
-            payment=50_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
-        )
-        result = await _has_recent_money_deliveries(character)
-        self.assertFalse(result)
-
-    async def test_returns_false_when_delivery_already_confiscated(self):
-        """Deliveries linked to an existing Confiscation are excluded."""
-        player = await sync_to_async(PlayerFactory)()
-        character = await sync_to_async(CharacterFactory)(player=player)
-        delivery = await Delivery.objects.acreate(
-            character=character,
-            cargo_key="Money",
-            quantity=1,
-            payment=100_000,
-            timestamp=timezone.now() - timedelta(minutes=2),
-        )
-        # Link delivery to a confiscation
-        conf = await Confiscation.objects.acreate(
-            character=character,
-            officer=None,
-            cargo_key="Money",
-            amount=80_000,
-        )
-        await conf.deliveries.aset([delivery.id])
-
-        result = await _has_recent_money_deliveries(character)
-        self.assertFalse(result)
-

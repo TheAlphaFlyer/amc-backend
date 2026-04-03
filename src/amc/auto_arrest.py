@@ -1,12 +1,16 @@
 """Auto-arrest patrol loop.
 
 Continuously monitors on-duty police officers and nearby players.
-When a suspect with recent Money deliveries is found within arrest range,
+When a suspect with an active Wanted record is found within arrest range,
 the system automatically executes an arrest (teleport to jail, confiscate,
 announce) — matching the manual /arrest behavior.
 
 The patrol loop runs as a long-lived asyncio task started from the Discord
 bot's setup_hook, sharing the same http_client sessions.
+
+The Wanted countdown is proximity-based: closer police slow the countdown,
+giving officers more time to arrest. Distant or absent police let it tick
+down at full speed.
 """
 
 import asyncio
@@ -19,7 +23,6 @@ from django.contrib.gis.geos import Point
 from django.utils import timezone
 
 from amc.commands.faction import (
-    ARREST_CONFISCATION_WINDOW,
     SUSPECT_SPEED_LIMIT,
     _build_player_locations,
     _distance_3d,
@@ -27,27 +30,91 @@ from amc.commands.faction import (
 )
 from amc.game_server import announce, get_players
 from amc.mod_server import send_system_message
-from amc.models import ArrestZone, Character, Delivery, PoliceSession
+from amc.models import ArrestZone, Character, PoliceSession, Wanted
 from amc.police import is_police_vehicle
 
 logger = logging.getLogger("amc.auto_arrest")
 
 PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
-AUTO_ARREST_STILL_TICKS = 10  # ticks the suspect must be still + in range (10 × 0.5s = 5s)
-AUTO_ARREST_WARNING_TICK = 4  # warn suspect at this tick (4 × 0.5s = 2s into tracking)
+AUTO_ARREST_STILL_TICKS = 10  # ticks the suspect must be still + in range (10 x 0.5s = 5s)
+AUTO_ARREST_WARNING_TICK = 4  # warn suspect at this tick (4 x 0.5s = 2s into tracking)
 AUTO_ARREST_RADIUS_ON_FOOT = 1500   # 15m — cop on foot, checked only on first contact
 AUTO_ARREST_RADIUS_IN_VEHICLE = 1000  # 10m — cop in vehicle, checked only on first contact
 
+# Proximity-based countdown parameters
+PROXIMITY_REF_DISTANCE = 20000  # 200m — at or beyond this distance, countdown runs at full speed
+MIN_SLOWDOWN = 0.05  # 5% — minimum countdown speed (at very close range)
 
-async def _has_recent_money_deliveries(character) -> bool:
-    """Check if a character has un-confiscated Money deliveries within the window."""
-    window_start = timezone.now() - timedelta(minutes=ARREST_CONFISCATION_WINDOW)
-    return await Delivery.objects.filter(
+
+async def _is_wanted(character) -> bool:
+    """Check if a character has an active Wanted status with protection remaining."""
+    return await Wanted.objects.filter(
         character=character,
-        cargo_key="Money",
-        timestamp__gte=window_start,
-        confiscations__isnull=True,  # not yet confiscated
+        protection_remaining__gt=0,
     ).aexists()
+
+
+async def _tick_protection(suspect_chars, locations, cop_guids) -> None:
+    """Decrement protection_remaining for wanted suspects based on nearest police distance.
+
+    Closer police means slower countdown. No police online means full-speed countdown.
+    Deactivates (deletes) Wanted records when protection reaches zero.
+    """
+    # Build list of cop locations (only police-vehicle cops count for proximity)
+    cop_locations = []
+    for cg in cop_guids:
+        if cg in locations:
+            _, cop_loc, _ = locations[cg]
+            cop_locations.append(cop_loc)
+
+    if not cop_locations:
+        # No cops to compute proximity — use full-speed decrement
+        wanted_qs = Wanted.objects.filter(
+            character__guid__in=suspect_chars.keys(),
+            protection_remaining__gt=0,
+        )
+        decrement = int(PATROL_POLL_INTERVAL)
+        if decrement > 0:
+            from django.db.models import F
+            await wanted_qs.aupdate(protection_remaining=F("protection_remaining") - decrement)
+        # Deactivate expired
+        await Wanted.objects.filter(protection_remaining__lte=0).adelete()
+        return
+
+    # Batch-load wanted statuses for all suspects
+    wanted_map = {}
+    async for w in Wanted.objects.filter(
+        character__guid__in=suspect_chars.keys(),
+        protection_remaining__gt=0,
+    ).select_related("character"):
+        wanted_map[w.character.guid] = w
+
+    if not wanted_map:
+        return
+
+    # For each wanted suspect, compute minimum distance to any cop
+    for sus_guid, wanted in wanted_map.items():
+        if sus_guid not in locations:
+            continue
+        _, sus_loc, _ = locations[sus_guid]
+
+        min_dist = min(_distance_3d(sus_loc, cop_loc) for cop_loc in cop_locations)
+
+        # Slowdown: closer police = smaller value = slower countdown
+        slowdown = max(MIN_SLOWDOWN, min_dist / PROXIMITY_REF_DISTANCE)
+        decrement = int(PATROL_POLL_INTERVAL * slowdown)
+        if decrement < 1:
+            decrement = 1
+
+        wanted.protection_remaining = max(0, wanted.protection_remaining - decrement)
+
+    # Bulk save updated records
+    to_update = [w for w in wanted_map.values()]
+    if to_update:
+        await Wanted.objects.abulk_update(to_update, ["protection_remaining"])
+
+    # Deactivate expired
+    await Wanted.objects.filter(protection_remaining__lte=0).adelete()
 
 
 async def _patrol_tick(http_client, http_client_mod, prev_locations, still_counters=None):
@@ -114,6 +181,9 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
     ).select_related("player"):
         suspect_chars[char.guid] = char
 
+    # Tick protection countdown for wanted suspects (proximity-based slowdown)
+    await _tick_protection(suspect_chars, locations, cop_guids)
+
     # Check ArrestZone enforcement
     zones_exist = await ArrestZone.objects.filter(active=True).aexists()
 
@@ -176,13 +246,12 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
                     still_counters.pop(pair_key, None)
                     continue
 
-            # Must have recent money deliveries
+            # Must have active Wanted status
             sus_char = suspect_chars.get(sus_guid)
             if not sus_char:
                 continue
 
-            has_money = await _has_recent_money_deliveries(sus_char)
-            if not has_money:
+            if not await _is_wanted(sus_char):
                 continue
 
             # Increment stillness counter for this cop-suspect pair
@@ -195,7 +264,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
                 asyncio.create_task(
                     send_system_message(
                         http_client_mod,
-                        "⚠️ A police officer is attempting to arrest you! Flee now!",
+                        "\u26a0\ufe0f A police officer is attempting to arrest you! Flee now!",
                         character_guid=sus_guid,
                     )
                 )
