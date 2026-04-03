@@ -314,7 +314,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_zero_utilisation(self):
         """At 0% utilisation, repayment rate should be 50%."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         # payment=1000, loan=1, max_loan=1_000_000 → ~0% util → 50%
         result = calculate_loan_repayment(
@@ -324,7 +324,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_half_utilisation(self):
         """At 50% utilisation, repayment should be 100% (with REPAYMENT_FULL_AT=0.5)."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         # loan=500_000, max_loan=1_000_000 → 50% util → 100% rate
         result = calculate_loan_repayment(
@@ -334,7 +334,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_quarter_utilisation(self):
         """At 25% utilisation, repayment should be 75%."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         result = calculate_loan_repayment(
             Decimal(10_000), Decimal(250_000), Decimal(1_000_000)
@@ -343,7 +343,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_full_utilisation(self):
         """At 100% utilisation, repayment should be 100%."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         result = calculate_loan_repayment(
             Decimal(10_000), Decimal(1_000_000), Decimal(1_000_000)
@@ -352,7 +352,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_over_limit_utilisation(self):
         """When loan exceeds max_loan, utilisation is capped at 1.0 → 100% rate."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         result = calculate_loan_repayment(
             Decimal(10_000), Decimal(2_000_000), Decimal(1_000_000)
@@ -361,7 +361,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_repayment_capped_at_loan_balance(self):
         """Repayment can never exceed the outstanding loan balance."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         # payment far exceeds loan balance
         result = calculate_loan_repayment(
@@ -371,7 +371,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_player_override_higher(self):
         """Player's custom rate is used when it exceeds the system rate."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         # 0% util → system rate 50%, player rate 90% → effective 90%
         result = calculate_loan_repayment(
@@ -382,7 +382,7 @@ class CalculateLoanRepaymentTest(TestCase):
 
     def test_player_override_lower(self):
         """System rate wins when player's custom rate is lower."""
-        from amc.subsidies import calculate_loan_repayment
+        from amc_finance.loans import calculate_loan_repayment
 
         # 50% util → system rate 100%, player rate 30% → system wins (100%)
         result = calculate_loan_repayment(
@@ -406,7 +406,7 @@ class RepayLoanNPLExitTest(TestCase):
         mock_repay, mock_announce,
     ):
         """When player transitions NPL→not-NPL, announce it."""
-        from amc.subsidies import repay_loan_for_profit
+        from amc_finance.loans import repay_loan_for_profit
 
         mock_balance.return_value = Decimal(600_000)
         mock_max_loan.return_value = (1_000_000, None)
@@ -441,7 +441,7 @@ class RepayLoanNPLExitTest(TestCase):
         mock_repay, mock_announce,
     ):
         """No announcement when player remains NPL after repayment."""
-        from amc.subsidies import repay_loan_for_profit
+        from amc_finance.loans import repay_loan_for_profit
 
         mock_balance.return_value = Decimal(600_000)
         mock_max_loan.return_value = (1_000_000, None)
@@ -470,7 +470,7 @@ class RepayLoanNPLExitTest(TestCase):
         mock_repay, mock_announce,
     ):
         """No announcement when player was not NPL before repayment."""
-        from amc.subsidies import repay_loan_for_profit
+        from amc_finance.loans import repay_loan_for_profit
 
         mock_balance.return_value = Decimal(600_000)
         mock_max_loan.return_value = (1_000_000, None)
@@ -500,7 +500,7 @@ class RepayLoanNPLExitTest(TestCase):
         mock_repay, mock_announce,
     ):
         """repayment_override uses exact amount instead of calculate_loan_repayment."""
-        from amc.subsidies import repay_loan_for_profit
+        from amc_finance.loans import repay_loan_for_profit
 
         mock_balance.return_value = Decimal(600_000)
         mock_is_npl.return_value = False
@@ -531,7 +531,7 @@ class RepayLoanNPLExitTest(TestCase):
         mock_repay, mock_announce,
     ):
         """game_session is used for announce instead of mod server session."""
-        from amc.subsidies import repay_loan_for_profit
+        from amc_finance.loans import repay_loan_for_profit
 
         mock_balance.return_value = Decimal(600_000)
         mock_is_npl.side_effect = [True, False]

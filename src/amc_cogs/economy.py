@@ -37,13 +37,15 @@ from amc.utils import get_timespan
 from amc_finance.services import send_fund_to_player
 from amc_finance.models import Account, LedgerEntry
 from amc_finance.services import (
+    make_treasury_bank_deposit,
+    make_treasury_bank_withdrawal,
+    get_crossover_accounts,
+)
+from amc_finance.loans import (
     get_player_bank_balance,
     get_player_loan_balance,
     get_character_max_loan,
-    make_treasury_bank_deposit,
-    make_treasury_bank_withdrawal,
     get_non_performing_loans,
-    get_crossover_accounts,
 )
 from amc_finance.treasury_summary import get_treasury_summary, save_treasury_snapshot
 from amc.subsidies import DEFAULT_SAVING_RATE
@@ -1237,7 +1239,7 @@ The purpose of this transfer is to return funds from the bank to the government 
             value=f"`${total_balance:,.0f}`",
             inline=True,
         )
-        from amc_finance.services import NPL_DEFAULT_REPAYMENT_RATE, NPL_DEFAULT_PERIOD_DAYS
+        from amc_finance.loans import NPL_DEFAULT_REPAYMENT_RATE, NPL_DEFAULT_PERIOD_DAYS
         embed.set_footer(
             text=f"Default plan: {int(NPL_DEFAULT_REPAYMENT_RATE * 100)}% per {NPL_DEFAULT_PERIOD_DAYS}d | Req = required, Per = period"
         )

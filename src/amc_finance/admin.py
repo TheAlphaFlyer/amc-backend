@@ -1,6 +1,6 @@
 from django.contrib import admin  # pyrefly: ignore
 from .models import Account, JournalEntry, LedgerEntry
-from .services import get_non_performing_loans, NPL_MIN_BALANCE
+from .loans import get_non_performing_loans, NPL_MIN_BALANCE
 
 
 class AccountInlineAdmin(admin.TabularInline):

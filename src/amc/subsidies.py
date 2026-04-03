@@ -4,15 +4,10 @@ from django.db.models import Q
 from django.contrib.gis.geos import Point
 from django.utils.translation import gettext as _
 from amc.mod_server import show_popup, transfer_money
-from amc.game_server import announce
 from amc.models import ServerPassengerArrivedLog, SubsidyRule
 from amc_finance.services import (
     send_fund_to_player_wallet,
-    get_character_max_loan,
-    get_player_loan_balance,
-    register_player_repay_loan,
     register_player_deposit,
-    is_character_npl,
 )
 
 
@@ -85,75 +80,6 @@ cargo_names = {
     "Log_Oak_12ft": "12ft Oak Log",
 }
 
-
-# The loan utilisation at which repayment rate reaches 100%.
-# e.g. 0.5 = 100% repayment when debt is ≥50% of loan limit.
-# Set to 1.0 to restore the old linear curve (100% only at full utilisation).
-REPAYMENT_FULL_AT = Decimal("0.5")
-
-
-def calculate_loan_repayment(
-    payment, loan_balance, max_loan, character_repayment_rate=None
-):
-    loan_utilisation = loan_balance / max(max_loan, loan_balance)
-    slope = Decimal("0.5") / REPAYMENT_FULL_AT
-    repayment_percentage = min(Decimal(1), Decimal("0.5") + slope * loan_utilisation)
-    if character_repayment_rate is not None:
-        repayment_percentage = max(
-            repayment_percentage, Decimal(str(character_repayment_rate))
-        )
-
-    repayment = min(
-        loan_balance,
-        max(Decimal(1), Decimal(int(payment * Decimal(repayment_percentage)))),
-    )
-    return repayment
-
-
-async def repay_loan_for_profit(character, payment, session, repayment_override=None, game_session=None):
-    try:
-        loan_balance = await get_player_loan_balance(character)
-        if loan_balance == 0:
-            return 0
-
-        was_npl = await is_character_npl(character)
-
-        if repayment_override is not None:
-            repayment = min(Decimal(str(repayment_override)), loan_balance)
-        else:
-            max_loan, _ = await get_character_max_loan(character)
-            repayment = calculate_loan_repayment(
-                Decimal(payment),
-                loan_balance,
-                max_loan,
-                character_repayment_rate=character.loan_repayment_rate,
-            )
-
-        await transfer_money(
-            session,
-            int(-repayment),
-            "ASEAN Loan Repayment",
-            str(character.player.unique_id),
-        )
-        await register_player_repay_loan(repayment, character)
-
-        # Announce NPL exit in game
-        if was_npl and not await is_character_npl(character):
-            announce_session = game_session or session
-            asyncio.create_task(
-                announce(
-                    f"{character.name} is no longer under a Non-Performing Loan repayment plan. Congratulations!",
-                    announce_session,
-                    color="00FF00",
-                )
-            )
-
-        return int(repayment)
-    except Exception as e:
-        asyncio.create_task(
-            show_popup(session, f"Repayment failed {e}", character_guid=character.guid)
-        )
-        raise e
 
 
 DEFAULT_SAVING_RATE = 1

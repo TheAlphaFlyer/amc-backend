@@ -46,7 +46,8 @@ economy_router = Router()
 @economy_router.get("/overview/", response=EconomyOverviewSchema)
 async def economy_overview(request):
     """Aggregate economy statistics: treasury, donations, subsidies, loans."""
-    from amc_finance.services import get_treasury_fund_balance, get_non_performing_loans
+    from amc_finance.services import get_treasury_fund_balance
+    from amc_finance.loans import get_non_performing_loans
     from amc_finance.models import Account, LedgerEntry
 
     treasury_balance = await get_treasury_fund_balance()
@@ -78,7 +79,7 @@ async def economy_overview(request):
 @economy_router.get("/npl/", response=list[NPLLoanSchema])
 async def npl_loans(request):
     """List characters with non-performing loans (public transparency)."""
-    from amc_finance.services import get_non_performing_loans
+    from amc_finance.loans import get_non_performing_loans
 
     loans = await sync_to_async(get_non_performing_loans)()
 
@@ -176,7 +177,7 @@ characters_router = Router()
 @characters_router.get("/{int:character_id}/profile/", response=CharacterProfileSchema)
 async def character_profile(request, character_id: int):
     """Extended character profile (privacy-safe: no money, no social score)."""
-    from amc_finance.services import get_credit_score_label
+    from amc_finance.loans import get_credit_score_label
 
     character = await Character.objects.select_related("player").aget(id=character_id)
 

@@ -24,7 +24,8 @@ from amc.gov_employee import expire_gov_employees  # noqa: E402
 from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
-from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, evaluate_credit_scores, transfer_nirc  # noqa: E402
+from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, transfer_nirc  # noqa: E402
+from amc_finance.loans import evaluate_credit_scores  # noqa: E402
 
 REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
 

@@ -10,7 +10,10 @@ from amc.mod_server import transfer_money
 from amc.police import is_police
 from amc_finance.services import (
     send_fund_to_player_wallet,
+)
+from amc_finance.loans import (
     get_player_loan_balance,
+    repay_loan_for_profit,
 )
 
 TASK_FREQUENCY = 20  # minutes
@@ -99,7 +102,6 @@ async def handout_ubi(ctx):
             # Auto-repay loan with UBI
             loan_balance = await get_player_loan_balance(character)
             if loan_balance > 0:
-                from amc.subsidies import repay_loan_for_profit
                 repayment = min(amount, loan_balance)
                 await repay_loan_for_profit(
                     character, amount, http_client_mod,

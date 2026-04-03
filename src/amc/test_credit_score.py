@@ -4,7 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 from unittest.mock import MagicMock, patch, AsyncMock
 from asgiref.sync import sync_to_async
-from amc_finance.services import (
+from amc_finance.loans import (
     calc_loan_fee,
     get_credit_score_label,
     evaluate_credit_scores,

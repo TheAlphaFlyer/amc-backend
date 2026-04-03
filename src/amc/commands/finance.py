@@ -3,6 +3,10 @@ from amc.command_framework import registry, CommandContext
 from amc.models import Delivery
 from amc_finance.services import (
     register_player_withdrawal,
+    player_donation,
+    send_fund_to_player,
+)
+from amc_finance.loans import (
     register_player_take_loan,
     get_player_bank_balance,
     get_player_loan_balance,
@@ -10,8 +14,6 @@ from amc_finance.services import (
     get_character_npl_status,
     calc_loan_fee,
     get_credit_score_label,
-    player_donation,
-    send_fund_to_player,
 )
 from amc_finance.models import Account, LedgerEntry
 from amc.subsidies import DEFAULT_SAVING_RATE

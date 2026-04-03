@@ -16,11 +16,13 @@ from amc.utils import skip_if_running
 from amc.mod_server import despawn_player_cargo, get_webhook_events2, send_system_message, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.subsidies import (
-    repay_loan_for_profit,
     set_aside_player_savings,
     get_subsidy_for_cargo,
     get_passenger_subsidy,
     subsidise_player,
+)
+from amc_finance.loans import (
+    repay_loan_for_profit,
 )
 from amc_finance.services import (
     get_treasury_fund_balance,
@@ -48,6 +50,7 @@ from amc.models import (
     MinistryTerm,
     PoliceSession,
     SubsidyRule,
+    Wanted,
 )
 
 logger = logging.getLogger("amc.webhook")
@@ -55,6 +58,7 @@ logger = logging.getLogger("amc.webhook")
 PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
 WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
 PARTY_BONUS_RATE = 0.05  # 5% per extra party member
+INITIAL_PROTECTION_SECONDS = 300  # 5 minutes — Wanted countdown starting value
 
 
 async def on_player_profits(player_profits, session, http_client=None):
@@ -576,7 +580,7 @@ async def handle_reset_vehicle(character, timestamp, is_rp_mode, http_client):
         )
 
 
-TELEPORT_PENALTY_WINDOW = 10  # minutes — same as ARREST_CONFISCATION_WINDOW
+TELEPORT_PENALTY_WINDOW = 10  # minutes — used for legacy lookup only
 TELEPORT_PENALTY_ANNOUNCE_DELAY = 10  # seconds — debounce window for announcements
 POLICE_TELEPORT_ARREST_COOLDOWN = 5  # minutes — cops can't arrest after teleporting
 
@@ -635,25 +639,24 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
         await cache.aset(cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60)
         return
 
-    # Find recent un-confiscated Money deliveries within the penalty window
-    window_start = timestamp - timedelta(minutes=TELEPORT_PENALTY_WINDOW)
+    # Find un-confiscated Money deliveries and compute penalty rate from Wanted status
     recent_deliveries = [
         d async for d in Delivery.objects.filter(
             character=character,
             cargo_key="Money",
-            timestamp__gte=window_start,
-            confiscations__isnull=True,  # not yet confiscated
+            confiscations__isnull=True,
         )
     ]
     if not recent_deliveries:
         return
 
-    # Calculate penalty using linear decay per delivery
-    penalty = 0
-    for delivery in recent_deliveries:
-        elapsed_minutes = (timestamp - delivery.timestamp).total_seconds() / 60
-        rate = max(0.0, 1.0 - elapsed_minutes / TELEPORT_PENALTY_WINDOW)
-        penalty += round(delivery.payment * rate)
+    try:
+        wanted = await Wanted.objects.aget(character=character)
+        rate = max(0.0, wanted.protection_remaining / INITIAL_PROTECTION_SECONDS)
+    except Wanted.DoesNotExist:
+        rate = 0.0
+
+    penalty = sum(round(d.payment * rate) for d in recent_deliveries)
 
     if penalty <= 0:
         return
@@ -683,7 +686,10 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
     )
     await conf.deliveries.aset([d.id for d in recent_deliveries])
 
-    # 4. Refresh player name tag (criminal level may have dropped)
+    # 4. Clear Wanted status after penalty
+    await Wanted.objects.filter(character=character).adelete()
+
+    # 5. Refresh player name tag (criminal level may have dropped)
     from amc.player_tags import refresh_player_name
     await refresh_player_name(character, http_client_mod)
 
@@ -720,9 +726,14 @@ async def handle_cargo_arrived(
     active_term=None,
 ):
     valid_cargos = []
+    clawback = 0
     for cargo in event["data"]["Cargos"]:
         if cargo["Net_Payment"] < 0:
             raise ValueError(f"Negative payment for cargo: {cargo}")
+        if cargo.get("Net_DeliveryId", 0) == 0:
+            # Zero-delivery cargo: game deposited it but we don't track it.
+            clawback += cargo["Net_Payment"]
+            continue
         valid_cargos.append(cargo)
 
     logs = await asyncio.gather(
@@ -874,6 +885,13 @@ async def handle_cargo_arrived(
             if security_bonus > 0 and character:
                 await subsidise_player(security_bonus, character, http_client_mod, message="Risk Premium")
 
+            # Create or update Wanted status — reset protection to full
+            if character:
+                await Wanted.objects.aupdate_or_create(
+                    character=character,
+                    defaults={"protection_remaining": INITIAL_PROTECTION_SECONDS},
+                )
+
         if discord_client:
             asyncio.create_task(
                 post_discord_delivery_embed(
@@ -893,7 +911,7 @@ async def handle_cargo_arrived(
 
         total_subsidy += delivery_subsidy
 
-    return total_payment, total_subsidy
+    return total_payment, total_subsidy, clawback
 
 
 def aggregate_homogenous_events(sorted_events):
@@ -1144,6 +1162,7 @@ async def process_events(
         total_base_payment = 0
         total_subsidy = 0
         total_contract_payment = 0
+        total_clawback = 0
 
         is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
         used_shortcut = (
@@ -1153,7 +1172,7 @@ async def process_events(
 
         for event in es:
             try:
-                base_pay, subsidy, contract_pay = await process_event(
+                base_pay, subsidy, contract_pay, clawback = await process_event(
                     event,
                     player,
                     character,
@@ -1168,6 +1187,7 @@ async def process_events(
                 total_base_payment += base_pay
                 total_subsidy += subsidy
                 total_contract_payment += contract_pay
+                total_clawback += clawback
             except Exception as e:
                 event_str = json.dumps(event)
                 asyncio.create_task(
@@ -1178,6 +1198,15 @@ async def process_events(
                     )
                 )
                 raise e
+
+        # Claw back money deposited by the game for zero-delivery cargos
+        if total_clawback > 0 and http_client_mod:
+            await transfer_money(
+                http_client_mod,
+                int(-total_clawback),
+                "Non-Delivery Cargo",
+                str(character.player.unique_id),
+            )
 
         # Party bonus + payment splitting
         party_result = await split_party_payment(
@@ -1322,7 +1351,7 @@ async def handle_load_cargo(event, character, player, http_client_mod, http_clie
             asyncio.create_task(
                 show_popup(
                     http_client_mod,
-                    "You are not allowed to use modified vehicles for criminal gameplay!",
+                    "You are now allowed to use modified vehicles for criminal gameplay",
                     character_guid=character.guid,
                     player_id=str(player.unique_id),
                 )
@@ -1346,20 +1375,23 @@ async def process_event(
     """Process a single webhook event.
 
     Returns:
-        (base_payment, subsidy, contract_payment) — all kept separate,
-        never baked together. base_payment is what the game deposited
-        into the player's wallet. subsidy will be paid separately.
+        (base_payment, subsidy, contract_payment, clawback) — all kept
+        separate, never baked together. base_payment is what the game
+        deposited into the player's wallet. subsidy will be paid
+        separately. clawback is the amount to reverse from the wallet
+        for zero-delivery cargos (Net_DeliveryId == 0).
     """
     print(event)
     base_payment = 0
     subsidy = 0
     contract_payment = 0
+    clawback = 0
     current_tz = timezone.get_current_timezone()
     timestamp = timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
 
     match event["hook"]:
         case "ServerCargoArrived":
-            payment, sub = await handle_cargo_arrived(
+            payment, sub, cargo_clawback = await handle_cargo_arrived(
                 event,
                 player,
                 character,
@@ -1374,6 +1406,7 @@ async def process_event(
             )
             base_payment += payment
             subsidy += sub
+            clawback += cargo_clawback
 
         case "ServerCargoDumped":
             payment, sub = await handle_cargo_dumped(event, player, timestamp)
@@ -1425,4 +1458,4 @@ async def process_event(
             if http_client_mod:
                 await handle_load_cargo(event, character, player, http_client_mod, http_client=http_client)
 
-    return base_payment, subsidy, contract_payment
+    return base_payment, subsidy, contract_payment, clawback

@@ -8,18 +8,20 @@ from amc.factories import CharacterFactory
 from amc.models import CharacterLocation
 from amc_finance.models import Account, JournalEntry, LedgerEntry
 from .services import (
-    get_player_bank_balance,
     register_player_deposit,
     register_player_withdrawal,
     apply_interest_to_bank_accounts,
     apply_wealth_tax,
     transfer_nirc,
+    make_treasury_bank_deposit,
+    make_treasury_bank_withdrawal,
+)
+from .loans import (
+    get_player_bank_balance,
     get_non_performing_loans,
     get_character_npl_status,
     register_player_take_loan,
     register_player_repay_loan,
-    make_treasury_bank_deposit,
-    make_treasury_bank_withdrawal,
 )
 
 
@@ -460,7 +462,7 @@ class NPLTestCase(TestCase):
         """Selling a vehicle should auto-repay the loan from sale proceeds."""
         from unittest.mock import AsyncMock, patch
         from amc.tasks import on_vehicle_sold
-        from amc_finance.services import get_player_loan_balance
+        from amc_finance.loans import get_player_loan_balance
 
         character = await sync_to_async(CharacterFactory)()
         player = await sync_to_async(lambda: character.player)()

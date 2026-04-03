@@ -186,6 +186,7 @@ class CharacterAdmin(admin.ModelAdmin):
     list_filter = ["crossover_warning_sent_at"]
     inlines = [AccountInlineAdmin, PlayerStatusLogInlineAdmin]
     readonly_fields = ["guid", "player", "last_login", "total_session_time"]
+    exclude = ["last_location"]
 
     @admin.display(ordering="last_login", boolean=False)
     def last_login(self, obj):
@@ -622,7 +623,12 @@ class CriminalRecordAdmin(admin.ModelAdmin):
 @admin.register(Confiscation)
 class ConfiscationAdmin(admin.ModelAdmin):
     list_display = ["id", "character", "officer", "cargo_key", "amount", "created_at"]
-    list_select_related = ["character", "character__player", "officer", "officer__player"]
+    list_select_related = [
+        "character",
+        "character__player",
+        "officer",
+        "officer__player",
+    ]
     search_fields = ["character__name", "officer__name", "character__player__unique_id"]
     readonly_fields = ["character", "officer"]
     filter_horizontal = ["deliveries"]
@@ -1201,7 +1207,12 @@ class SupplyChainContributionAdmin(admin.ModelAdmin):
         "timestamp",
         "objective",
     ]
-    list_select_related = ["character", "character__player", "objective", "objective__event"]
+    list_select_related = [
+        "character",
+        "character__player",
+        "objective",
+        "objective__event",
+    ]
     ordering = ["-timestamp"]
     search_fields = ["character__name", "cargo_key"]
     autocomplete_fields = ["character", "delivery"]
@@ -1241,7 +1252,11 @@ class NewsItemAdmin(admin.ModelAdmin):
 class FactionMembershipAdmin(admin.ModelAdmin):
     list_display = ["player", "faction", "joined_at", "last_switched_at"]
     list_filter = ["faction"]
-    search_fields = ["player__unique_id", "player__characters__name", "player__discord_name"]
+    search_fields = [
+        "player__unique_id",
+        "player__characters__name",
+        "player__discord_name",
+    ]
     autocomplete_fields = ["player"]
 
 
@@ -1253,4 +1268,3 @@ class PoliceSessionAdmin(admin.ModelAdmin):
     list_filter = ["ended_at"]
     readonly_fields = ["character"]
     ordering = ["-started_at"]
-

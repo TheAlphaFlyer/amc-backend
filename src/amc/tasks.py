@@ -62,13 +62,15 @@ from amc.utils import (
 )
 from amc_finance.services import (
     player_donation,
+)
+from amc_finance.loans import (
     get_player_loan_balance,
+    repay_loan_for_profit,
 )
 from amc.mod_detection import detect_custom_parts, detect_incompatible_parts, POLICE_DUTY_WHITELIST
 from amc.player_tags import refresh_player_name
 from amc.webhook import on_player_profit
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
-from amc.subsidies import repay_loan_for_profit
 from amc.vehicles import spawn_registered_vehicle
 import logging
 from collections import deque
