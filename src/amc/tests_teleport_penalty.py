@@ -67,7 +67,7 @@ class TeleportPenaltyTests(TestCase):
         """Teleporting with full Wanted (300s) → ~100% penalty."""
         _, character = await self._setup_character()
         await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, protection_remaining=300)
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
 
         await self._process_teleport(character)
 
@@ -97,7 +97,7 @@ class TeleportPenaltyTests(TestCase):
         """Teleporting with 50% Wanted (150s) → 50% penalty."""
         _, character = await self._setup_character()
         await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, protection_remaining=150)
+        await Wanted.objects.acreate(character=character, wanted_remaining=150)
 
         await self._process_teleport(character, hook="ServerTeleportVehicle")
 
@@ -146,7 +146,7 @@ class TeleportPenaltyTests(TestCase):
         """Active police officers are not penalised."""
         _, character = await self._setup_character()
         await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, protection_remaining=300)
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
         await PoliceSession.objects.acreate(character=character)
 
         await self._process_teleport(character)
@@ -162,7 +162,7 @@ class TeleportPenaltyTests(TestCase):
         await self._deliver_money(character, payment=100_000)
         await self._deliver_money(character, payment=50_000)
         # Wanted at 240s (80%) → 100000*0.8 + 50000*0.8 = 80000 + 40000 = 120000
-        await Wanted.objects.acreate(character=character, protection_remaining=240)
+        await Wanted.objects.acreate(character=character, wanted_remaining=240)
 
         character.criminal_laundered_total = 150_000
         await character.asave(update_fields=["criminal_laundered_total"])

@@ -378,18 +378,18 @@ class Confiscation(models.Model):
 class Wanted(models.Model):
     """Active wanted status for a criminal who recently delivered Money.
 
-    The protection_remaining field is a proximity-based countdown (seconds).
+    The wanted_remaining field is a proximity-based countdown (seconds).
     Each patrol tick decrements it at a rate influenced by the nearest police
     distance — closer police means the countdown runs slower, giving officers
-    more time to arrest. When protection_remaining reaches 0, the suspect
+    more time to arrest. When wanted_remaining reaches 0, the suspect
     is no longer arrestable.
     """
-    INITIAL_PROTECTION_SECONDS = 300  # 5 minutes
+    INITIAL_WANTED_SECONDS = 300  # 5 minutes
 
     character = models.OneToOneField(
         Character, on_delete=models.CASCADE, related_name="wanted_status"
     )
-    protection_remaining = models.PositiveIntegerField()  # seconds
+    wanted_remaining = models.FloatField()  # seconds (float for fractional decrements)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -397,7 +397,7 @@ class Wanted(models.Model):
 
     @override
     def __str__(self):
-        return f"Wanted: {self.character.name} ({self.protection_remaining}s remaining)"
+        return f"Wanted: {self.character.name} ({self.wanted_remaining}s remaining)"
 
 
 class FactionChoice(models.TextChoices):

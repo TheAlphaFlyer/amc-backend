@@ -122,7 +122,7 @@ async def execute_arrest(
         if suspect_char:
             try:
                 wanted = await Wanted.objects.aget(character=suspect_char)
-                rate = max(0.0, wanted.protection_remaining / Wanted.INITIAL_PROTECTION_SECONDS)
+                rate = max(0.0, wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS)
             except Wanted.DoesNotExist:
                 rate = 0.0
 

@@ -2233,7 +2233,7 @@ class ArrestCommandTestCase(TestCase):
             cargo_key="Money", payment=25_000, quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, protection_remaining=270)
+        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=270)
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2312,7 +2312,7 @@ class ArrestCommandTestCase(TestCase):
             cargo_key="Money", payment=20_000, quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, protection_remaining=150)
+        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=150)
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2359,7 +2359,7 @@ class ArrestCommandTestCase(TestCase):
             cargo_key="Money", payment=50_000, quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, protection_remaining=30)
+        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=30)
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2461,7 +2461,7 @@ class ArrestCommandTestCase(TestCase):
             timestamp=timezone.now(),
         )
         # Wanted at 240s (80%) → int(50000*0.8) + int(30000*0.8) = 40000 + 24000 = 64000
-        await Wanted.objects.acreate(character=self.criminal_character, protection_remaining=240)
+        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=240)
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),

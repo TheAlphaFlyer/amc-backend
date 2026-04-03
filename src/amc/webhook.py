@@ -651,7 +651,7 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
 
     try:
         wanted = await Wanted.objects.aget(character=character)
-        rate = max(0.0, wanted.protection_remaining / Wanted.INITIAL_PROTECTION_SECONDS)
+        rate = max(0.0, wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS)
     except Wanted.DoesNotExist:
         rate = 0.0
 
@@ -888,7 +888,7 @@ async def handle_cargo_arrived(
             if character:
                 await Wanted.objects.aupdate_or_create(
                     character=character,
-                    defaults={"protection_remaining": Wanted.INITIAL_PROTECTION_SECONDS},
+                    defaults={"wanted_remaining": Wanted.INITIAL_WANTED_SECONDS},
                 )
 
         if discord_client:

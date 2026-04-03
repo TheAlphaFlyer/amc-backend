@@ -220,7 +220,7 @@ async def test_refresh_player_name_wanted(mock_set_name):
         guid="test-guid-wanted-1",
     )
 
-    await Wanted.objects.acreate(character=character, protection_remaining=300)
+    await Wanted.objects.acreate(character=character, wanted_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)
@@ -246,7 +246,7 @@ async def test_refresh_player_name_wanted_rounds_up(mock_set_name):
         guid="test-guid-wanted-2",
     )
 
-    await Wanted.objects.acreate(character=character, protection_remaining=241)
+    await Wanted.objects.acreate(character=character, wanted_remaining=241)
 
     session = MagicMock()
     await refresh_player_name(character, session)
@@ -271,7 +271,7 @@ async def test_refresh_player_name_wanted_61s(mock_set_name):
         guid="test-guid-wanted-3",
     )
 
-    await Wanted.objects.acreate(character=character, protection_remaining=61)
+    await Wanted.objects.acreate(character=character, wanted_remaining=61)
 
     session = MagicMock()
     await refresh_player_name(character, session)
@@ -284,7 +284,7 @@ async def test_refresh_player_name_wanted_61s(mock_set_name):
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
 async def test_refresh_player_name_wanted_zero_protection(mock_set_name):
-    """Wanted with protection_remaining=0 → no tag."""
+    """Wanted with wanted_remaining=0 → no tag."""
     from amc.factories import CharacterFactory, PlayerFactory
     from amc.models import Wanted
     from asgiref.sync import sync_to_async
@@ -296,7 +296,7 @@ async def test_refresh_player_name_wanted_zero_protection(mock_set_name):
         guid="test-guid-wanted-4",
     )
 
-    await Wanted.objects.acreate(character=character, protection_remaining=0)
+    await Wanted.objects.acreate(character=character, wanted_remaining=0)
 
     session = MagicMock()
     await refresh_player_name(character, session)
@@ -328,7 +328,7 @@ async def test_refresh_player_name_wanted_with_crim(mock_set_name):
         reason="Money delivery",
         expires_at=timezone.now() + timedelta(days=7),
     )
-    await Wanted.objects.acreate(character=character, protection_remaining=300)
+    await Wanted.objects.acreate(character=character, wanted_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)
@@ -354,7 +354,7 @@ async def test_refresh_player_name_wanted_with_police(mock_set_name):
     )
 
     await PoliceSession.objects.acreate(character=character)
-    await Wanted.objects.acreate(character=character, protection_remaining=300)
+    await Wanted.objects.acreate(character=character, wanted_remaining=300)
 
     session = MagicMock()
     await refresh_player_name(character, session)

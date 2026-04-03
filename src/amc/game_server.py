@@ -3,6 +3,7 @@ from typing import Any, cast
 import urllib.parse
 import aiohttp
 from yarl import URL
+from django.core.cache import cache
 
 
 async def game_api_request(
@@ -27,6 +28,11 @@ async def game_api_request(
 
 
 async def get_players(session, password=""):
+    cache_key = "game_online_players_list"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     data = await game_api_request(session, "/player/list")
     if "data" not in data:
         return []
@@ -35,6 +41,7 @@ async def get_players(session, password=""):
         for player in data["data"].values()
         if player is not None
     ]
+    cache.set(cache_key, players, timeout=1)
     return players
 
 

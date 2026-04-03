@@ -79,7 +79,7 @@ class AutoArrestPatrolTests(TestCase):
         # Criminal has active Wanted status
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         # Both players near each other (within 50m = 5000 game units)
@@ -144,7 +144,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         # Criminal is 100m away (10000 game units > 1500 auto-arrest radius on foot)
@@ -181,7 +181,7 @@ class AutoArrestPatrolTests(TestCase):
         # Even if officer2 has Wanted status (shouldn't happen, but edge case)
         await Wanted.objects.acreate(
             character=officer2,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         players = _make_players_list([
@@ -209,7 +209,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         from amc.commands.faction import _build_player_locations
@@ -247,13 +247,13 @@ class AutoArrestPatrolTests(TestCase):
         self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
         mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
     ):
-        """Wanted with protection_remaining=0 does not trigger arrest."""
+        """Wanted with wanted_remaining=0 does not trigger arrest."""
         officer, criminal = await self._setup_world()
 
         # Wanted with zero protection remaining
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=0,
+            wanted_remaining=0,
         )
 
         players = _make_players_list([
@@ -281,7 +281,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         players = _make_players_list([
@@ -313,7 +313,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         players = _make_players_list([
@@ -349,7 +349,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         players = _make_players_list([
@@ -386,7 +386,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         players = _make_players_list([
@@ -415,7 +415,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
 
@@ -453,7 +453,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         # Cop is in a police vehicle
@@ -485,7 +485,7 @@ class AutoArrestPatrolTests(TestCase):
 
         await Wanted.objects.acreate(
             character=criminal,
-            protection_remaining=300,
+            wanted_remaining=300,
         )
 
         # Cop is in a civilian vehicle
@@ -515,7 +515,7 @@ class IsWantedTests(TestCase):
     async def test_returns_true_with_active_wanted(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        await Wanted.objects.acreate(character=character, protection_remaining=300)
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
         result = await _is_wanted(character)
         self.assertTrue(result)
 
@@ -528,6 +528,6 @@ class IsWantedTests(TestCase):
     async def test_returns_false_with_expired_wanted(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        await Wanted.objects.acreate(character=character, protection_remaining=0)
+        await Wanted.objects.acreate(character=character, wanted_remaining=0)
         result = await _is_wanted(character)
         self.assertFalse(result)

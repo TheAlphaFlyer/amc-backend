@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
             name='Wanted',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('protection_remaining', models.PositiveIntegerField()),
+                ('wanted_remaining', models.FloatField()),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('character', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='wanted_status', to='amc.character')),
             ],

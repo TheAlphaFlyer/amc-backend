@@ -133,8 +133,8 @@ async def refresh_player_name(
     wanted_minutes = 0
     try:
         wanted = await Wanted.objects.aget(character=character)
-        if wanted.protection_remaining > 0:
-            wanted_minutes = math.ceil(wanted.protection_remaining / 60)
+        if wanted.wanted_remaining > 0:
+            wanted_minutes = math.ceil(wanted.wanted_remaining / 60)
     except Wanted.DoesNotExist:
         pass
 

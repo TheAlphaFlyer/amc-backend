@@ -18,6 +18,7 @@ from amc.webhook import monitor_webhook, WEBHOOK_SSE_ENABLED  # noqa: E402
 from amc.sse_client import run_sse_listener  # noqa: E402
 from amc.ubi import handout_ubi, TASK_FREQUENCY as UBI_TASK_FREQUENCY  # noqa: E402
 from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
+from amc.criminals import tick_wanted_countdown  # noqa: E402
 from amc.jobs import monitor_jobs  # noqa: E402
 from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
@@ -161,6 +162,10 @@ async def monitor_events_event(ctx):
     await monitor_events(ctx, ctx["http_client_event_mod"])
 
 
+async def wanted_countdown_tick(ctx):
+    await tick_wanted_countdown(ctx["http_client"])
+
+
 class WorkerSettings:
     functions = [
         process_log_line,
@@ -174,6 +179,8 @@ class WorkerSettings:
         ] if not WEBHOOK_SSE_ENABLED else []),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_locations, second=None),
+        # pyrefly: ignore [bad-argument-type]
+        cron(wanted_countdown_tick, second=None),
         # pyrefly: ignore [bad-argument-type]
         cron(handout_ubi, minute=set(range(0, 60, UBI_TASK_FREQUENCY)), second=37),
         # pyrefly: ignore [bad-argument-type]
