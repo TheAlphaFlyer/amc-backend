@@ -5,6 +5,7 @@ from django.utils import timezone
 from amc.command_framework import registry, CommandContext
 from amc.models import TeleportPoint, RescueRequest, PoliceSession
 from amc.mod_server import teleport_player, list_player_vehicles, show_popup, enter_last_vehicle
+from amc.police import is_police_vehicle
 from django.conf import settings
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
@@ -40,7 +41,7 @@ async def cmd_tp_vehicle(ctx: CommandContext):
 
         # Find a police vehicle (same pattern as tasks.py line 681)
         police_vehicle = next(
-            (v for v in player_vehicles.values() if "Police" in v.get("VehicleName", "")),
+            (v for v in player_vehicles.values() if is_police_vehicle(v.get("VehicleName"))),
             None,
         )
         if not police_vehicle:

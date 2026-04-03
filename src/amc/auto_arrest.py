@@ -28,6 +28,7 @@ from amc.commands.faction import (
 from amc.game_server import announce, get_players
 from amc.mod_server import send_system_message
 from amc.models import ArrestZone, Character, Delivery, PoliceSession
+from amc.police import is_police_vehicle
 
 logger = logging.getLogger("amc.auto_arrest")
 
@@ -73,6 +74,14 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
     if not locations:
         return {}, {}
 
+    # Build vehicle name lookup from raw player data
+    vehicle_names: dict[str, str | None] = {}
+    for _uid, pdata in players:
+        guid = pdata.get("character_guid")
+        if guid:
+            vehicle = pdata.get("vehicle")
+            vehicle_names[guid] = vehicle.get("name") if vehicle else None
+
     # Identify on-duty police officers
     online_threshold = timezone.now() - timedelta(seconds=60)
     police_sessions = [
@@ -114,6 +123,11 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
     # For each cop, find nearby suspects eligible for auto-arrest
     for cop_guid in cop_guids:
         cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
+
+        # Only allow auto-arrest while on foot or in a police vehicle
+        if cop_has_vehicle:
+            if not is_police_vehicle(vehicle_names.get(cop_guid)):
+                continue
         arrest_radius = AUTO_ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else AUTO_ARREST_RADIUS_ON_FOOT
 
         # Zone check — cop must be inside an active ArrestZone

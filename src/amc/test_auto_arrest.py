@@ -476,6 +476,76 @@ class AutoArrestPatrolTests(TestCase):
         # But arrest should still fire because radius was only checked on tick 1
         mock_teleport.assert_called_once()
 
+    async def test_auto_arrest_with_police_vehicle(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """Cop in a police vehicle can auto-arrest nearby suspects."""
+        officer, criminal = await self._setup_world()
+
+        await Delivery.objects.acreate(
+            character=criminal,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+
+        # Cop is in a police vehicle
+        players = _make_players_list([
+            _make_player_data(
+                officer.player.unique_id, officer.guid, 1000, 1000, 0,
+                vehicle={"name": "Police Car", "unique_id": 100},
+            ),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        prev = {}
+        sc = {}
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
+
+        mock_teleport.assert_called_once()
+
+    async def test_no_arrest_in_civilian_vehicle(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """Cop in a civilian vehicle cannot auto-arrest suspects."""
+        officer, criminal = await self._setup_world()
+
+        await Delivery.objects.acreate(
+            character=criminal,
+            cargo_key="Money",
+            quantity=1,
+            payment=100_000,
+            timestamp=timezone.now() - timedelta(minutes=2),
+        )
+
+        # Cop is in a civilian vehicle
+        players = _make_players_list([
+            _make_player_data(
+                officer.player.unique_id, officer.guid, 1000, 1000, 0,
+                vehicle={"name": "Longhorn Semi", "unique_id": 200},
+            ),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        prev = {}
+        sc = {}
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
+
+        mock_teleport.assert_not_called()
+
 
 class HasRecentMoneyDeliveriesTests(TestCase):
     """Unit tests for _has_recent_money_deliveries helper."""

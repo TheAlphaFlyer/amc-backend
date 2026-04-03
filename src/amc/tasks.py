@@ -45,6 +45,7 @@ from amc.models import (
     PoliceSession,
 )
 from amc.game_server import announce, get_players
+from amc.police import is_police_vehicle
 from amc.utils import forward_to_discord
 from amc.mod_server import (
     show_popup,
@@ -670,7 +671,7 @@ async def process_log_event(
                 action=action,
             )
             if action == PlayerVehicleLog.Action.ENTERED:
-                if "Police" in vehicle_name:
+                if is_police_vehicle(vehicle_name):
                     asyncio.create_task(
                         _show_police_popup(
                             http_client_mod,
@@ -788,6 +789,10 @@ async def process_log_event(
             )
             if character:
                 await process_logout_event(character.id, timestamp)
+                # End any active police session
+                from amc.police import deactivate_police
+
+                await deactivate_police(character, None)
             if (
                 discord_client
                 and ctx.get("startup_time")
@@ -808,6 +813,10 @@ async def process_log_event(
                 name=player_name,
             )
             await process_logout_event(character.id, timestamp)
+            # End any active police session
+            from amc.police import deactivate_police
+
+            await deactivate_police(character, None)
 
         case CompanyAddedLogEvent(
             timestamp, company_name, is_corp, owner_name, owner_id
@@ -894,6 +903,11 @@ async def process_log_event(
             ).aupdate(**{field_name: level_value})
 
         case ServerStartedLogEvent(timestamp, _version):
+            # Close any stale police sessions from before the restart
+            await PoliceSession.objects.filter(
+                ended_at__isnull=True
+            ).aupdate(ended_at=timezone.now())
+            logger.info("Closed stale police sessions on server start")
 
             async def spawn_dealerships():
                 async for vd in VehicleDealership.objects.filter(spawn_on_restart=True):

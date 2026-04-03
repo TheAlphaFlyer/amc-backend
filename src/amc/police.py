@@ -46,6 +46,11 @@ async def is_police(character) -> bool:
     ).aexists()
 
 
+def is_police_vehicle(vehicle_name: str | None) -> bool:
+    """Check if a vehicle name indicates a police vehicle."""
+    return bool(vehicle_name and "Police" in vehicle_name)
+
+
 async def activate_police(character, session):
     """Start a new police session and refresh player tag."""
     from amc.models import PoliceSession

@@ -125,7 +125,7 @@ How ASEAN Loans Works
 
 @registry.register(
     "/donate",
-    description=gettext_lazy("Donate money to another player"),
+    description=gettext_lazy("Donate money to the treasury"),
     category="Finance",
 )
 async def cmd_donate(ctx: CommandContext, amount: str, verification_code: str = ""):
