@@ -80,6 +80,7 @@ from .models import (
     Confiscation,
     ArrestZone,
     PoliceSession,
+    Wanted,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1268,3 +1269,12 @@ class PoliceSessionAdmin(admin.ModelAdmin):
     list_filter = ["ended_at"]
     readonly_fields = ["character"]
     ordering = ["-started_at"]
+
+
+@admin.register(Wanted)
+class WantedAdmin(admin.ModelAdmin):
+    list_display = ["id", "character", "wanted_remaining", "created_at"]
+    list_select_related = ["character", "character__player"]
+    search_fields = ["character__name", "character__player__unique_id"]
+    readonly_fields = ["character"]
+    ordering = ["-created_at"]
