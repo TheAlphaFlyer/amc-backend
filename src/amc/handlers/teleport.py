@@ -28,7 +28,6 @@ logger = logging.getLogger("amc.webhook.handlers.teleport")
 
 TELEPORT_PENALTY_WINDOW = 10  # minutes — used for legacy lookup only
 TELEPORT_PENALTY_ANNOUNCE_DELAY = 10  # seconds — debounce window for announcements
-POLICE_TELEPORT_ARREST_COOLDOWN = 5  # minutes — cops can't arrest after teleporting
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +91,6 @@ async def _handle_teleport_or_respawn(event, character, ctx):
         character=character, ended_at__isnull=True
     ).aexists()
     if is_police:
-        # Set cooldown to block this officer from arresting
-        cooldown_key = f"police_teleport_cooldown:{character.guid}"
-        await cache.aset(
-            cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60
-        )
         return 0, 0, 0, 0
 
     # Find un-confiscated Money deliveries and compute penalty rate from Wanted status

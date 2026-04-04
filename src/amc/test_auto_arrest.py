@@ -15,15 +15,17 @@ from django.contrib.gis.geos import Point
 
 
 def _make_player_data(unique_id, character_guid, x, y, z, vehicle=None):
-    """Build a fake player dict matching the game server /player/list format."""
-    data = {
+    """Build a fake player dict matching the game server /player/list format.
+
+    The game server always includes a ``vehicle`` key — it is a dict
+    when the player is in a vehicle, and ``None`` when on foot.
+    """
+    return {
         "unique_id": str(unique_id),
         "character_guid": character_guid,
         "location": f"X={x} Y={y} Z={z}",
+        "vehicle": vehicle,
     }
-    if vehicle:
-        data["vehicle"] = vehicle
-    return data
 
 
 def _make_players_list(player_datas):
@@ -508,6 +510,47 @@ class AutoArrestPatrolTests(TestCase):
 
         mock_teleport.assert_not_called()
 
+    async def test_auto_arrest_on_foot_with_null_vehicle_key(
+        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
+        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+    ):
+        """Regression: cop and suspect on foot with vehicle=None are handled correctly.
+
+        The game server includes ``"vehicle": null`` for on-foot players.
+        Previously, ``'vehicle' in pdata`` evaluated to True, causing
+        on-foot cops to be wrongly treated as in a civilian vehicle and
+        skipped by the police-vehicle gate.
+        """
+        officer, criminal = await self._setup_world()
+
+        await Wanted.objects.acreate(
+            character=criminal,
+            wanted_remaining=300,
+        )
+
+        # Both on foot — vehicle key is explicitly None (matches real game server)
+        players = _make_players_list([
+            _make_player_data(
+                officer.player.unique_id, officer.guid, 1000, 1000, 0,
+                vehicle=None,
+            ),
+            _make_player_data(
+                criminal.player.unique_id, criminal.guid, 1500, 1000, 0,
+                vehicle=None,
+            ),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        prev = {}
+        sc = {}
+        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+            for _ in range(AUTO_ARREST_STILL_TICKS):
+                prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
+
+        # Arrest should fire — on-foot cop is not blocked by police vehicle gate
+        mock_teleport.assert_called_once()
 
 class IsWantedTests(TestCase):
     """Unit tests for _is_wanted helper."""

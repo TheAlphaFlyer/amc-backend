@@ -5,8 +5,8 @@ When a suspect with an active Wanted record is found within arrest range,
 the system automatically executes an arrest (teleport to jail, confiscate,
 announce) — matching the manual /arrest behavior.
 
-The patrol loop runs as a long-lived asyncio task started from the Discord
-bot's setup_hook, sharing the same http_client sessions.
+The patrol loop runs as a long-lived asyncio task started from the arq
+worker's startup, sharing the same http_client sessions.
 """
 
 import asyncio
@@ -14,8 +14,6 @@ import logging
 
 from datetime import timedelta
 
-from django.core.cache import cache
-from django.contrib.gis.geos import Point
 from django.utils import timezone
 
 from amc.commands.faction import (
@@ -132,17 +130,13 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
 
         # Zone check — cop must be inside an active ArrestZone
         if zones_exist:
+            from django.contrib.gis.geos import Point
             cop_point = Point(cop_loc[0], cop_loc[1], srid=3857)
             in_zone = await ArrestZone.objects.filter(
                 active=True, polygon__contains=cop_point
             ).aexists()
             if not in_zone:
                 continue
-
-        # Teleport cooldown: skip cops who recently teleported
-        tp_cooldown_key = f"police_teleport_cooldown:{cop_guid}"
-        if await cache.aget(tp_cooldown_key):
-            continue
 
         cop_char = cop_chars.get(cop_guid)
         if not cop_char:
@@ -265,7 +259,7 @@ async def run_patrol_loop(http_client, http_client_mod):
     """Long-running patrol loop that auto-arrests suspects near police.
 
     This function never returns under normal operation. It is meant to be
-    launched via asyncio.create_task from the Discord bot's setup_hook.
+    launched via asyncio.create_task from the arq worker's startup.
     """
     logger.info("Auto-arrest patrol loop started")
     prev_locations = {}

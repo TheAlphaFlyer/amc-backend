@@ -57,7 +57,6 @@ from amc.handlers.police import handle_pickup_cargo  # noqa: F401
 from amc.handlers.teleport import (
     TELEPORT_PENALTY_WINDOW,  # noqa: F401
     TELEPORT_PENALTY_ANNOUNCE_DELAY,  # noqa: F401
-    POLICE_TELEPORT_ARREST_COOLDOWN,  # noqa: F401
     _handle_teleport_or_respawn as handle_teleport_or_respawn,  # noqa: F401
 )
 from amc.handlers.smuggling import (

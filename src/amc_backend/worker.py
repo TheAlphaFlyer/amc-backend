@@ -23,6 +23,7 @@ from amc.jobs import monitor_jobs  # noqa: E402
 from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
 from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
+from amc.auto_arrest import run_patrol_loop  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
 from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, transfer_nirc  # noqa: E402
@@ -35,6 +36,7 @@ GAME_SERVER_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 bot_task_handle = None
 sse_task_handle = None
+patrol_task_handle = None
 # pyrefly: ignore [unknown-name]
 loop = None
 
@@ -57,7 +59,7 @@ async def run_discord():
 
 
 async def startup(ctx):
-    global bot_task_handle, sse_task_handle
+    global bot_task_handle, sse_task_handle, patrol_task_handle
     ctx["startup_time"] = timezone.now()
     ctx["http_client"] = aiohttp.ClientSession(
         base_url=settings.GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
@@ -84,6 +86,11 @@ async def startup(ctx):
 
     if WEBHOOK_SSE_ENABLED:
         sse_task_handle = asyncio.create_task(run_sse_listener(ctx))
+
+    # Start auto-arrest patrol loop
+    patrol_task_handle = asyncio.create_task(
+        run_patrol_loop(ctx["http_client"], ctx["http_client_mod"])
+    )
 
     # Bootstrap webhook dedup high-water marks from DB / mod buffer if Redis is cold.
     # Only bootstrap LAST_SEQ from DB IDs when using polling mode — SSE uses
@@ -118,7 +125,15 @@ async def startup(ctx):
 
 
 async def shutdown(ctx):
-    global sse_task_handle
+    global sse_task_handle, patrol_task_handle
+
+    if patrol_task_handle:
+        patrol_task_handle.cancel()
+        try:
+            await patrol_task_handle
+        except asyncio.CancelledError:
+            pass
+        patrol_task_handle = None
 
     if sse_task_handle:
         sse_task_handle.cancel()
