@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
-from amc.auto_arrest import AUTO_ARREST_STILL_TICKS, _is_wanted, _patrol_tick
+from amc.auto_arrest import _STILL_TICKS, _is_wanted, _patrol_tick
 from amc.factories import CharacterFactory, PlayerFactory
 from amc.models import Confiscation, PoliceSession, TeleportPoint, Wanted
 
@@ -97,7 +97,7 @@ class AutoArrestPatrolTests(TestCase):
         prev_locations = {}
         still_counters = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev_locations, still_counters = await _patrol_tick(
                     mock_http, mock_http_mod, prev_locations, still_counters
                 )
@@ -131,7 +131,7 @@ class AutoArrestPatrolTests(TestCase):
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
             prev = {}
             sc = {}
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -161,7 +161,7 @@ class AutoArrestPatrolTests(TestCase):
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
             prev = {}
             sc = {}
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -197,7 +197,7 @@ class AutoArrestPatrolTests(TestCase):
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
             prev = {}
             sc = {}
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -238,7 +238,7 @@ class AutoArrestPatrolTests(TestCase):
 
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_players_for_tick):
-            for _ in range(AUTO_ARREST_STILL_TICKS + 2):
+            for _ in range(_STILL_TICKS + 2):
                 prev_locations, sc = await _patrol_tick(
                     mock_http, mock_http_mod, prev_locations, sc
                 )
@@ -269,7 +269,7 @@ class AutoArrestPatrolTests(TestCase):
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
             prev = {}
             sc = {}
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -297,7 +297,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # announce() is called via asyncio.create_task, check it was called
@@ -329,7 +329,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # System message to officer about auto-arrest
@@ -366,7 +366,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         self.assertEqual(mock_teleport.call_count, 1)
@@ -374,7 +374,7 @@ class AutoArrestPatrolTests(TestCase):
         # Additional ticks: should NOT arrest again (Wanted already deleted)
         mock_teleport.reset_mock()
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -439,7 +439,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_drifting_players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # By tick 5, suspect is at 1500+800=2300 units away — beyond the 1500 radius
@@ -473,7 +473,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_called_once()
@@ -505,7 +505,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
@@ -546,7 +546,7 @@ class AutoArrestPatrolTests(TestCase):
         prev = {}
         sc = {}
         with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(AUTO_ARREST_STILL_TICKS):
+            for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # Arrest should fire — on-foot cop is not blocked by police vehicle gate

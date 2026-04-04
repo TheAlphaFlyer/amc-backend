@@ -17,7 +17,6 @@ from datetime import timedelta
 from django.utils import timezone
 
 from amc.commands.faction import (
-    SUSPECT_SPEED_LIMIT,
     _build_player_locations,
     _distance_3d,
     execute_arrest,
@@ -29,11 +28,21 @@ from amc.police import is_police_vehicle
 
 logger = logging.getLogger("amc.auto_arrest")
 
-PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
-AUTO_ARREST_STILL_TICKS = 10  # ticks the suspect must be still + in range (10 x 0.5s = 5s)
-AUTO_ARREST_WARNING_TICK = 4  # warn suspect at this tick (4 x 0.5s = 2s into tracking)
-AUTO_ARREST_RADIUS_ON_FOOT = 1500   # 15m — cop on foot, checked only on first contact
-AUTO_ARREST_RADIUS_IN_VEHICLE = 1000  # 10m — cop in vehicle, checked only on first contact
+# ── Tuning constants (human-readable) ────────────────────────────────
+PATROL_POLL_INTERVAL = 0.5   # seconds between each poll cycle
+AUTO_ARREST_DURATION = 3.0   # seconds suspect must be still + in range
+AUTO_ARREST_WARNING_AT = 1.0 # seconds into tracking before warning the suspect
+AUTO_ARREST_RADIUS_ON_FOOT_M = 30   # metres — cop arrest range on foot
+AUTO_ARREST_RADIUS_IN_VEHICLE_M = 20  # metres — cop arrest range in vehicle
+AUTO_ARREST_SPEED_LIMIT_KMPH = 40   # km/h — suspects faster than this escape
+
+# ── Derived constants (game: 100 units = 1 metre) ────────────────────
+_UNITS_PER_METRE = 100
+_STILL_TICKS = round(AUTO_ARREST_DURATION / PATROL_POLL_INTERVAL)
+_WARNING_TICK = round(AUTO_ARREST_WARNING_AT / PATROL_POLL_INTERVAL)
+_RADIUS_ON_FOOT = AUTO_ARREST_RADIUS_ON_FOOT_M * _UNITS_PER_METRE
+_RADIUS_IN_VEHICLE = AUTO_ARREST_RADIUS_IN_VEHICLE_M * _UNITS_PER_METRE
+_SPEED_LIMIT = AUTO_ARREST_SPEED_LIMIT_KMPH * _UNITS_PER_METRE / 3.6  # units/second
 
 
 async def _is_wanted(character) -> bool:
@@ -126,7 +135,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
         if cop_has_vehicle:
             if not is_police_vehicle(vehicle_names.get(cop_guid)):
                 continue
-        arrest_radius = AUTO_ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else AUTO_ARREST_RADIUS_ON_FOOT
+        arrest_radius = _RADIUS_IN_VEHICLE if cop_has_vehicle else _RADIUS_ON_FOOT
 
         # Zone check — cop must be inside an active ArrestZone
         if zones_exist:
@@ -165,9 +174,18 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
                 prev_uid, prev_loc, _ = prev_locations[sus_guid]
                 distance_moved = _distance_3d(prev_loc, sus_loc)
                 speed_per_second = distance_moved / PATROL_POLL_INTERVAL
-                if speed_per_second > SUSPECT_SPEED_LIMIT:
-                    # Moving too fast — reset counter
-                    still_counters.pop(pair_key, None)
+                if speed_per_second > _SPEED_LIMIT:
+                    # Moving too fast — reset counter and notify cop if tracking was active
+                    was_tracking = still_counters.pop(pair_key, 0) > 0
+                    if was_tracking:
+                        sus_name = suspect_chars.get(sus_guid)
+                        asyncio.create_task(
+                            send_system_message(
+                                http_client_mod,
+                                f"{sus_name.name if sus_name else 'Suspect'} is moving too fast to arrest.",
+                                character_guid=cop_guid,
+                            )
+                        )
                     continue
 
             # Must have active Wanted status
@@ -184,7 +202,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
             still_counters[pair_key] = prev_count + 1
 
             # Warn suspect when tracking reaches the warning threshold
-            if prev_count < AUTO_ARREST_WARNING_TICK <= still_counters[pair_key]:
+            if prev_count < _WARNING_TICK <= still_counters[pair_key]:
                 asyncio.create_task(
                     send_system_message(
                         http_client_mod,
@@ -193,7 +211,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
                     )
                 )
 
-            if still_counters[pair_key] >= AUTO_ARREST_STILL_TICKS:
+            if still_counters[pair_key] >= _STILL_TICKS:
                 arrestable_targets[sus_guid] = (sus_uid, sus_loc, sus_has_vehicle)
                 arrestable_chars[sus_guid] = sus_char
 

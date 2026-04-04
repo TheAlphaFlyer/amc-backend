@@ -7,15 +7,16 @@ from amc.game_server import get_players
 from amc.models import ArrestZone, Character, PoliceSession, TeleportPoint, Delivery, Confiscation, Wanted
 from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, teleport_player, transfer_money
 from amc_finance.services import record_treasury_confiscation_income, send_fund_to_player_wallet
-from amc.police import record_confiscation_for_level
+from amc.police import is_police_vehicle, record_confiscation_for_level
 from django.utils.translation import gettext as gettext, gettext_lazy
 from django.utils import timezone
 
 # 100 game units = 1 metre
-ARREST_RADIUS_ON_FOOT = 5000  # 50m — cop on foot must be within 50m of suspect
-ARREST_RADIUS_IN_VEHICLE = 3375  # 33.75m — cop in vehicle (50% more than original 22.5m)
+ARREST_RADIUS_ON_FOOT = 3000   # 30m — cop on foot (consistent with auto-arrest)
+ARREST_RADIUS_IN_VEHICLE = 2000  # 20m — cop in vehicle (consistent with auto-arrest)
 SUSPECT_SPEED_LIMIT = 556  # ~5.56m/s ≈ 20km/h — suspects moving faster are immune
-ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds
+ARREST_POLL_COUNT = 3  # 3 polls × 1s = 3 seconds (consistent with auto-arrest)
+ARREST_POLL_INTERVAL = 1  # seconds between polls
 ARREST_COOLDOWN = 0  # seconds between arrests per cop
 
 _LOC_RE = re.compile(
@@ -238,6 +239,21 @@ async def cmd_arrest(ctx: CommandContext):
 
     cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
 
+    # 3a. Police vehicle check — cop in non-police vehicle cannot arrest
+    if cop_has_vehicle:
+        vehicle_names: dict[str, str | None] = {}
+        for _uid, pdata in players:
+            guid = pdata.get("character_guid")
+            if guid:
+                vehicle = pdata.get("vehicle")
+                if isinstance(vehicle, dict):
+                    vehicle_names[guid] = vehicle.get("name")
+                else:
+                    vehicle_names[guid] = vehicle if vehicle else None
+        if not is_police_vehicle(vehicle_names.get(cop_guid)):
+            await send_system_message(ctx.http_client_mod, gettext("You must be on foot or in a police vehicle to make an arrest."), character_guid=ctx.character.guid)
+            return
+
     # 3b. Zone check — cop must be inside an active ArrestZone
     from django.contrib.gis.geos import Point
     cop_point = Point(cop_loc[0], cop_loc[1], srid=3857)
@@ -287,10 +303,26 @@ async def cmd_arrest(ctx: CommandContext):
         await send_system_message(ctx.http_client_mod, gettext("No suspects within arrest range."), character_guid=ctx.character.guid)
         return
 
-    # Look up names for all targets
+    # Look up Character models for all targets
     target_chars = {}
-    async for char in Character.objects.filter(guid__in=targets.keys()):
+    async for char in Character.objects.filter(guid__in=targets.keys()).select_related("player"):
         target_chars[char.guid] = char
+
+    # Filter to only suspects with active Wanted status
+    wanted_targets = {}
+    for guid in targets:
+        char = target_chars.get(guid)
+        if char and await Wanted.objects.filter(
+            character=char,
+            wanted_remaining__gt=0,
+            expired_at__isnull=True,
+        ).aexists():
+            wanted_targets[guid] = targets[guid]
+    targets = wanted_targets
+
+    if not targets:
+        await send_system_message(ctx.http_client_mod, gettext("No wanted suspects within arrest range."), character_guid=ctx.character.guid)
+        return
 
     target_names = [target_chars[g].name for g in targets if g in target_chars]
     names_str = ", ".join(target_names)
@@ -298,7 +330,7 @@ async def cmd_arrest(ctx: CommandContext):
     # 5. Notify cop
     await send_system_message(
         ctx.http_client_mod,
-        gettext("Arresting {names}… stay close for 3 seconds.").format(names=names_str),
+        gettext("Arresting {names}… stay close for {seconds} seconds.").format(names=names_str, seconds=ARREST_POLL_COUNT),
         character_guid=ctx.character.guid,
     )
 
@@ -307,7 +339,7 @@ async def cmd_arrest(ctx: CommandContext):
 
     # 6. Poll loop — check every second for 3 seconds
     for i in range(ARREST_POLL_COUNT):
-        await asyncio.sleep(1)
+        await asyncio.sleep(ARREST_POLL_INTERVAL)
 
         players = await get_players(ctx.http_client)
         if not players:
@@ -338,10 +370,11 @@ async def cmd_arrest(ctx: CommandContext):
 
             crim_uid, current_criminal_loc, crim_veh = current_locations[guid]
 
-            # Speed check: suspect must be below ~30 km/h
+            # Speed check: normalize to units/second (consistent with auto-arrest)
             prev_loc = prev_suspect_locs[guid]
-            suspect_speed = _distance_3d(prev_loc, current_criminal_loc)
-            if suspect_speed > SUSPECT_SPEED_LIMIT:
+            distance_moved = _distance_3d(prev_loc, current_criminal_loc)
+            speed_per_second = distance_moved / ARREST_POLL_INTERVAL
+            if speed_per_second > SUSPECT_SPEED_LIMIT:
                 name = target_chars[guid].name if guid in target_chars else "Unknown"
                 await send_system_message(
                     ctx.http_client_mod,
