@@ -30,11 +30,11 @@ logger = logging.getLogger("amc.auto_arrest")
 
 # ── Tuning constants (human-readable) ────────────────────────────────
 PATROL_POLL_INTERVAL = 0.5   # seconds between each poll cycle
-AUTO_ARREST_DURATION = 3.0   # seconds suspect must be still + in range
-AUTO_ARREST_WARNING_AT = 1.0 # seconds into tracking before warning the suspect
-AUTO_ARREST_RADIUS_ON_FOOT_M = 30   # metres — cop arrest range on foot
-AUTO_ARREST_RADIUS_IN_VEHICLE_M = 20  # metres — cop arrest range in vehicle
-AUTO_ARREST_SPEED_LIMIT_KMPH = 40   # km/h — suspects faster than this escape
+AUTO_ARREST_DURATION = 4.0   # seconds suspect must be still + in range
+AUTO_ARREST_WARNING_AT = 1.5 # seconds into tracking before warning the suspect
+AUTO_ARREST_RADIUS_ON_FOOT_M = 40   # metres — cop arrest range on foot
+AUTO_ARREST_RADIUS_IN_VEHICLE_M = 12  # metres — cop arrest range in vehicle
+AUTO_ARREST_SPEED_LIMIT_KMPH = 30   # km/h — suspects faster than this escape
 
 # ── Derived constants (game: 100 units = 1 metre) ────────────────────
 _UNITS_PER_METRE = 100

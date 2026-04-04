@@ -208,6 +208,12 @@ async def execute_arrest(
     featured=True,
 )
 async def cmd_arrest(ctx: CommandContext):
+    """Arrest nearby suspects.
+
+    Unlike auto-arrest, manual /arrest can arrest any nearby suspect
+    regardless of Wanted status.  Confiscation only applies if the
+    suspect has an active Wanted record (handled inside execute_arrest).
+    """
     # 1. Verify active police session
     is_cop = await PoliceSession.objects.filter(
         character=ctx.character, ended_at__isnull=True
@@ -308,20 +314,8 @@ async def cmd_arrest(ctx: CommandContext):
     async for char in Character.objects.filter(guid__in=targets.keys()).select_related("player"):
         target_chars[char.guid] = char
 
-    # Filter to only suspects with active Wanted status
-    wanted_targets = {}
-    for guid in targets:
-        char = target_chars.get(guid)
-        if char and await Wanted.objects.filter(
-            character=char,
-            wanted_remaining__gt=0,
-            expired_at__isnull=True,
-        ).aexists():
-            wanted_targets[guid] = targets[guid]
-    targets = wanted_targets
-
     if not targets:
-        await send_system_message(ctx.http_client_mod, gettext("No wanted suspects within arrest range."), character_guid=ctx.character.guid)
+        await send_system_message(ctx.http_client_mod, gettext("No suspects within arrest range."), character_guid=ctx.character.guid)
         return
 
     target_names = [target_chars[g].name for g in targets if g in target_chars]
