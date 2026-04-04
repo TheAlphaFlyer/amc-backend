@@ -13,8 +13,24 @@ from django.db.models import F, Q
 from typing import Any, cast
 from amc.game_server import announce
 from amc.utils import skip_if_running
-from amc.mod_server import despawn_player_cargo, get_webhook_events2, send_system_message, show_popup, get_rp_mode, transfer_money, get_patrol_point_payments, get_parties, get_party_members_for_character, list_player_vehicles
+from amc.mod_server import (
+    despawn_player_cargo,
+    get_webhook_events2,
+    send_system_message,
+    show_popup,
+    get_rp_mode,
+    transfer_money,
+    get_patrol_point_payments,
+    get_parties,
+    get_party_members_for_character,
+    list_player_vehicles,
+)
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
+from amc.fraud_detection import (
+    validate_cargo_payment,
+    validate_passenger_payment,
+    validate_tow_payment,
+)
 from amc.subsidies import (
     set_aside_player_savings,
     get_subsidy_for_cargo,
@@ -55,21 +71,37 @@ from amc.models import (
 
 logger = logging.getLogger("amc.webhook")
 
-PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
-WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in ("1", "true", "yes")
+PARTY_BONUS_ENABLED = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 PARTY_BONUS_RATE = 0.05  # 5% per extra party member
 
 
 async def on_player_profits(player_profits, session, http_client=None):
     for character, subsidy, base_payment, contract_payment in player_profits:
         await on_player_profit(
-            character, subsidy, base_payment, session, http_client,
+            character,
+            subsidy,
+            base_payment,
+            session,
+            http_client,
             contract_payment=contract_payment,
         )
 
 
 async def on_player_profit(
-    character, subsidy, base_payment, session, http_client=None,
+    character,
+    subsidy,
+    base_payment,
+    session,
+    http_client=None,
     contract_payment=0,
 ):
     """Process a player's profit after party splitting.
@@ -285,7 +317,9 @@ async def handle_contract_delivered(event, player, timestamp):
     return payment, 0
 
 
-async def handle_passenger_arrived(event, player, timestamp, character=None, http_client_mod=None):
+async def handle_passenger_arrived(
+    event, player, timestamp, character=None, http_client_mod=None
+):
     passenger = event["data"].get("Passenger")
     passenger_data = passenger or {}
     base_payment = passenger_data.get("Net_Payment", 0)
@@ -341,9 +375,29 @@ async def handle_passenger_arrived(event, player, timestamp, character=None, htt
             )
         logger.warning(
             "Exploit detected: passenger with zero start location for player %s (payment=%s)",
-            player.unique_id, base_payment,
+            player.unique_id,
+            base_payment,
         )
         return 0, 0
+
+    # --- Fraud detection: validate payment against type ceiling ---
+    # Reduce suspicious payment BEFORE bonus calculations so only the
+    # legitimate portion flows through to subsidies, bank deposits, etc.
+    # The game already deposited the original amount — leave it in the wallet.
+    passenger_type_int = int(log.passenger_type) if log.passenger_type else 0
+    fraud_excess = validate_passenger_payment(passenger_type_int, base_payment)
+    if fraud_excess > 0:
+        original = base_payment
+        base_payment = max(0, base_payment - fraud_excess)
+        log.payment = base_payment
+        logger.warning(
+            "Fraud detected (passenger): player=%s type=%s original=%d reduced=%d excess=%d",
+            player.unique_id,
+            passenger_type_int,
+            original,
+            base_payment,
+            fraud_excess,
+        )
 
     if log.passenger_type == ServerPassengerArrivedLog.PassengerType.Taxi:
         if log.comfort:
@@ -365,7 +419,7 @@ async def handle_passenger_arrived(event, player, timestamp, character=None, htt
     return log.payment, subsidy
 
 
-async def handle_tow_request(event, player, timestamp):
+async def handle_tow_request(event, player, timestamp, http_client_mod=None):
     tow_request = event["data"].get("TowRequest")
     tow_data = tow_request or {}
     payment = tow_data.get("Net_Payment", 0)
@@ -375,6 +429,21 @@ async def handle_tow_request(event, player, timestamp):
     # Max bonus rate ~55% of base payment (derived from game data).
     body_damage = tow_data.get("BodyDamage", 1.0)  # default 1.0 = no bonus
     payment += int(payment * 0.55 * (1 - body_damage))
+
+    # --- Fraud detection: validate tow payment against ceiling ---
+    # Reduce suspicious payment so only the legitimate portion flows through
+    # to subsidies and bank deposits.  The game already deposited the original
+    # amount — leave it in the wallet.
+    fraud_excess = validate_tow_payment(payment)
+    if fraud_excess > 0:
+        logger.warning(
+            "Fraud detected (tow): player=%s original=%d reduced=%d excess=%d",
+            player.unique_id,
+            payment,
+            max(0, payment - fraud_excess),
+            fraud_excess,
+        )
+        payment = max(0, payment - fraud_excess)
 
     await ServerTowRequestArrivedLog.objects.acreate(
         timestamp=timestamp,
@@ -435,12 +504,18 @@ async def handle_police_shift(event, player, timestamp, action):
     return 0, 0
 
 
-SMUGGLING_TIPOFF_ENABLED = os.environ.get("SMUGGLING_TIPOFF_ENABLED", "").lower() in ("1", "true", "yes")
+SMUGGLING_TIPOFF_ENABLED = os.environ.get("SMUGGLING_TIPOFF_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 SMUGGLING_TIPOFF_DELAY = 15  # seconds — delay before broadcasting
 SMUGGLING_TIPOFF_COOLDOWN = 60  # seconds — throttle window per player
 
 
-async def _announce_smuggling_tipoff_after_delay(http_client, delay=SMUGGLING_TIPOFF_DELAY):
+async def _announce_smuggling_tipoff_after_delay(
+    http_client, delay=SMUGGLING_TIPOFF_DELAY
+):
     """Wait for the delay, then announce a vague smuggling tip-off."""
     await asyncio.sleep(delay)
     await announce(
@@ -585,7 +660,12 @@ POLICE_TELEPORT_ARREST_COOLDOWN = 5  # minutes — cops can't arrest after telep
 
 
 async def _announce_teleport_penalty_after_delay(
-    character_guid, character_name, player_unique_id, http_client, http_client_mod, delay=TELEPORT_PENALTY_ANNOUNCE_DELAY,
+    character_guid,
+    character_name,
+    player_unique_id,
+    http_client,
+    http_client_mod,
+    delay=TELEPORT_PENALTY_ANNOUNCE_DELAY,
 ):
     """Wait for the debounce window, then announce the accumulated teleport penalty."""
     await asyncio.sleep(delay)
@@ -611,7 +691,9 @@ async def _announce_teleport_penalty_after_delay(
         )
 
 
-async def handle_teleport_or_respawn(event, character, timestamp, http_client_mod, http_client):
+async def handle_teleport_or_respawn(
+    event, character, timestamp, http_client_mod, http_client
+):
     """Penalise criminals who teleport/reset within the confiscation window.
 
     Uses the same linear decay formula as police arrest confiscation:
@@ -635,12 +717,15 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
     if is_police:
         # Set cooldown to block this officer from arresting
         cooldown_key = f"police_teleport_cooldown:{character.guid}"
-        await cache.aset(cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60)
+        await cache.aset(
+            cooldown_key, True, timeout=POLICE_TELEPORT_ARREST_COOLDOWN * 60
+        )
         return
 
     # Find un-confiscated Money deliveries and compute penalty rate from Wanted status
     recent_deliveries = [
-        d async for d in Delivery.objects.filter(
+        d
+        async for d in Delivery.objects.filter(
             character=character,
             cargo_key="Money",
             confiscations__isnull=True,
@@ -690,6 +775,7 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
 
     # 5. Refresh player name tag (criminal level may have dropped)
     from amc.player_tags import refresh_player_name
+
     await refresh_player_name(character, http_client_mod)
 
     # 5. Debounced popup + announcement
@@ -707,8 +793,6 @@ async def handle_teleport_or_respawn(event, character, timestamp, http_client_mo
                 http_client_mod,
             )
         )
-
-
 
 
 async def handle_cargo_arrived(
@@ -750,6 +834,30 @@ async def handle_cargo_arrived(
     for log in logs:
         log.payment += get_cargo_bonus(log.cargo_key, log.payment, log.damage or 0)
 
+    # --- Fraud detection: validate payment rates against distance baselines ---
+    # Reduce suspicious payments BEFORE logging so the legitimate amount flows
+    # through to deliveries, subsidies, bank deposits, and gov worker levels.
+    # The game already deposited the original amount into the wallet — we leave
+    # it there (no wallet clawback) but only track the legitimate portion.
+    for log in logs:
+        excess = await validate_cargo_payment(
+            cargo_key=log.cargo_key,
+            payment=log.payment,
+            quantity=1,
+            sender_point=log.sender_point,
+            destination_point=log.destination_point,
+        )
+        if excess > 0:
+            log.payment = max(0, log.payment - excess)
+            logger.warning(
+                "Fraud detected (cargo): player=%s cargo=%s original=%d reduced=%d excess=%d",
+                character.player.unique_id,
+                log.cargo_key,
+                log.payment + excess,
+                log.payment,
+                excess,
+            )
+
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
     # --- Special cargo side effects (e.g. Money → criminal record, announcements) ---
@@ -787,9 +895,21 @@ async def handle_cargo_arrived(
 
         if cargo_key == "Money" and http_client_mod:
             try:
-                vehicles = await list_player_vehicles(http_client_mod, str(character.player.unique_id), active=True, complete=True)
+                vehicles = await list_player_vehicles(
+                    http_client_mod,
+                    str(character.player.unique_id),
+                    active=True,
+                    complete=True,
+                )
                 if vehicles:
-                    main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+                    main_vehicle = next(
+                        (
+                            v
+                            for v in vehicles.values()
+                            if v.get("isLastVehicle") and v.get("index", -1) == 0
+                        ),
+                        None,
+                    )
                     if main_vehicle:
                         # Whitelist police parts for officers on active duty
                         whitelist = None
@@ -798,7 +918,9 @@ async def handle_cargo_arrived(
                         ).aexists()
                         if is_on_duty:
                             whitelist = POLICE_DUTY_WHITELIST
-                        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
+                        custom_parts = detect_custom_parts(
+                            main_vehicle.get("parts", []), whitelist=whitelist
+                        )
                         if custom_parts:
                             penalty = payment * quantity
                             await transfer_money(
@@ -816,7 +938,9 @@ async def handle_cargo_arrived(
                                 )
                             )
             except Exception as e:
-                logger.warning(f"Failed to check custom parts for money delivery penalty: {e}")
+                logger.warning(
+                    f"Failed to check custom parts for money delivery penalty: {e}"
+                )
 
         job = await (
             DeliveryJob.objects.filter_active().filter_by_delivery(
@@ -878,12 +1002,19 @@ async def handle_cargo_arrived(
         # Risk premium: Money deliveries get extra payout based on active police count
         security_bonus = 0
         if cargo_key == "Money":
-            from amc.police import get_active_police_count, SECURITY_BONUS_RATE, SECURITY_BONUS_MAX
+            from amc.police import (
+                get_active_police_count,
+                SECURITY_BONUS_RATE,
+                SECURITY_BONUS_MAX,
+            )
+
             police_count = await get_active_police_count()
             bonus_rate = min(police_count * SECURITY_BONUS_RATE, SECURITY_BONUS_MAX)
             security_bonus = int(payment * quantity * bonus_rate)
             if security_bonus > 0 and character:
-                await subsidise_player(security_bonus, character, http_client_mod, message="Risk Premium")
+                await subsidise_player(
+                    security_bonus, character, http_client_mod, message="Risk Premium"
+                )
 
             # Create or update Wanted status — reset protection to full
             if character:
@@ -957,9 +1088,13 @@ def aggregate_homogenous_events(sorted_events):
 
 
 async def split_party_payment(
-    character, parties,
-    total_base_payment, total_subsidy, total_contract_payment,
-    http_client_mod, used_shortcut=False,
+    character,
+    parties,
+    total_base_payment,
+    total_subsidy,
+    total_contract_payment,
+    http_client_mod,
+    used_shortcut=False,
 ):
     """Split payment among party members, applying party bonus.
 
@@ -997,7 +1132,8 @@ async def split_party_payment(
     other_characters = []
     if other_guids:
         other_characters = [
-            c async for c in Character.objects.filter(
+            c
+            async for c in Character.objects.filter(
                 guid__in=other_guids
             ).select_related("player")
         ]
@@ -1065,7 +1201,8 @@ async def process_events(
             if cached_epoch is not None and event_epoch != cached_epoch:
                 logger.warning(
                     "Epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
-                    cached_epoch, event_epoch,
+                    cached_epoch,
+                    event_epoch,
                 )
                 last_processed = 0
                 cache.set(LAST_SEQ_CACHE_KEY, 0, timeout=None)
@@ -1099,7 +1236,8 @@ async def process_events(
     last_processed_ts = cache.get(LAST_TS_CACHE_KEY, 0)
     if last_processed_ts:
         events = [
-            e for e in events
+            e
+            for e in events
             if e.get("_seq") is not None or e["timestamp"] > last_processed_ts
         ]
 
@@ -1133,7 +1271,11 @@ async def process_events(
     player_profits = []
 
     treasury_balance = await get_treasury_fund_balance()
-    parties = await get_parties(http_client_mod) if (PARTY_BONUS_ENABLED and http_client_mod) else []
+    parties = (
+        await get_parties(http_client_mod)
+        if (PARTY_BONUS_ENABLED and http_client_mod)
+        else []
+    )
     active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
     for character_guid, es in grouped_player_events:
         if not character_guid:
@@ -1214,9 +1356,13 @@ async def process_events(
 
         # Party bonus + payment splitting
         party_result = await split_party_payment(
-            character, parties,
-            total_base_payment, total_subsidy, total_contract_payment,
-            http_client_mod, used_shortcut=used_shortcut,
+            character,
+            parties,
+            total_base_payment,
+            total_subsidy,
+            total_contract_payment,
+            http_client_mod,
+            used_shortcut=used_shortcut,
         )
         if party_result is not None:
             player_profits.extend(party_result)
@@ -1233,7 +1379,9 @@ async def process_events(
                 shortcut_zone_entered_at=None
             )
 
-        player_profits.append((character, total_subsidy, total_base_payment, total_contract_payment))
+        player_profits.append(
+            (character, total_subsidy, total_base_payment, total_contract_payment)
+        )
 
     if http_client_mod:
         await on_player_profits(player_profits, http_client_mod, http_client)
@@ -1317,7 +1465,9 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
         return job
 
 
-async def handle_load_cargo(event, character, player, http_client_mod, http_client=None):
+async def handle_load_cargo(
+    event, character, player, http_client_mod, http_client=None
+):
     cargo = event["data"].get("Cargo", {})
     if cargo.get("Net_CargoKey") != "Money":
         return
@@ -1330,19 +1480,29 @@ async def handle_load_cargo(event, character, player, http_client_mod, http_clie
             await cache.aset(tipoff_cache_key, True, timeout=SMUGGLING_TIPOFF_COOLDOWN)
             asyncio.create_task(
                 _announce_smuggling_tipoff_after_delay(
-                    http_client, delay=SMUGGLING_TIPOFF_DELAY,
+                    http_client,
+                    delay=SMUGGLING_TIPOFF_DELAY,
                 )
             )
 
     try:
-        vehicles = await list_player_vehicles(http_client_mod, str(player.unique_id), active=True, complete=True)
+        vehicles = await list_player_vehicles(
+            http_client_mod, str(player.unique_id), active=True, complete=True
+        )
         if not vehicles:
             return
-        
-        main_vehicle = next((v for v in vehicles.values() if v.get("isLastVehicle") and v.get("index", -1) == 0), None)
+
+        main_vehicle = next(
+            (
+                v
+                for v in vehicles.values()
+                if v.get("isLastVehicle") and v.get("index", -1) == 0
+            ),
+            None,
+        )
         if not main_vehicle:
             return
-        
+
         # Whitelist police parts for officers on active duty
         whitelist = None
         is_on_duty = await PoliceSession.objects.filter(
@@ -1350,7 +1510,9 @@ async def handle_load_cargo(event, character, player, http_client_mod, http_clie
         ).aexists()
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
-        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
+        custom_parts = detect_custom_parts(
+            main_vehicle.get("parts", []), whitelist=whitelist
+        )
         if custom_parts:
             asyncio.create_task(
                 show_popup(
@@ -1426,22 +1588,33 @@ async def process_event(
 
         case "ServerPassengerArrived":
             payment, sub = await handle_passenger_arrived(
-                event, player, timestamp,
-                character=character, http_client_mod=http_client_mod,
+                event,
+                player,
+                timestamp,
+                character=character,
+                http_client_mod=http_client_mod,
             )
             base_payment += payment
             subsidy += sub
 
         case "ServerTowRequestArrived":
-            payment, sub = await handle_tow_request(event, player, timestamp)
+            payment, sub = await handle_tow_request(
+                event, player, timestamp, http_client_mod
+            )
             base_payment += payment
             subsidy += sub
 
         case "ServerResetVehicleAt":
             await handle_reset_vehicle(character, timestamp, is_rp_mode, http_client)
 
-        case "ServerTeleportCharacter" | "ServerTeleportVehicle" | "ServerRespawnCharacter":
-            await handle_teleport_or_respawn(event, character, timestamp, http_client_mod, http_client)
+        case (
+            "ServerTeleportCharacter"
+            | "ServerTeleportVehicle"
+            | "ServerRespawnCharacter"
+        ):
+            await handle_teleport_or_respawn(
+                event, character, timestamp, http_client_mod, http_client
+            )
 
         case "ServerArrivedAtPolicePatrolPoint":
             await handle_patrol_arrived(event, player, timestamp, http_client_mod)
@@ -1450,16 +1623,22 @@ async def process_event(
             await handle_police_penalty(event, player, timestamp)
 
         case "ServerAddPolicePlayer":
-            await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.START)
+            await handle_police_shift(
+                event, player, timestamp, PoliceShiftLog.Action.START
+            )
 
         case "ServerRemovePolicePlayer":
-            await handle_police_shift(event, player, timestamp, PoliceShiftLog.Action.END)
+            await handle_police_shift(
+                event, player, timestamp, PoliceShiftLog.Action.END
+            )
 
         case "ServerPickupCargo":
             await handle_pickup_cargo(event, character, http_client, http_client_mod)
 
         case "ServerLoadCargo":
             if http_client_mod:
-                await handle_load_cargo(event, character, player, http_client_mod, http_client=http_client)
+                await handle_load_cargo(
+                    event, character, player, http_client_mod, http_client=http_client
+                )
 
     return base_payment, subsidy, contract_payment, clawback

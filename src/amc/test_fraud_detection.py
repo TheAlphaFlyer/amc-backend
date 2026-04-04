@@ -1,0 +1,495 @@
+import time
+from unittest.mock import patch, AsyncMock
+from django.test import TestCase
+from django.contrib.gis.geos import Point
+from asgiref.sync import sync_to_async
+
+from amc.factories import PlayerFactory, CharacterFactory
+from amc.webhook import process_event
+from amc.models import (
+    DeliveryPoint,
+    ServerCargoArrivedLog,
+    ServerPassengerArrivedLog,
+    ServerTowRequestArrivedLog,
+    Delivery,
+    CharacterLocation,
+)
+from amc.fraud_detection import (
+    validate_cargo_payment,
+    validate_passenger_payment,
+    validate_tow_payment,
+    CARGO_PER_UNIT_THRESHOLDS,
+    CARGO_MAX_ABSOLUTE_PAYMENT,
+    PASSENGER_PAYMENT_CEILINGS,
+    TOW_PAYMENT_CEILING,
+)
+
+
+# ---------------------------------------------------------------------------
+# Pure function tests — validate_cargo_payment (async)
+# ---------------------------------------------------------------------------
+
+
+class ValidateCargoPaymentTests(TestCase):
+    """Tests for validate_cargo_payment."""
+
+    async def test_legitimate_payment_returns_zero(self):
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=5_000,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        self.assertEqual(excess, 0)
+
+    async def test_zero_payment_returns_zero(self):
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=0,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        self.assertEqual(excess, 0)
+
+    async def test_negative_payment_returns_zero(self):
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=-100,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        self.assertEqual(excess, 0)
+
+    async def test_unknown_cargo_type_returns_zero(self):
+        excess = await validate_cargo_payment(
+            cargo_key="SomeNewCargo_99",
+            payment=999_999_999,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        self.assertEqual(excess, 0)
+
+    async def test_per_unit_fraud_detected(self):
+        threshold = CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        payment = int(threshold * 10)
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=payment,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        self.assertEqual(excess, payment - threshold)
+
+    async def test_per_unit_with_quantity(self):
+        threshold = CARGO_PER_UNIT_THRESHOLDS["IronOre"]
+        payment = 200_000
+        quantity = 8
+        excess = await validate_cargo_payment(
+            cargo_key="IronOre",
+            payment=payment,
+            quantity=quantity,
+            sender_point=None,
+            destination_point=None,
+        )
+        per_unit = payment / quantity
+        expected_excess = int((per_unit - threshold) * quantity)
+        self.assertEqual(excess, expected_excess)
+
+    async def test_absolute_ceiling_exceeded(self):
+        ceiling = int(CARGO_MAX_ABSOLUTE_PAYMENT["BottlePallete"])
+        payment = ceiling + 100_000
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=payment,
+            quantity=1,
+            sender_point=None,
+            destination_point=None,
+        )
+        per_unit_excess = payment - CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        absolute_excess = payment - ceiling
+        self.assertEqual(excess, max(per_unit_excess, absolute_excess))
+
+    async def test_distance_fraud_detected(self):
+        sender = DeliveryPoint(
+            guid="sender-1",
+            name="Mine",
+            coord=Point(0, 0, 0, srid=3857),
+        )
+        dest = DeliveryPoint(
+            guid="dest-1",
+            name="Factory",
+            coord=Point(100_000, 0, 0, srid=3857),
+        )
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=500_000,
+            quantity=1,
+            sender_point=sender,
+            destination_point=dest,
+        )
+        self.assertGreater(excess, 0)
+
+    async def test_distance_legitimate_no_excess(self):
+        sender = DeliveryPoint(
+            guid="sender-2",
+            name="Mine",
+            coord=Point(0, 0, 0, srid=3857),
+        )
+        dest = DeliveryPoint(
+            guid="dest-2",
+            name="Factory",
+            coord=Point(100_000, 0, 0, srid=3857),
+        )
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=5_000,
+            quantity=1,
+            sender_point=sender,
+            destination_point=dest,
+        )
+        self.assertEqual(excess, 0)
+
+    async def test_short_distance_skipped(self):
+        sender = DeliveryPoint(
+            guid="sender-3",
+            name="A",
+            coord=Point(0, 0, 0, srid=3857),
+        )
+        dest = DeliveryPoint(
+            guid="dest-3",
+            name="B",
+            coord=Point(100, 0, 0, srid=3857),
+        )
+        excess = await validate_cargo_payment(
+            cargo_key="BottlePallete",
+            payment=5_000,
+            quantity=1,
+            sender_point=sender,
+            destination_point=dest,
+        )
+        self.assertEqual(excess, 0)
+
+
+# ---------------------------------------------------------------------------
+# Pure function tests — validate_passenger_payment (sync)
+# ---------------------------------------------------------------------------
+
+
+class ValidatePassengerPaymentTests(TestCase):
+    def test_legitimate_taxi(self):
+        self.assertEqual(validate_passenger_payment(2, 50_000), 0)
+
+    def test_exceeds_taxi_ceiling(self):
+        ceiling = PASSENGER_PAYMENT_CEILINGS[2]
+        self.assertEqual(validate_passenger_payment(2, ceiling + 100_000), 100_000)
+
+    def test_hitchhiker_exceeds_ceiling(self):
+        ceiling = PASSENGER_PAYMENT_CEILINGS[1]
+        payment = 5_000
+        self.assertEqual(validate_passenger_payment(1, payment), payment - ceiling)
+
+    def test_unknown_passenger_type_returns_zero(self):
+        self.assertEqual(validate_passenger_payment(99, 999_999), 0)
+
+    def test_zero_payment_returns_zero(self):
+        self.assertEqual(validate_passenger_payment(2, 0), 0)
+
+
+# ---------------------------------------------------------------------------
+# Pure function tests — validate_tow_payment (sync)
+# ---------------------------------------------------------------------------
+
+
+class ValidateTowPaymentTests(TestCase):
+    def test_legitimate_tow(self):
+        self.assertEqual(validate_tow_payment(50_000), 0)
+
+    def test_exceeds_ceiling(self):
+        self.assertEqual(validate_tow_payment(TOW_PAYMENT_CEILING + 50_000), 50_000)
+
+    def test_zero_payment_returns_zero(self):
+        self.assertEqual(validate_tow_payment(0), 0)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — cargo fraud detection through process_event
+# ---------------------------------------------------------------------------
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class FraudCargoIntegrationTests(TestCase):
+    async def _setup(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character,
+            location=Point(0, 0, 0),
+            vehicle_key="TestVehicle",
+        )
+        await DeliveryPoint.objects.acreate(
+            guid="fs", name="Mine", coord=Point(0, 0, 0)
+        )
+        await DeliveryPoint.objects.acreate(
+            guid="fd", name="Factory", coord=Point(100_000, 0, 0)
+        )
+        return player, character
+
+    def _cargo_event(self, character, player, cargo_key, payment):
+        return {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargos": [
+                    {
+                        "Net_CargoKey": cargo_key,
+                        "Net_Payment": payment,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100_000, "Y": 0, "Z": 0},
+                    }
+                ],
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+
+    async def test_legitimate_no_reduction(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        mock_treasury.return_value = 100_000
+        player, character = await self._setup()
+
+        base_pay, _, _, _ = await process_event(
+            self._cargo_event(character, player, "BottlePallete", 5_000),
+            player,
+            character,
+        )
+        log = await ServerCargoArrivedLog.objects.afirst()
+        self.assertEqual(log.payment, 5_000)
+        self.assertEqual(base_pay, 5_000)
+
+    async def test_inflated_reduces_log_payment(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        mock_treasury.return_value = 100_000
+        player, character = await self._setup()
+
+        await process_event(
+            self._cargo_event(character, player, "BottlePallete", 500_000),
+            player,
+            character,
+        )
+        log = await ServerCargoArrivedLog.objects.afirst()
+        threshold = CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        self.assertEqual(log.payment, threshold)
+
+    async def test_inflated_reduces_delivery_payment(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        mock_treasury.return_value = 100_000
+        player, character = await self._setup()
+
+        await process_event(
+            self._cargo_event(character, player, "BottlePallete", 500_000),
+            player,
+            character,
+        )
+        delivery = await Delivery.objects.afirst()
+        threshold = CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        self.assertEqual(delivery.payment, threshold)
+
+    async def test_inflated_reduces_base_pay(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        mock_treasury.return_value = 100_000
+        player, character = await self._setup()
+
+        base_pay, _, _, _ = await process_event(
+            self._cargo_event(character, player, "BottlePallete", 500_000),
+            player,
+            character,
+        )
+        threshold = CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        self.assertEqual(base_pay, threshold)
+
+    async def test_multiple_cargos_each_validated(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        mock_treasury.return_value = 100_000
+        player, character = await self._setup()
+
+        threshold = CARGO_PER_UNIT_THRESHOLDS["BottlePallete"]
+        event = {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargos": [
+                    {
+                        "Net_CargoKey": "BottlePallete",
+                        "Net_Payment": 500_000,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100_000, "Y": 0, "Z": 0},
+                    },
+                    {
+                        "Net_CargoKey": "BottlePallete",
+                        "Net_Payment": 5_000,
+                        "Net_Weight": 100.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100_000, "Y": 0, "Z": 0},
+                    },
+                ],
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        base_pay, _, _, _ = await process_event(event, player, character)
+
+        logs = [log async for log in ServerCargoArrivedLog.objects.all()]
+        self.assertEqual(len(logs), 2)
+        payments = sorted(log.payment for log in logs)
+        self.assertEqual(payments[0], 5_000)
+        self.assertEqual(payments[1], threshold)
+        self.assertEqual(base_pay, threshold + 5_000)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — passenger fraud detection through process_event
+# ---------------------------------------------------------------------------
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class FraudPassengerIntegrationTests(TestCase):
+    async def _setup(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character,
+            location=Point(0, 0, 0),
+            vehicle_key="TestVehicle",
+        )
+        return player, character
+
+    def _passenger_event(self, player, ptype, payment):
+        return {
+            "hook": "ServerPassengerArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "Passenger": {
+                    "Net_PassengerType": ptype,
+                    "Net_Payment": payment,
+                    "Net_bArrived": True,
+                    "Net_Distance": 10_000,
+                    "Net_StartLocation": {"X": 100, "Y": 100, "Z": 100},
+                    "Net_DestinationLocation": {"X": 200, "Y": 200, "Z": 200},
+                },
+                "PlayerId": str(player.unique_id),
+            },
+        }
+
+    async def test_legitimate_no_reduction(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        event = self._passenger_event(player, ptype=2, payment=50_000)
+        base_pay, _, _, _ = await process_event(event, player, character)
+
+        log = await ServerPassengerArrivedLog.objects.afirst()
+        self.assertIsNotNone(log)
+        self.assertGreaterEqual(log.payment, 50_000)
+        self.assertEqual(base_pay, log.payment)
+
+    async def test_inflated_taxi_reduces_payment(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        event = self._passenger_event(player, ptype=2, payment=10_000_000)
+        base_pay, _, _, _ = await process_event(event, player, character)
+
+        log = await ServerPassengerArrivedLog.objects.afirst()
+        ceiling = PASSENGER_PAYMENT_CEILINGS[2]
+        self.assertEqual(log.payment, ceiling)
+        self.assertEqual(base_pay, ceiling)
+
+    async def test_inflated_hitchhiker_detected(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        event = self._passenger_event(player, ptype=1, payment=5_000)
+        base_pay, _, _, _ = await process_event(event, player, character)
+
+        log = await ServerPassengerArrivedLog.objects.afirst()
+        self.assertEqual(log.payment, PASSENGER_PAYMENT_CEILINGS[1])
+        self.assertEqual(base_pay, PASSENGER_PAYMENT_CEILINGS[1])
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — tow fraud detection through process_event
+# ---------------------------------------------------------------------------
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class FraudTowIntegrationTests(TestCase):
+    async def _setup(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character,
+            location=Point(0, 0, 0),
+            vehicle_key="TestVehicle",
+        )
+        return player, character
+
+    def _tow_event(self, player, payment, flags=1, body_damage=None):
+        tow_data = {"Net_TowRequestFlags": flags, "Net_Payment": payment}
+        if body_damage is not None:
+            tow_data["BodyDamage"] = body_damage
+        return {
+            "hook": "ServerTowRequestArrived",
+            "timestamp": int(time.time()),
+            "data": {"TowRequest": tow_data, "PlayerId": str(player.unique_id)},
+        }
+
+    async def test_legitimate_no_reduction(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        base_pay, subsidy, _, _ = await process_event(
+            self._tow_event(player, payment=10_000),
+            player,
+            character,
+        )
+        log = await ServerTowRequestArrivedLog.objects.afirst()
+        self.assertEqual(log.payment, 10_000)
+        self.assertEqual(base_pay, 10_000)
+
+    async def test_inflated_reduces_payment(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        base_pay, _, _, _ = await process_event(
+            self._tow_event(player, payment=1_000_000, body_damage=1.0),
+            player,
+            character,
+        )
+        log = await ServerTowRequestArrivedLog.objects.afirst()
+        self.assertEqual(log.payment, TOW_PAYMENT_CEILING)
+        self.assertEqual(base_pay, TOW_PAYMENT_CEILING)
+
+    async def test_inflated_reduces_subsidy(self, mock_treasury, mock_rp):
+        mock_rp.return_value = False
+        player, character = await self._setup()
+
+        _, subsidy, _, _ = await process_event(
+            self._tow_event(player, payment=1_000_000, body_damage=1.0),
+            player,
+            character,
+        )
+        expected = 2_000 + TOW_PAYMENT_CEILING * 1.0
+        self.assertEqual(subsidy, expected)
