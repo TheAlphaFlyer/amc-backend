@@ -39,10 +39,11 @@ AUTO_ARREST_RADIUS_IN_VEHICLE = 1000  # 10m — cop in vehicle, checked only on 
 
 
 async def _is_wanted(character) -> bool:
-    """Check if a character has an active Wanted status with wanted_remaining > 0."""
+    """Check if a character has an active Wanted status with wanted_remaining > 0 and no expired_at."""
     return await Wanted.objects.filter(
         character=character,
         wanted_remaining__gt=0,
+        expired_at__isnull=True,
     ).aexists()
 
 

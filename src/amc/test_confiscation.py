@@ -10,6 +10,7 @@ from amc.models import (
     PoliceSession,
 )
 from amc.webhook import handle_pickup_cargo
+from amc.webhook_context import EventContext
 
 
 def _pickup_event(character_guid, payment=5000, previous_owner_guid=None, cargo_key="Money"):
@@ -27,13 +28,13 @@ def _pickup_event(character_guid, payment=5000, previous_owner_guid=None, cargo_
     }
 
 
-@patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
-@patch("amc_finance.services.send_fund_to_player_wallet", new_callable=AsyncMock)
+@patch("amc.handlers.police.send_system_message", new_callable=AsyncMock)
+@patch("amc.handlers.police.send_fund_to_player_wallet", new_callable=AsyncMock)
 @patch("amc.police.record_confiscation_for_level", new_callable=AsyncMock)
-@patch("amc_finance.services.record_treasury_confiscation_income", new_callable=AsyncMock)
-@patch("amc.mod_server.despawn_player_cargo", new_callable=AsyncMock)
-@patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
-@patch("amc.game_server.announce", new_callable=AsyncMock)
+@patch("amc.handlers.police.record_treasury_confiscation_income", new_callable=AsyncMock)
+@patch("amc.handlers.police.despawn_player_cargo", new_callable=AsyncMock)
+@patch("amc.handlers.police.transfer_money", new_callable=AsyncMock)
+@patch("amc.handlers.police.announce", new_callable=AsyncMock)
 class ConfiscationHandlerTests(TestCase):
     """Tests for handle_pickup_cargo — police Money confiscation."""
 
@@ -59,7 +60,8 @@ class ConfiscationHandlerTests(TestCase):
         )
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
-        await handle_pickup_cargo(event, officer, mock_http, mock_http_mod)
+        ctx = EventContext(http_client=mock_http, http_client_mod=mock_http_mod)
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         # Confiscation record created
         self.assertEqual(await Confiscation.objects.acount(), 1)
@@ -106,7 +108,8 @@ class ConfiscationHandlerTests(TestCase):
         event = _pickup_event(
             character.guid, payment=5000, previous_owner_guid=other_char.guid,
         )
-        await handle_pickup_cargo(event, character, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, player, character, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -122,7 +125,8 @@ class ConfiscationHandlerTests(TestCase):
             officer.guid, payment=5000, previous_owner_guid=criminal.guid,
             cargo_key="oranges",
         )
-        await handle_pickup_cargo(event, officer, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -137,7 +141,8 @@ class ConfiscationHandlerTests(TestCase):
         event = _pickup_event(
             officer.guid, payment=5000, previous_owner_guid=officer.guid,
         )
-        await handle_pickup_cargo(event, officer, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -158,7 +163,8 @@ class ConfiscationHandlerTests(TestCase):
         event = _pickup_event(
             officer1.guid, payment=5000, previous_owner_guid=officer2.guid,
         )
-        await handle_pickup_cargo(event, officer1, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, officer1.player, officer1, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -171,7 +177,8 @@ class ConfiscationHandlerTests(TestCase):
         officer, _ = await self._setup_police_and_criminal()
 
         event = _pickup_event(officer.guid, payment=5000, previous_owner_guid=None)
-        await handle_pickup_cargo(event, officer, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -186,7 +193,8 @@ class ConfiscationHandlerTests(TestCase):
         event = _pickup_event(
             officer.guid, payment=0, previous_owner_guid=criminal.guid,
         )
-        await handle_pickup_cargo(event, officer, AsyncMock(), AsyncMock())
+        ctx = EventContext(http_client=AsyncMock(), http_client_mod=AsyncMock())
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         self.assertEqual(await Confiscation.objects.acount(), 0)
         mock_transfer.assert_not_called()
@@ -202,7 +210,8 @@ class ConfiscationHandlerTests(TestCase):
         event = _pickup_event(officer.guid, payment=5000, previous_owner_guid="UNKNOWN-GUID")
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
-        await handle_pickup_cargo(event, officer, mock_http, mock_http_mod)
+        ctx = EventContext(http_client=mock_http, http_client_mod=mock_http_mod)
+        await handle_pickup_cargo(event, officer.player, officer, ctx)
 
         # Confiscation record created with character=None
         self.assertEqual(await Confiscation.objects.acount(), 1)

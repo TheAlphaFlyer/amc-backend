@@ -212,6 +212,16 @@ async def handle_cargo_arrived(event, player, character, ctx):
                     character=character,
                     defaults={"wanted_remaining": Wanted.INITIAL_WANTED_SECONDS},
                 )
+                from amc.player_tags import refresh_player_name
+                from amc.mod_server import send_system_message
+                await refresh_player_name(character, ctx.http_client_mod)
+                asyncio.create_task(
+                    send_system_message(
+                        ctx.http_client_mod,
+                        "You are wanted. Police are closing in!",
+                        character_guid=character.guid,
+                    )
+                )
 
         # Discord notification
         if ctx.discord_client:

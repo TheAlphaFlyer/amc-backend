@@ -1273,8 +1273,9 @@ class PoliceSessionAdmin(admin.ModelAdmin):
 
 @admin.register(Wanted)
 class WantedAdmin(admin.ModelAdmin):
-    list_display = ["id", "character", "wanted_remaining", "created_at"]
+    list_display = ["id", "character", "wanted_remaining", "expired_at", "created_at"]
     list_select_related = ["character", "character__player"]
     search_fields = ["character__name", "character__player__unique_id"]
     readonly_fields = ["character"]
     ordering = ["-created_at"]
+    list_filter = ["expired_at"]

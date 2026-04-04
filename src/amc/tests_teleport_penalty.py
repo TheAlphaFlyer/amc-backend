@@ -87,8 +87,10 @@ class TeleportPenaltyTests(TestCase):
         self.assertIsNone(conf.officer)
         self.assertEqual(conf.amount, 100_000)
 
-        # Wanted should be deleted
-        self.assertFalse(await Wanted.objects.filter(character=character).aexists())
+        # Wanted should be expired (not deleted)
+        wanted = await Wanted.objects.aget(character=character)
+        self.assertEqual(wanted.wanted_remaining, 0)
+        self.assertIsNotNone(wanted.expired_at)
 
     async def test_teleport_with_half_wanted_half_penalty(
         self, mock_announce, mock_popup, mock_transfer, mock_refresh,

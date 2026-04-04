@@ -9,6 +9,7 @@ from amc.mod_server import force_exit_vehicle, send_system_message, show_popup, 
 from amc_finance.services import record_treasury_confiscation_income, send_fund_to_player_wallet
 from amc.police import record_confiscation_for_level
 from django.utils.translation import gettext as gettext, gettext_lazy
+from django.utils import timezone
 
 # 100 game units = 1 metre
 ARREST_RADIUS_ON_FOOT = 5000  # 50m — cop on foot must be within 50m of suspect
@@ -121,7 +122,7 @@ async def execute_arrest(
         suspect_char = target_chars.get(guid)
         if suspect_char:
             try:
-                wanted = await Wanted.objects.aget(character=suspect_char)
+                wanted = await Wanted.objects.aget(character=suspect_char, expired_at__isnull=True)
                 rate = max(0.0, wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS)
             except Wanted.DoesNotExist:
                 rate = 0.0
@@ -194,8 +195,11 @@ async def execute_arrest(
 
             total_confiscated += confiscated_amount
 
-            # Clear Wanted status after arrest
-            await Wanted.objects.filter(character=suspect_char).adelete()
+            # Expire Wanted status after arrest
+            await Wanted.objects.filter(character=suspect_char).aupdate(
+                wanted_remaining=0,
+                expired_at=timezone.now(),
+            )
 
     return arrested_names, total_confiscated
 

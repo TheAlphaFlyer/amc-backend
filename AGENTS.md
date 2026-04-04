@@ -85,9 +85,37 @@ Available flake checks:
 | `checks.pyrefly`  | Type checking via pyrefly                |
 | `checks.django-check` | `manage.py check` validation         |
 
-### Option 2: Local pytest (requires existing database)
+### Option 2: Local pytest via devShell (recommended for development)
 
-If you have a local PostgreSQL and Redis running:
+The `.envrc` configures **direnv** with `layout_postgres()`, which creates a local PostgreSQL instance under `.direnv/postgres/`. This is the preferred way to run tests during development.
+
+```bash
+# Use direnv exec to leverage the cached nix devShell (much faster than nix develop)
+direnv exec . bash -c '
+  export PGHOST="$PWD/.direnv/postgres"
+  export DJANGO_SETTINGS_MODULE=amc_backend.settings
+  export REDIS_PORT=6379
+
+  # Start postgres if not running
+  pg_ctl -D "$PGDATA" -l "$PGDATA/server.log" start
+
+  # Run migrations
+  python src/manage.py migrate
+
+  # Run tests
+  python -m pytest src/amc/test_criminals.py -v --tb=short
+'
+```
+
+Key details:
+- PostgreSQL listens on a **Unix socket** at `.direnv/postgres/.s.PGSQL.5432` — set `PGHOST` to the directory path, not `localhost`
+- The `amc` database is created automatically by `layout_postgres()` on first init
+- Redis is **not required** for most tests — set `REDIS_PORT=6379` anyway (tests that need it mock the connection)
+- Start postgres with `pg_ctl -D "$PGDATA" start` and stop with `pg_ctl -D "$PGDATA" stop`
+
+### Option 3: Local pytest (external database)
+
+If you have a separate PostgreSQL and Redis running:
 
 ```bash
 export DJANGO_SETTINGS_MODULE=amc_backend.settings
@@ -124,9 +152,17 @@ nix build .#staticRoot
 
 ## Development Shell
 
+The devShell is managed by **direnv** via `.envrc`. It activates automatically when you `cd` into the directory. To run commands inside the devShell:
+
 ```bash
-nix develop
+# Preferred: use direnv exec (uses cached environment, fast)
+direnv exec . <command>
+
+# Or drop into a shell with the environment loaded
+direnv exec . bash
 ```
+
+Do not use `nix develop` directly — it re-evaluates the flake each time and is slow. `direnv exec` uses the cached devShell environment.
 
 This provides: `uv`, PostgreSQL with PostGIS, Redis, `gettext`, `ruff`, `pyrefly`, `pre-commit`, and the editable Python environment.
 
@@ -137,7 +173,7 @@ The shell sets `UV_NO_SYNC=1` and `UV_PYTHON` to prevent uv from managing Python
 Deployed to the `amc-backend` NixOS container on `asean-mt-server`:
 
 ```bash
-nix develop --command deploy root@asean-mt-server
+direnv exec . deploy root@asean-mt-server
 ```
 
 From the monorepo root. The deploy script uses `--override-input amc-backend ./amc-backend` to use the local checkout.

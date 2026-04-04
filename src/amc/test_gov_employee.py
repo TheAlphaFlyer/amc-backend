@@ -162,8 +162,8 @@ class IncomeRedirectionTests(TestCase):
 
 
 class WebhookPipelineTests(TestCase):
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
-    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
     async def test_on_player_profit_gov_employee(self, mock_donation, mock_transfer, mock_subsidy):
         from amc.webhook import on_player_profit
@@ -204,8 +204,8 @@ class WebhookPipelineTests(TestCase):
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 15000)
 
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
-    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
     async def test_on_player_profit_gov_contract_burned(
         self, mock_donation, mock_transfer, mock_subsidy
@@ -245,9 +245,9 @@ class WebhookPipelineTests(TestCase):
         await character.arefresh_from_db()
         self.assertEqual(character.gov_employee_contributions, 15000)
 
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
     async def test_on_player_profit_normal(self, mock_savings, mock_loan, mock_subsidy):
         from amc.webhook import on_player_profit
 
@@ -265,8 +265,8 @@ class WebhookPipelineTests(TestCase):
 
 class JobBonusRedirectionTests(TestCase):
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
-    @patch("amc.jobs.send_fund_to_player", new_callable=AsyncMock)
-    @patch("amc.jobs.announce", new_callable=AsyncMock)
+    @patch("amc_finance.services.send_fund_to_player", new_callable=AsyncMock)
+    @patch("amc.game_server.announce", new_callable=AsyncMock)
     async def test_job_bonus_redirected_for_gov(
         self, mock_announce, mock_send_fund, mock_donation
     ):
@@ -409,7 +409,7 @@ class WorkforgovCommandTests(TestCase):
 
         mock_activate.assert_awaited_once()
 
-    @patch("amc.mod_server.set_character_name", new_callable=AsyncMock)
+    @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
     async def test_workforgov_shows_status_when_active(self, mock_set_name):
         # Create several characters with varying contributions
         player1 = await sync_to_async(PlayerFactory)()

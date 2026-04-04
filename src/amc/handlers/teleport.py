@@ -112,7 +112,7 @@ async def _handle_teleport_or_respawn(event, character, ctx):
         return 0, 0, 0, 0
 
     try:
-        wanted = await Wanted.objects.aget(character=character)
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
         rate = max(0.0, wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS)
     except Wanted.DoesNotExist:
         rate = 0.0
@@ -145,8 +145,12 @@ async def _handle_teleport_or_respawn(event, character, ctx):
     )
     await conf.deliveries.aset([d.id for d in recent_deliveries])
 
-    # 4. Clear Wanted status after penalty
-    await Wanted.objects.filter(character=character).adelete()
+    # 4. Expire Wanted status after penalty
+    from django.utils import timezone as _tz
+    await Wanted.objects.filter(character=character).aupdate(
+        wanted_remaining=0,
+        expired_at=_tz.now(),
+    )
 
     # 5. Refresh player name tag (criminal level may have dropped)
     from amc.player_tags import refresh_player_name

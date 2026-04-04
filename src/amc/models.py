@@ -391,6 +391,7 @@ class Wanted(models.Model):
     )
     wanted_remaining = models.FloatField()  # seconds (float for fractional decrements)
     created_at = models.DateTimeField(auto_now_add=True)
+    expired_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "wants"

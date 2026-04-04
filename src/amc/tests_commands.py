@@ -2291,8 +2291,10 @@ class ArrestCommandTestCase(TestCase):
                 f"Expected reward notification in msgs: {msgs}",
             )
 
-            # Wanted should be deleted after arrest
-            self.assertFalse(await Wanted.objects.filter(character=self.criminal_character).aexists())
+            # Wanted should be expired (not deleted) after arrest
+            wanted = await Wanted.objects.aget(character=self.criminal_character)
+            self.assertEqual(wanted.wanted_remaining, 0)
+            self.assertIsNotNone(wanted.expired_at)
 
     async def test_cmd_arrest_confiscation_5min_half(self):
         """Wanted at 150s (50%) → 50% confiscation."""

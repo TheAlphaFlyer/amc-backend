@@ -185,15 +185,19 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
     )
 
     # Reuse the existing penalty handler from webhook.py
+    import time
     from amc.webhook import handle_teleport_or_respawn
+    from amc.webhook_context import EventContext
 
     http_client_mod = ctx.get("http_client_mod")
     http_client = ctx.get("http_client")
     # Synthesize a minimal event dict (the handler doesn't use event data)
-    event = {"data": {}}
-    await handle_teleport_or_respawn(
-        event, character, timezone.now(), http_client_mod, http_client,
+    event = {"data": {}, "timestamp": time.time()}
+    handler_ctx = EventContext(
+        http_client=http_client,
+        http_client_mod=http_client_mod,
     )
+    await handle_teleport_or_respawn(event, character, handler_ctx)
 
 
 async def _check_pois_and_portals(character, old_location, new_location, ctx):

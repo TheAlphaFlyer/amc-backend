@@ -494,11 +494,13 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 3)
         self.assertTrue(log.delivered)
 
-    @patch("amc.mod_detection.detect_custom_parts")
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
-    @patch("amc.mod_server.show_popup", new_callable=AsyncMock)
-    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
-    async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+    @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
+    @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.detect_custom_parts")
+    @patch("amc.handlers.cargo.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.show_popup", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.transfer_money", new_callable=AsyncMock)
+    async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_refresh, mock_send_sys_msg, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
 
@@ -548,10 +550,12 @@ class ProcessEventTests(TestCase):
         mock_show_popup.assert_called_once()
         self.assertIn("profits were zeroed out", mock_show_popup.call_args[0][1])
 
-    @patch("amc.mod_detection.detect_custom_parts")
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
-    @patch("amc.mod_server.show_popup", new_callable=AsyncMock)
-    async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
+    @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
+    @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.detect_custom_parts")
+    @patch("amc.handlers.smuggling.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.show_popup", new_callable=AsyncMock)
+    async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_refresh, mock_send_sys_msg, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         
@@ -778,8 +782,8 @@ class ProcessEventsTests(TestCase):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
-@patch("amc.game_server.announce", new_callable=AsyncMock)
-@patch("amc.mod_server.show_popup", new_callable=AsyncMock)
+@patch("amc.handlers.teleport.announce", new_callable=AsyncMock)
+@patch("amc.webhook.show_popup", new_callable=AsyncMock)
 class ExtraWebhookTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -977,7 +981,7 @@ class ExtraWebhookTests(TestCase):
             },
         }
 
-        await process_events([event])
+        await process_events([event], http_client=MagicMock())
         mock_announce.assert_called()
         self.assertIn("despawned", mock_announce.call_args[0][0])
 
@@ -1844,9 +1848,9 @@ class SubsidyIntegrationTests(TestCase):
 
 
 class OnPlayerProfitTests(TestCase):
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_contract_payment_included_in_actual_income(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1875,9 +1879,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 60_000)
 
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_contract_payment_with_reject_ubi(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1908,9 +1912,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 60_000)
 
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_depot_restock_subsidy_only(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1948,9 +1952,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 5_000)
 
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_depot_restock_double_count_regression(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1985,11 +1989,11 @@ class OnPlayerProfitTests(TestCase):
             "Loan repayment income should be subsidy only, not double-counted"
         )
 
-    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_subsidy_only_contribution(
         self, mock_subsidise, mock_repay_loan, mock_savings,
         mock_redirect, mock_transfer,
@@ -2030,11 +2034,11 @@ class OnPlayerProfitTests(TestCase):
         mock_repay_loan.assert_not_called()
         mock_savings.assert_not_called()
 
-    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
-    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_base_plus_subsidy_contribution(
         self, mock_subsidise, mock_repay_loan, mock_savings,
         mock_redirect, mock_transfer,
@@ -2264,7 +2268,9 @@ class SeqDeduplicationTests(TestCase):
         cache.delete("webhook:last_epoch")
 
 
-@patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
+@patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
+@patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
+@patch("amc.handlers.cargo.subsidise_player", new_callable=AsyncMock)
 class SecurityBonusTests(TestCase):
     """Test Risk Premium on Money deliveries based on active online police."""
 
@@ -2290,7 +2296,7 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_no_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise,
+        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
     ):
         """0 police on duty → 0% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2318,7 +2324,7 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_one_police_20pct_bonus(
-        self, mock_list_vehicles, mock_subsidise,
+        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
     ):
         """1 police on duty and online → 50% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2358,7 +2364,7 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_offline_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise,
+        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2395,7 +2401,7 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_two_police_40pct_bonus(
-        self, mock_list_vehicles, mock_subsidise,
+        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
     ):
         """2 police on duty and online → 100% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2434,7 +2440,7 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_bonus_capped_at_100pct(
-        self, mock_list_vehicles, mock_subsidise,
+        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
     ):
         """6 police → would be 300%, but capped at 250%."""
         mock_list_vehicles.return_value = {}

@@ -1,7 +1,7 @@
 import asyncio
 import random
 from django.utils import timezone
-from django.db import connection
+from django.db import IntegrityError, connection
 from django.db.models import Exists, OuterRef
 from django.contrib.gis.geos import Point
 from django.conf import settings
@@ -294,7 +294,17 @@ async def _login_guid_dependent_actions(
         # Persist GUID if newly resolved
         if not character.guid or character.guid != character_guid:
             character.guid = character_guid
-            await character.asave(update_fields=["guid"])
+            try:
+                await character.asave(update_fields=["guid"])
+            except IntegrityError:
+                # GUID already assigned to another character — clear the stale
+                # assignment (the mod server is authoritative) and retry.
+                await Character.objects.filter(guid=character_guid).exclude(
+                    pk=character.pk
+                ).aupdate(guid=None)
+                await character.arefresh_from_db()
+                character.guid = character_guid
+                await character.asave(update_fields=["guid"])
 
         # --- Tag Enforcement ---
         # 1. Update the player's name based on current DB state
