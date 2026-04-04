@@ -199,6 +199,14 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
             except IntegrityError:
                 character = await self.get_queryset().aget(guid=character_guid)
                 character_created = False
+
+            if character_created:
+                import logging
+                logging.getLogger("amc.models").warning(
+                    f"Created new character {character.id} for player {player.unique_id} "
+                    f"with GUID {character_guid} — name={player_name}. "
+                    f"A GUID-less character may already exist."
+                )
         else:
             # No GUID provided. We look up by name.
             # Use filter instead of aget_or_create to handle potential duplicates.

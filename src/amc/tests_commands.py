@@ -2436,7 +2436,7 @@ class ArrestCommandTestCase(TestCase):
             self.assertEqual(await Confiscation.objects.acount(), 0)
 
     async def test_cmd_arrest_confiscation_multi_delivery_scaling(self):
-        """Multiple deliveries — each scaled by the single Wanted rate."""
+        """Multiple deliveries — only the most recent is confiscated."""
         from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation, Wanted
         from django.contrib.gis.geos import Point
 
@@ -2451,7 +2451,7 @@ class ArrestCommandTestCase(TestCase):
         self.criminal_character.criminal_laundered_total = 200_000
         await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
 
-        # Two deliveries, both confiscated at the same rate from Wanted
+        # Two deliveries — only the most recent (30_000) should be confiscated
         await Delivery.objects.acreate(
             character=self.criminal_character,
             cargo_key="Money", payment=50_000, quantity=1,
@@ -2462,7 +2462,7 @@ class ArrestCommandTestCase(TestCase):
             cargo_key="Money", payment=30_000, quantity=1,
             timestamp=timezone.now(),
         )
-        # Wanted at 240s (80%) → int(50000*0.8) + int(30000*0.8) = 40000 + 24000 = 64000
+        # Wanted at 240s (80%) → int(30000*0.8) = 24000 (only most recent delivery)
         await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=240)
 
         mock_players = self._make_player_list(
@@ -2487,16 +2487,16 @@ class ArrestCommandTestCase(TestCase):
             await cmd_arrest(self.ctx)
 
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, -64000, "Money Confiscated",
+                self.ctx.http_client_mod, -24000, "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
-            mock_treasury.assert_called_once_with(64000, "Police Confiscation")
+            mock_treasury.assert_called_once_with(24000, "Police Confiscation")
 
             await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 136_000)
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 176_000)
 
             self.assertTrue(
-                await Confiscation.objects.filter(amount=64000).aexists()
+                await Confiscation.objects.filter(amount=24000).aexists()
             )
 
     async def test_cmd_arrest_no_jail(self):

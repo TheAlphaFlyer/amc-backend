@@ -158,3 +158,40 @@ class CharacterMangerTestCase(TestCase):
             "test", 123, character_guid=345
         )
         self.assertNotEqual(character1.id, character2.id)
+
+    async def test_guid_conflict_preserves_existing(self):
+        """When a second character tries to save a GUID that already belongs to
+        another character, the existing owner must keep its GUID."""
+        from unittest.mock import AsyncMock, patch
+
+        # Create the authoritative character with GUID
+        original, *_ = await Character.objects.aget_or_create_character_player(
+            "test", 123, character_guid="AAAA1111BBBB2222CCCC3333DDDD4444"
+        )
+        self.assertEqual(original.guid, "AAAA1111BBBB2222CCCC3333DDDD4444")
+
+        # Create a second character without GUID (simulates login without GUID)
+        impostor, *_ = await Character.objects.aget_or_create_character_player(
+            "test2", 123
+        )
+        self.assertIsNone(impostor.guid)
+        self.assertNotEqual(original.id, impostor.id)
+
+        # Simulate _login_guid_dependent_actions trying to assign the same GUID
+        from amc.tasks import _login_guid_dependent_actions
+
+        mock_http = AsyncMock()
+        with patch("amc.tasks._resolve_guid", return_value=("AAAA1111BBBB2222CCCC3333DDDD4444", {})):
+            with patch("amc.tasks.refresh_player_name", new_callable=AsyncMock):
+                await _login_guid_dependent_actions(
+                    impostor, impostor.player, "test2", 123,
+                    mock_http, mock_http, False,
+                )
+
+        # Original must still own the GUID
+        await original.arefresh_from_db()
+        self.assertEqual(original.guid, "AAAA1111BBBB2222CCCC3333DDDD4444")
+
+        # Impostor should NOT have stolen the GUID
+        await impostor.arefresh_from_db()
+        self.assertIsNone(impostor.guid)

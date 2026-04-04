@@ -476,6 +476,8 @@ async def send_event_embeds(ctx):
     discord_client = ctx.get("discord_client")
     if not discord_client:
         return
+    if not isinstance(discord_client.loop, asyncio.AbstractEventLoop):
+        return
     if not discord_client.is_ready():
         await asyncio.wrap_future(
             asyncio.run_coroutine_threadsafe(

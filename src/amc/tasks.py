@@ -1,7 +1,7 @@
 import asyncio
 import random
 from django.utils import timezone
-from django.db import IntegrityError, connection
+from django.db import IntegrityError, connection, transaction
 from django.db.models import Exists, OuterRef
 from django.contrib.gis.geos import Point
 from django.conf import settings
@@ -295,16 +295,28 @@ async def _login_guid_dependent_actions(
         if not character.guid or character.guid != character_guid:
             character.guid = character_guid
             try:
-                await character.asave(update_fields=["guid"])
+                async with transaction.atomic():
+                    await character.asave(update_fields=["guid"])
             except IntegrityError:
-                # GUID already assigned to another character — clear the stale
-                # assignment (the mod server is authoritative) and retry.
-                await Character.objects.filter(guid=character_guid).exclude(
-                    pk=character.pk
-                ).aupdate(guid=None)
-                await character.arefresh_from_db()
-                character.guid = character_guid
-                await character.asave(update_fields=["guid"])
+                # GUID already belongs to another character — that character
+                # is the authoritative one (it has the real data). Switch to
+                # it instead of stealing the GUID.
+                existing = await Character.objects.filter(
+                    guid=character_guid
+                ).select_related("player").afirst()
+                if existing:
+                    logger.info(
+                        f"GUID {character_guid} already belongs to character "
+                        f"{existing.id} ({existing.name}); switching from "
+                        f"character {character.id} ({character.name})"
+                    )
+                    character = existing
+                else:
+                    # Edge case: the conflicting row vanished between the
+                    # IntegrityError and our query — retry the save.
+                    await character.arefresh_from_db()
+                    character.guid = character_guid
+                    await character.asave(update_fields=["guid"])
 
         # --- Tag Enforcement ---
         # 1. Update the player's name based on current DB state

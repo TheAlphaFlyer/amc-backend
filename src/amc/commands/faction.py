@@ -127,18 +127,14 @@ async def execute_arrest(
             except Wanted.DoesNotExist:
                 rate = 0.0
 
-            # Find recent un-confiscated Money deliveries
-            recent_deliveries = [
-                d async for d in Delivery.objects.filter(
-                    character=suspect_char,
-                    cargo_key="Money",
-                    confiscations__isnull=True,
-                )
-            ]
+            # Find the most recent un-confiscated Money delivery
+            recent_delivery = await Delivery.objects.filter(
+                character=suspect_char,
+                cargo_key="Money",
+                confiscations__isnull=True,
+            ).order_by("-timestamp").afirst()
 
-            confiscated_amount = 0
-            for delivery in recent_deliveries:
-                confiscated_amount += round(delivery.payment * rate)
+            confiscated_amount = round(recent_delivery.payment * rate) if recent_delivery else 0
 
             # Always create a Confiscation record for the arrest
             conf = await Confiscation.objects.acreate(
@@ -147,8 +143,8 @@ async def execute_arrest(
                 cargo_key="Money",
                 amount=confiscated_amount,
             )
-            if recent_deliveries:
-                await conf.deliveries.aset([d.id for d in recent_deliveries])
+            if recent_delivery:
+                await conf.deliveries.aset([recent_delivery.id])
 
             if confiscated_amount > 0:
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
