@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G/P/W, optionally followed by more letters/digits
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [W5], [CW3], [MP], [MPG3]
-    re.compile(r"\[(?=[CMGPW])[CMGPW\d]+\]\s*"),
+    # New compact format: must start with C/M/G/P/W/★, optionally followed by more letters/digits/stars
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [★★★★★], [CW3], [MP], [MPG3], [MC1★★★★★G3]
+    re.compile(r"\[(?=[CMGPW\u2605])[CMGPW\d\u2605]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
     re.compile(r"\[(?=[CMGP])[CMGP₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
     # Legacy formats (for players who logged in before the refactor)
@@ -40,11 +40,11 @@ def build_display_name(
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MP1C1W5G3] BaseName  (order: M, P, C, W, G)
+    Tag format: [MP1★★★★★C1G3] BaseName  (order: M, P, C, ★, G)
       M = Modded vehicle parts
       P1 = Police level (active session)
       C1 = Criminal level (suppressed when police is active)
-      W5 = Wanted status with minutes remaining (always shown)
+      ★★★★★ = Wanted status (★ per minute remaining, 5 stars max at 4+ min)
       G3 = Government employee level
 
     Args:
@@ -64,12 +64,13 @@ def build_display_name(
     if police_level > 0:
         tag += f"P{police_level}"
 
-    # C is suppressed when police or gov is active
-    if criminal_level > 0 and police_level == 0 and gov_level == 0:
+    # C is suppressed when police is active
+    if criminal_level > 0 and police_level == 0:
         tag += f"C{criminal_level}"
 
     if wanted_minutes > 0:
-        tag += f"W{wanted_minutes}"
+        stars = min(wanted_minutes + 1, 5)
+        tag += "\u2605" * stars
 
     if gov_level > 0:
         tag += f"G{gov_level}"
@@ -102,7 +103,7 @@ async def refresh_player_name(
         current_name = character.custom_name or character.name
         has_custom_parts = bool(
             re.search(r"\[MODS?\]", current_name, re.IGNORECASE)
-            or re.search(r"\[[CGW0-9₀-₉]*M[CGW0-9₀-₉]*\]", current_name)
+            or re.search(r"\[[CGW0-9₀-₉\u2605]*M[CGW0-9₀-₉\u2605]*\]", current_name)
         )
 
     # Determine GOV state
