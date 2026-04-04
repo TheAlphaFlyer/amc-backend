@@ -210,7 +210,10 @@ async def handle_cargo_arrived(event, player, character, ctx):
             if character:
                 await Wanted.objects.aupdate_or_create(
                     character=character,
-                    defaults={"wanted_remaining": Wanted.INITIAL_WANTED_SECONDS},
+                    defaults={
+                        "wanted_remaining": Wanted.INITIAL_WANTED_SECONDS,
+                        "expired_at": None,
+                    },
                 )
                 from amc.player_tags import refresh_player_name
                 from amc.mod_server import send_system_message
