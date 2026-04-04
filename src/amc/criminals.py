@@ -10,6 +10,7 @@ from amc.game_server import get_players
 from amc.models import PoliceSession, Wanted
 from amc.mod_server import send_system_message
 from amc.player_tags import refresh_player_name
+from amc.special_cargo import announce_money_secured
 
 logger = logging.getLogger("amc.criminals")
 
@@ -85,13 +86,18 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             wanted_remaining=0,
             expired_at=timezone.now(),
         )
-        # Refresh names
+        # Refresh names and announce money secured
         for char in (w.character for w in wanted_list):
             _last_star_notified.pop(char.guid, None)
             try:
                 await refresh_player_name(char, http_client_mod)
             except Exception:
                 logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+            if char.guid:
+                try:
+                    await announce_money_secured(char.guid, http_client)
+                except Exception:
+                    logger.warning(f"Failed to announce money secured for {char.name}")
         return
 
     # Cops are on duty — tick countdown per suspect
@@ -158,13 +164,17 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
         except Exception:
             logger.warning(f"Failed to refresh name for {wanted.character.name} after star change")
 
-    # Refresh names for characters whose wanted just expired (skip if already refreshed by star-change)
+    # Refresh names and announce money secured for characters whose wanted just expired
     for char in expired_characters:
         _last_star_notified.pop(char.guid, None)
-        if char.guid in refreshed_guids:
-            continue
-        try:
-            await refresh_player_name(char, http_client_mod)
-        except Exception:
-            logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+        if char.guid not in refreshed_guids:
+            try:
+                await refresh_player_name(char, http_client_mod)
+            except Exception:
+                logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+        if char.guid:
+            try:
+                await announce_money_secured(char.guid, http_client)
+            except Exception:
+                logger.warning(f"Failed to announce money secured for {char.name}")
 

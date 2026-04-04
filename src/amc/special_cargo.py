@@ -56,19 +56,23 @@ async def _announce_laundered_after_delay(character_guid, http_client, delay=15)
         )
 
 
-async def _announce_money_secured_after_delay(character_guid, version, http_client, delay):
-    """Wait for the confiscation window, then announce if money wasn't confiscated."""
-    await asyncio.sleep(delay)
+async def announce_money_secured(character_guid: str, http_client) -> None:
+    """Announce that laundered money is safe, if applicable.
+
+    Called from tick_wanted_countdown when a wanted status expires.
+    Checks the money_secured cache (accumulated by handle_money_cargo)
+    and announces if no confiscation happened.
+    """
     cache_key = f"money_secured:{character_guid}"
     data = await cache.aget(cache_key)
-    if not data or data.get("version") != version:
-        return  # superseded by a newer delivery
+    if not data:
+        return
     await cache.adelete(cache_key)
 
-    # Check if any confiscation happened during the window
+    # Check if any confiscation happened during the wanted period
     from amc.models import Wanted
 
-    window_start = timezone.now() - timedelta(seconds=Wanted.INITIAL_WANTED_SECONDS)
+    window_start = timezone.now() - timedelta(seconds=Wanted.MAX_WANTED_DURATION)
     was_confiscated = await Confiscation.objects.filter(
         character__guid=character_guid,
         created_at__gte=window_start,
@@ -78,7 +82,7 @@ async def _announce_money_secured_after_delay(character_guid, version, http_clie
 
     total = data.get("total", 0)
     name = data.get("name", "Unknown")
-    if total > 0:
+    if total > 0 and http_client:
         await announce(
             f"{name}'s ${total:,} is now safe from police",
             http_client,
@@ -148,13 +152,12 @@ async def handle_money_cargo(
         if laundering_cost > 0:
             await record_treasury_expense(laundering_cost, "Money Laundering Cost")
 
-    # --- Debounced "money secured" announcement after confiscation window ---
-    if money_payment > 0 and http_client:
+    # --- Accumulate "money secured" total (announced when wanted expires) ---
+    if money_payment > 0:
         from amc.models import Wanted
 
         secured_cache_key = f"money_secured:{character.guid}"
         prev_secured = await cache.aget(secured_cache_key)
-        version = (prev_secured.get("version", 0) + 1) if prev_secured else 1
         secured_total = (
             (prev_secured.get("total", 0) + money_payment)
             if prev_secured
@@ -163,20 +166,11 @@ async def handle_money_cargo(
         secured_data = {
             "total": secured_total,
             "name": character.name,
-            "version": version,
         }
         await cache.aset(
             secured_cache_key,
             secured_data,
-            timeout=Wanted.INITIAL_WANTED_SECONDS + 120,
-        )
-        asyncio.create_task(
-            _announce_money_secured_after_delay(
-                character.guid,
-                version,
-                http_client,
-                delay=Wanted.INITIAL_WANTED_SECONDS,
-            )
+            timeout=Wanted.MAX_WANTED_DURATION + 120,
         )
 
 

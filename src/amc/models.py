@@ -393,6 +393,7 @@ class Wanted(models.Model):
     is no longer arrestable.
     """
     INITIAL_WANTED_SECONDS = 300  # 5 minutes
+    MAX_WANTED_DURATION = 7200  # 2 hours — generous upper bound for proximity-slowed countdowns
 
     character = models.OneToOneField(
         Character, on_delete=models.CASCADE, related_name="wanted_status"
