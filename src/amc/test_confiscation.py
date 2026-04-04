@@ -27,13 +27,13 @@ def _pickup_event(character_guid, payment=5000, previous_owner_guid=None, cargo_
     }
 
 
-@patch("amc.webhook.send_system_message", new_callable=AsyncMock)
-@patch("amc.webhook.send_fund_to_player_wallet", new_callable=AsyncMock)
+@patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
+@patch("amc_finance.services.send_fund_to_player_wallet", new_callable=AsyncMock)
 @patch("amc.police.record_confiscation_for_level", new_callable=AsyncMock)
-@patch("amc.webhook.record_treasury_confiscation_income", new_callable=AsyncMock)
-@patch("amc.webhook.despawn_player_cargo", new_callable=AsyncMock)
-@patch("amc.webhook.transfer_money", new_callable=AsyncMock)
-@patch("amc.webhook.announce", new_callable=AsyncMock)
+@patch("amc_finance.services.record_treasury_confiscation_income", new_callable=AsyncMock)
+@patch("amc.mod_server.despawn_player_cargo", new_callable=AsyncMock)
+@patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+@patch("amc.game_server.announce", new_callable=AsyncMock)
 class ConfiscationHandlerTests(TestCase):
     """Tests for handle_pickup_cargo — police Money confiscation."""
 

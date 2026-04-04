@@ -28,9 +28,9 @@ def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
 @patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=[])
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock, return_value=100_000)
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
-@patch("amc.webhook.transfer_money", new_callable=AsyncMock)
-@patch("amc.webhook.show_popup", new_callable=AsyncMock)
-@patch("amc.webhook.announce", new_callable=AsyncMock)
+@patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
+@patch("amc.mod_server.show_popup", new_callable=AsyncMock)
+@patch("amc.game_server.announce", new_callable=AsyncMock)
 class TeleportPenaltyTests(TestCase):
     """Tests for handle_teleport_or_respawn — penalty for criminals who teleport."""
 

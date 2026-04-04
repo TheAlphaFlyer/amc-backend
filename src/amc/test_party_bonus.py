@@ -576,7 +576,7 @@ class PartyPaymentSplitTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -790,7 +790,7 @@ class PartyShareGovEmployeeTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -913,11 +913,11 @@ class PartyShareGovEmployeeTest(TestCase):
 
         # Test gov path
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock),
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
 
@@ -932,10 +932,10 @@ class PartyShareGovEmployeeTest(TestCase):
 
         # Test civilian path
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(civ_char, share_subsidy, share_base, session)
 
@@ -967,9 +967,9 @@ class PartyShareGovEmployeeTest(TestCase):
         share_base = 10000  # base_payment directly
 
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock),
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock),
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock),
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock),
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
 
@@ -1013,9 +1013,9 @@ class PartyShareLoanRepaymentTest(TestCase):
         share_base = 5000
 
         with (
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock),
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock, return_value=1000) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock),
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock, return_value=1000) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(character, share_subsidy, share_base, session)
 
@@ -1041,9 +1041,9 @@ class PartyShareLoanRepaymentTest(TestCase):
         share_base = 5000
 
         with (
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(character, share_subsidy, share_base, session)
 
@@ -1076,9 +1076,9 @@ class PartyShareLoanRepaymentTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock),
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock),
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(
                 character, share_subsidy, share_base, session,
@@ -1208,7 +1208,7 @@ class PartyShareContractTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1259,7 +1259,7 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
         ):
             await on_player_profit(
@@ -1301,7 +1301,7 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000  # this was never deposited to wallet!
 
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock),
         ):
             await on_player_profit(
@@ -1339,9 +1339,9 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock),
-            patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
-            patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock),
+            patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
+            patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
         ):
             await on_player_profit(
                 civilian, share_subsidy, share_payment, session,
@@ -1539,9 +1539,9 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
             patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
-            patch("amc.webhook.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
+            patch("amc.subsidies.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
         ):
             await on_player_profit(
                 gov_char, share_subsidy, share_base, session,
@@ -1633,7 +1633,7 @@ class PartyContractWalletTransferBugTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1718,7 +1718,7 @@ class PartyContractWalletTransferBugTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1800,7 +1800,7 @@ class PartyContractWalletTransferBugTest(TestCase):
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.webhook.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch("amc.mod_server.transfer_money", new_callable=AsyncMock) as mock_transfer,
         ):
             from amc.webhook import process_events
 

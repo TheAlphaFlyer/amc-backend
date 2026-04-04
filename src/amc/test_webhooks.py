@@ -494,10 +494,10 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 3)
         self.assertTrue(log.delivered)
 
-    @patch("amc.webhook.detect_custom_parts")
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
-    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
-    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.mod_detection.detect_custom_parts")
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.show_popup", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
     async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -548,9 +548,9 @@ class ProcessEventTests(TestCase):
         mock_show_popup.assert_called_once()
         self.assertIn("profits were zeroed out", mock_show_popup.call_args[0][1])
 
-    @patch("amc.webhook.detect_custom_parts")
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
-    @patch("amc.webhook.show_popup", new_callable=AsyncMock)
+    @patch("amc.mod_detection.detect_custom_parts")
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.show_popup", new_callable=AsyncMock)
     async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_get_treasury, mock_get_rp_mode):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -581,10 +581,10 @@ class ProcessEventTests(TestCase):
         mock_show_popup.assert_called_once()
         self.assertIn("now allowed to use modified vehicles", mock_show_popup.call_args[0][1])
 
-    @patch("amc.webhook.SMUGGLING_TIPOFF_ENABLED", True)
-    @patch("amc.webhook._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
-    @patch("amc.webhook.detect_custom_parts")
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
+    @patch("amc.handlers.smuggling._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch("amc.mod_detection.detect_custom_parts")
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff(
         self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
     ):
@@ -618,10 +618,10 @@ class ProcessEventTests(TestCase):
 
         mock_announce_tipoff.assert_called_once_with(http_client, delay=15)
 
-    @patch("amc.webhook.SMUGGLING_TIPOFF_ENABLED", True)
-    @patch("amc.webhook._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
-    @patch("amc.webhook.detect_custom_parts")
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
+    @patch("amc.handlers.smuggling._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch("amc.mod_detection.detect_custom_parts")
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff_throttled(
         self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
     ):
@@ -778,8 +778,8 @@ class ProcessEventsTests(TestCase):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
-@patch("amc.webhook.announce", new_callable=AsyncMock)
-@patch("amc.webhook.show_popup", new_callable=AsyncMock)
+@patch("amc.game_server.announce", new_callable=AsyncMock)
+@patch("amc.mod_server.show_popup", new_callable=AsyncMock)
 class ExtraWebhookTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -1152,7 +1152,7 @@ class ExtraWebhookTests(TestCase):
         mock_show_popup.assert_called()
         self.assertIn("Webhook failed", mock_show_popup.call_args[0][1])
 
-    @patch("amc.webhook.on_delivery_job_fulfilled")
+    @patch("amc.jobs.on_delivery_job_fulfilled")
     async def test_over_delivery_job_completion(
         self,
         mock_on_fulfilled,
@@ -1243,7 +1243,7 @@ class ExtraWebhookTests(TestCase):
         # Verify on_delivery_job_fulfilled called exactly once
         self.assertEqual(mock_on_fulfilled.call_count, 1)
 
-    @patch("amc.webhook.on_delivery_job_fulfilled")
+    @patch("amc.jobs.on_delivery_job_fulfilled")
     async def test_multi_job_completion(
         self,
         mock_on_fulfilled,
@@ -1441,8 +1441,8 @@ class ExtraWebhookTests(TestCase):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
-@patch("amc.webhook.announce", new_callable=AsyncMock)
-@patch("amc.webhook.show_popup", new_callable=AsyncMock)
+@patch("amc.game_server.announce", new_callable=AsyncMock)
+@patch("amc.mod_server.show_popup", new_callable=AsyncMock)
 class SubsidyIntegrationTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -1844,9 +1844,9 @@ class SubsidyIntegrationTests(TestCase):
 
 
 class OnPlayerProfitTests(TestCase):
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_contract_payment_included_in_actual_income(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1875,9 +1875,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 60_000)
 
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_contract_payment_with_reject_ubi(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1908,9 +1908,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 60_000)
 
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_depot_restock_subsidy_only(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1948,9 +1948,9 @@ class OnPlayerProfitTests(TestCase):
         savings_amount = mock_savings.call_args[0][1]
         self.assertEqual(savings_amount, 5_000)
 
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_depot_restock_double_count_regression(
         self, mock_subsidise, mock_repay_loan, mock_savings
     ):
@@ -1985,11 +1985,11 @@ class OnPlayerProfitTests(TestCase):
             "Loan repayment income should be subsidy only, not double-counted"
         )
 
-    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_subsidy_only_contribution(
         self, mock_subsidise, mock_repay_loan, mock_savings,
         mock_redirect, mock_transfer,
@@ -2030,11 +2030,11 @@ class OnPlayerProfitTests(TestCase):
         mock_repay_loan.assert_not_called()
         mock_savings.assert_not_called()
 
-    @patch("amc.webhook.transfer_money", new_callable=AsyncMock)
+    @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock)
-    @patch("amc.webhook.set_aside_player_savings", new_callable=AsyncMock)
-    @patch("amc.webhook.repay_loan_for_profit", new_callable=AsyncMock)
-    @patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+    @patch("amc.subsidies.set_aside_player_savings", new_callable=AsyncMock)
+    @patch("amc_finance.loans.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_base_plus_subsidy_contribution(
         self, mock_subsidise, mock_repay_loan, mock_savings,
         mock_redirect, mock_transfer,
@@ -2264,7 +2264,7 @@ class SeqDeduplicationTests(TestCase):
         cache.delete("webhook:last_epoch")
 
 
-@patch("amc.webhook.subsidise_player", new_callable=AsyncMock)
+@patch("amc.subsidies.subsidise_player", new_callable=AsyncMock)
 class SecurityBonusTests(TestCase):
     """Test Risk Premium on Money deliveries based on active online police."""
 
@@ -2288,7 +2288,7 @@ class SecurityBonusTests(TestCase):
             },
         }
 
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_no_police_no_bonus(
         self, mock_list_vehicles, mock_subsidise,
     ):
@@ -2316,7 +2316,7 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(subsidy, 0)
         mock_subsidise.assert_not_called()
 
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_one_police_20pct_bonus(
         self, mock_list_vehicles, mock_subsidise,
     ):
@@ -2356,7 +2356,7 @@ class SecurityBonusTests(TestCase):
             5_000, character, http_client_mod, message="Risk Premium"
         )
 
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_offline_police_no_bonus(
         self, mock_list_vehicles, mock_subsidise,
     ):
@@ -2393,7 +2393,7 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(subsidy, 0)
         mock_subsidise.assert_not_called()
 
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_two_police_40pct_bonus(
         self, mock_list_vehicles, mock_subsidise,
     ):
@@ -2432,7 +2432,7 @@ class SecurityBonusTests(TestCase):
             10_000, character, http_client_mod, message="Risk Premium"
         )
 
-    @patch("amc.webhook.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_bonus_capped_at_100pct(
         self, mock_list_vehicles, mock_subsidise,
     ):

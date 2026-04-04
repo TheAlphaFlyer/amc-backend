@@ -1,0 +1,100 @@
+"""Smuggling / load cargo handler.
+
+Handles: ServerLoadCargo
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+
+from django.core.cache import cache
+
+from amc.handlers import register
+from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
+from amc.mod_server import list_player_vehicles, show_popup
+from amc.game_server import announce
+from amc.models import PoliceSession
+
+logger = logging.getLogger("amc.webhook.handlers.smuggling")
+
+SMUGGLING_TIPOFF_ENABLED = os.environ.get("SMUGGLING_TIPOFF_ENABLED", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+SMUGGLING_TIPOFF_DELAY = 15  # seconds — delay before broadcasting
+SMUGGLING_TIPOFF_COOLDOWN = 60  # seconds — throttle window per player
+
+
+@register("ServerLoadCargo")
+async def handle_load_cargo(event, player, character, ctx):
+    if not ctx.http_client_mod:
+        return 0, 0, 0, 0
+
+    cargo = event["data"].get("Cargo", {})
+    if cargo.get("Net_CargoKey") != "Money":
+        return 0, 0, 0, 0
+
+    # Throttled smuggling tip-off announcement
+    if SMUGGLING_TIPOFF_ENABLED and ctx.http_client:
+        tipoff_cache_key = f"smuggling_tipoff:{character.guid}"
+        already_tipped = await cache.aget(tipoff_cache_key)
+        if not already_tipped:
+            await cache.aset(tipoff_cache_key, True, timeout=SMUGGLING_TIPOFF_COOLDOWN)
+            asyncio.create_task(
+                _announce_smuggling_tipoff_after_delay(
+                    ctx.http_client,
+                    delay=SMUGGLING_TIPOFF_DELAY,
+                )
+            )
+
+    try:
+        vehicles = await list_player_vehicles(
+            ctx.http_client_mod, str(player.unique_id), active=True, complete=True
+        )
+        if not vehicles:
+            return 0, 0, 0, 0
+
+        main_vehicle = next(
+            (
+                v for v in vehicles.values()
+                if v.get("isLastVehicle") and v.get("index", -1) == 0
+            ),
+            None,
+        )
+        if not main_vehicle:
+            return 0, 0, 0, 0
+
+        # Whitelist police parts for officers on active duty
+        whitelist = None
+        is_on_duty = await PoliceSession.objects.filter(
+            character=character, ended_at__isnull=True
+        ).aexists()
+        if is_on_duty:
+            whitelist = POLICE_DUTY_WHITELIST
+        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
+        if custom_parts:
+            asyncio.create_task(
+                show_popup(
+                    ctx.http_client_mod,
+                    "You are now allowed to use modified vehicles for criminal gameplay",
+                    character_guid=character.guid,
+                    player_id=str(player.unique_id),
+                )
+            )
+    except Exception as e:
+        logger.warning(f"Failed to check custom parts for load cargo: {e}")
+
+    return 0, 0, 0, 0
+
+
+async def _announce_smuggling_tipoff_after_delay(http_client, delay=SMUGGLING_TIPOFF_DELAY):
+    """Wait for the delay, then announce a vague smuggling tip-off."""
+    await asyncio.sleep(delay)
+    await announce(
+        "Intelligence reports suggest a smuggling operation is underway",
+        http_client,
+        color="E67E22",
+    )

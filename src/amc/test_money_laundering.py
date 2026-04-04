@@ -57,7 +57,7 @@ async def _setup_character(guid_suffix=""):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
-@patch("amc.webhook.announce", new_callable=AsyncMock)
+@patch("amc.game_server.announce", new_callable=AsyncMock)
 @patch("amc.special_cargo.announce", new_callable=AsyncMock)
 class MoneyLaunderingTests(TestCase):
     async def test_money_delivery_creates_criminal_record(
