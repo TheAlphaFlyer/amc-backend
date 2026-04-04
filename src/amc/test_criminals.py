@@ -468,3 +468,74 @@ class WantedCountdownTickTests(TestCase):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
+
+    # --- Star change → name refresh sync tests ---
+
+    async def test_refresh_called_on_star_boundary(
+        self, mock_sys_msg, mock_refresh,
+    ):
+        """refresh_player_name is called exactly once when the star count crosses a boundary (5→4)."""
+        criminal = await self._setup_criminal(wanted_remaining=181)
+        officer = await self._setup_police()
+
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            # One tick: 181 → 180 (crosses 5→4 boundary)
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_refresh.assert_called_once_with(criminal, mock_http_mod)
+        mock_sys_msg.assert_called_once()  # message and refresh in sync
+
+    async def test_full_lifecycle_messages_and_refreshes_synced(
+        self, mock_sys_msg, mock_refresh,
+    ):
+        """Full 300→0 countdown: 4 star transitions, each with both a message and a name refresh."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        officer = await self._setup_police()
+
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
+            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            for _ in range(300):
+                await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        # 4 star transitions: 5→4 (180), 4→3 (120), 3→2 (60), 2→0 (0)
+        self.assertEqual(mock_sys_msg.call_count, 4)
+        # Each star transition triggers refresh, and expiry is deduplicated
+        self.assertEqual(mock_refresh.call_count, 4)
+
+    async def test_no_refresh_for_offline_star_change(
+        self, mock_sys_msg, mock_refresh,
+    ):
+        """Offline suspects don't get name refreshes even when their stars change."""
+        await self._setup_criminal(wanted_remaining=181)
+        officer = await self._setup_police()
+
+        # Only officer online — criminal is offline
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
+        ])
+
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            # Two ticks: 181 → 179 (crosses 5→4 boundary while offline)
+            for _ in range(2):
+                await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_sys_msg.assert_not_called()
+        mock_refresh.assert_not_called()

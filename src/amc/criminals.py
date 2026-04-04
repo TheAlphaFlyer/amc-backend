@@ -62,11 +62,10 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 character__last_online__gte=online_threshold,
             ).select_related("character")
         ]
-        cop_guids = {ps.character.guid for ps in police_sessions if ps.character.guid in locations}
+        cop_guids = {ps.character.guid for ps in police_sessions if ps.character.guid and ps.character.guid in locations}
         for cg in cop_guids:
-            if cg in locations:
-                _, cop_loc, _ = locations[cg]
-                cop_locations.append(cop_loc)
+            _, cop_loc, _ = locations[cg]
+            cop_locations.append(cop_loc)
 
     # No police on duty — immediately expire all wanted records
     if not cop_locations:
@@ -97,6 +96,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
 
     # Cops are on duty — tick countdown per suspect
     expired_characters = []
+    star_change_notifications = []  # (wanted, message) for deferred processing
 
     for wanted in wanted_list:
         sus_guid = wanted.character.guid
@@ -119,24 +119,16 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             if wanted.wanted_remaining <= 0:
                 expired_characters.append(wanted.character)
 
-        # Send system message when star count changes (online suspects only)
+        # Track star changes for deferred notification (online suspects only)
         new_stars = _compute_stars(wanted.wanted_remaining)
         if new_stars != old_stars and sus_guid in locations:
             last_notified = _last_star_notified.get(sus_guid)
             if last_notified is None or new_stars != last_notified:
                 _last_star_notified[sus_guid] = new_stars
                 msg = STAR_MESSAGES.get(new_stars)
-                if msg:
-                    try:
-                        await send_system_message(
-                            http_client_mod,
-                            msg,
-                            character_guid=sus_guid,
-                        )
-                    except Exception:
-                        logger.warning(f"Failed to send wanted star message to {wanted.character.name}")
+                star_change_notifications.append((wanted, msg))
 
-    # Bulk save
+    # Bulk save — must happen BEFORE refresh_player_name so it reads correct DB state
     await Wanted.objects.abulk_update(wanted_list, ["wanted_remaining"])
 
     # Mark expired (set expired_at instead of deleting)
@@ -147,10 +139,32 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             expired_at=timezone.now(),
         )
 
-    # Refresh names for characters whose wanted just expired
+    # Send star-change messages and refresh names (DB is now up-to-date)
+    refreshed_guids = set()
+    for wanted, msg in star_change_notifications:
+        sus_guid = wanted.character.guid
+        if msg:
+            try:
+                await send_system_message(
+                    http_client_mod,
+                    msg,
+                    character_guid=sus_guid,
+                )
+            except Exception:
+                logger.warning(f"Failed to send wanted star message to {wanted.character.name}")
+        try:
+            await refresh_player_name(wanted.character, http_client_mod)
+            refreshed_guids.add(sus_guid)
+        except Exception:
+            logger.warning(f"Failed to refresh name for {wanted.character.name} after star change")
+
+    # Refresh names for characters whose wanted just expired (skip if already refreshed by star-change)
     for char in expired_characters:
         _last_star_notified.pop(char.guid, None)
+        if char.guid in refreshed_guids:
+            continue
         try:
             await refresh_player_name(char, http_client_mod)
         except Exception:
             logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+
