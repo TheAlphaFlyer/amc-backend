@@ -11,7 +11,6 @@ import logging
 from datetime import timedelta
 
 from django.core.cache import cache
-from django.utils import timezone
 
 from amc.handlers import register
 from amc.models import (
@@ -34,6 +33,7 @@ TELEPORT_PENALTY_ANNOUNCE_DELAY = 10  # seconds — debounce window for announce
 # ServerResetVehicleAt
 # ---------------------------------------------------------------------------
 
+
 @register("ServerResetVehicleAt")
 async def handle_reset_vehicle(event, player, character, ctx):
     timestamp = _parse_timestamp(event)
@@ -51,6 +51,7 @@ async def handle_reset_vehicle(event, player, character, ctx):
 # ---------------------------------------------------------------------------
 # ServerTeleportCharacter / ServerTeleportVehicle / ServerRespawnCharacter
 # ---------------------------------------------------------------------------
+
 
 @register("ServerTeleportCharacter")
 async def _handle_teleport_character(event, player, character, ctx):
@@ -141,13 +142,15 @@ async def _handle_teleport_or_respawn(event, character, ctx):
 
     # 4. Expire Wanted status after penalty
     from django.utils import timezone as _tz
-    await Wanted.objects.filter(character=character).aupdate(
+
+    await Wanted.objects.filter(character=character, expired_at__isnull=True).aupdate(
         wanted_remaining=0,
         expired_at=_tz.now(),
     )
 
     # 5. Refresh player name tag (criminal level may have dropped)
     from amc.player_tags import refresh_player_name
+
     await refresh_player_name(character, ctx.http_client_mod)
 
     # 6. Debounced popup + announcement
@@ -202,5 +205,6 @@ async def _announce_teleport_penalty_after_delay(
 
 
 def _parse_timestamp(event):
-    current_tz = timezone.get_current_timezone()
-    return timezone.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
+    from amc.handlers.utils import parse_event_timestamp
+
+    return parse_event_timestamp(event)

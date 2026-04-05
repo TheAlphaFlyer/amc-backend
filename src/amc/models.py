@@ -193,7 +193,10 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
             # Handle race condition: concurrent log lines for the same player may both
             # attempt to create the character simultaneously.
             try:
-                character, character_created = await self.get_queryset().aupdate_or_create(
+                (
+                    character,
+                    character_created,
+                ) = await self.get_queryset().aupdate_or_create(
                     guid=character_guid, player=player, defaults={"name": player_name}
                 )
             except IntegrityError:
@@ -202,6 +205,7 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
 
             if character_created:
                 import logging
+
                 logging.getLogger("amc.models").warning(
                     f"Created new character {character.id} for player {player.unique_id} "
                     f"with GUID {character_guid} — name={player_name}. "
@@ -358,18 +362,26 @@ class CriminalRecord(models.Model):
 @final
 class Confiscation(models.Model):
     character = models.ForeignKey(
-        Character, on_delete=models.CASCADE, related_name="confiscations_received",
-        null=True, blank=True
+        Character,
+        on_delete=models.CASCADE,
+        related_name="confiscations_received",
+        null=True,
+        blank=True,
     )
     officer = models.ForeignKey(
-        Character, on_delete=models.CASCADE, related_name="confiscations_made",
-        null=True, blank=True
+        Character,
+        on_delete=models.CASCADE,
+        related_name="confiscations_made",
+        null=True,
+        blank=True,
     )
     cargo_key = models.CharField(max_length=100)
     amount = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     deliveries = models.ManyToManyField(
-        "Delivery", blank=True, related_name="confiscations",
+        "Delivery",
+        blank=True,
+        related_name="confiscations",
     )
 
     class Meta:
@@ -392,11 +404,14 @@ class Wanted(models.Model):
     more time to arrest. When wanted_remaining reaches 0, the suspect
     is no longer arrestable.
     """
-    INITIAL_WANTED_SECONDS = 300  # 5 minutes
-    MAX_WANTED_DURATION = 7200  # 2 hours — generous upper bound for proximity-slowed countdowns
 
-    character = models.OneToOneField(
-        Character, on_delete=models.CASCADE, related_name="wanted_status"
+    INITIAL_WANTED_SECONDS = 300  # 5 minutes
+    MAX_WANTED_DURATION = (
+        7200  # 2 hours — generous upper bound for proximity-slowed countdowns
+    )
+
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="wanted_records"
     )
     wanted_remaining = models.FloatField()  # seconds (float for fractional decrements)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -2526,7 +2541,11 @@ class CharacterLocationStats(models.Model):
         verbose_name_plural = "Character Location Stats"
 
     def __str__(self):
-        label = VehicleKey(self.favourite_vehicle).label if self.favourite_vehicle else "None"
+        label = (
+            VehicleKey(self.favourite_vehicle).label
+            if self.favourite_vehicle
+            else "None"
+        )
         return f"{self.character} — fav: {label}"
 
 
@@ -2553,7 +2572,9 @@ class SupplyChainEventQuerySet(models.QuerySet):
 
 @final
 class SupplyChainEventManager(
-    models.Manager.from_queryset(SupplyChainEventQuerySet)  # pyrefly: ignore [invalid-inheritance]
+    models.Manager.from_queryset(
+        SupplyChainEventQuerySet
+    )  # pyrefly: ignore [invalid-inheritance]
 ):  # type: ignore[misc]
     pass
 
@@ -2619,7 +2640,6 @@ class SupplyChainObjective(models.Model):
         default=False, help_text="Primary objectives define the main event goal"
     )
 
-
     if TYPE_CHECKING:
         contributions: models.Manager["SupplyChainContribution"]
 
@@ -2634,7 +2654,10 @@ class SupplyChainContribution(models.Model):
         SupplyChainObjective, on_delete=models.CASCADE, related_name="contributions"
     )
     character = models.ForeignKey(
-        Character, on_delete=models.SET_NULL, null=True, related_name="supply_chain_contributions"
+        Character,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="supply_chain_contributions",
     )
     cargo_key = models.CharField(max_length=200, db_index=True, choices=CargoKey)
     quantity = models.PositiveIntegerField()
@@ -2774,4 +2797,3 @@ class NewsItem(models.Model):
     @override
     def __str__(self):
         return self.title
-

@@ -133,10 +133,13 @@ async def refresh_player_name(
 
     wanted_minutes = 0
     try:
-        wanted = await Wanted.objects.aget(character=character)
-        if wanted.wanted_remaining > 0:
+        wanted = await Wanted.objects.filter(
+            character=character,
+            expired_at__isnull=True,
+        ).afirst()
+        if wanted and wanted.wanted_remaining > 0:
             wanted_minutes = math.ceil(wanted.wanted_remaining / 60)
-    except Wanted.DoesNotExist:
+    except Exception:
         pass
 
     # Determine POLICE state

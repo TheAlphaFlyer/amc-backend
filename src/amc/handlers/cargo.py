@@ -43,6 +43,7 @@ logger = logging.getLogger("amc.webhook.handlers.cargo")
 # ServerCargoDumped
 # ---------------------------------------------------------------------------
 
+
 @register("ServerCargoDumped")
 async def handle_cargo_dumped(event, player, character, ctx):
     cargo = event["data"]["Cargo"]
@@ -69,6 +70,7 @@ async def handle_cargo_dumped(event, player, character, ctx):
 # ServerCargoArrived
 # ---------------------------------------------------------------------------
 
+
 @register("ServerCargoArrived")
 async def handle_cargo_arrived(event, player, character, ctx):
     from amc.cargo import get_cargo_bonus
@@ -87,7 +89,10 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
     # --- 2. Build logs (parallel) ---
     logs = await asyncio.gather(
-        *[process_cargo_log(cargo, player, character, timestamp) for cargo in valid_cargos]
+        *[
+            process_cargo_log(cargo, player, character, timestamp)
+            for cargo in valid_cargos
+        ]
     )
 
     # --- 3. Apply game-level bonuses (damage bonus etc.) ---
@@ -117,7 +122,9 @@ async def handle_cargo_arrived(event, player, character, ctx):
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
     # --- 5. Special cargo side effects (e.g. Money -> criminal record) ---
-    await run_special_cargo_handlers(logs, character, ctx.http_client, ctx.http_client_mod)
+    await run_special_cargo_handlers(
+        logs, character, ctx.http_client, ctx.http_client_mod
+    )
 
     # --- 6. Per-cargo-group: subsidy, delivery, job, supply chain ---
     total_subsidy = 0
@@ -165,12 +172,21 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         # Build delivery data
         delivery_data = _build_delivery_data(
-            timestamp, character, cargo_key, quantity, payment,
-            cargo_subsidy, delivery_source, delivery_destination, ctx.is_rp_mode,
+            timestamp,
+            character,
+            cargo_key,
+            quantity,
+            payment,
+            cargo_subsidy,
+            delivery_source,
+            delivery_destination,
+            ctx.is_rp_mode,
         )
 
         job_id = job.id if job and not ctx.used_shortcut else None
-        job = await sync_to_async(atomic_process_delivery)(job_id, quantity, delivery_data)
+        job = await sync_to_async(atomic_process_delivery)(
+            job_id, quantity, delivery_data
+        )
 
         # Job fulfillment
         if job and job.quantity_fulfilled >= job.quantity_requested:
@@ -205,18 +221,27 @@ async def handle_cargo_arrived(event, player, character, ctx):
             security_bonus = int(payment * quantity * bonus_rate)
             if security_bonus > 0 and character:
                 await subsidise_player(
-                    security_bonus, character, ctx.http_client_mod, message="Risk Premium"
+                    security_bonus,
+                    character,
+                    ctx.http_client_mod,
+                    message="Risk Premium",
                 )
             if character:
-                await Wanted.objects.aupdate_or_create(
+                active_wanted = await Wanted.objects.filter(
                     character=character,
-                    defaults={
-                        "wanted_remaining": Wanted.INITIAL_WANTED_SECONDS,
-                        "expired_at": None,
-                    },
-                )
+                    expired_at__isnull=True,
+                ).afirst()
+                if active_wanted:
+                    active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_SECONDS
+                    await active_wanted.asave(update_fields=["wanted_remaining"])
+                else:
+                    await Wanted.objects.acreate(
+                        character=character,
+                        wanted_remaining=Wanted.INITIAL_WANTED_SECONDS,
+                    )
                 from amc.player_tags import refresh_player_name
                 from amc.mod_server import send_system_message
+
                 await refresh_player_name(character, ctx.http_client_mod)
                 asyncio.create_task(
                     send_system_message(
@@ -253,6 +278,7 @@ async def handle_cargo_arrived(event, player, character, ctx):
 # Sub-helpers for handle_cargo_arrived
 # ---------------------------------------------------------------------------
 
+
 def _parse_cargos(event):
     """Extract valid cargos and compute clawback for zero-delivery items."""
     valid_cargos = []
@@ -276,7 +302,8 @@ async def _apply_modded_vehicle_penalty(character, payment, quantity, http_clien
             return
         main_vehicle = next(
             (
-                v for v in vehicles.values()
+                v
+                for v in vehicles.values()
                 if v.get("isLastVehicle") and v.get("index", -1) == 0
             ),
             None,
@@ -290,7 +317,9 @@ async def _apply_modded_vehicle_penalty(character, payment, quantity, http_clien
         ).aexists()
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
-        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
+        custom_parts = detect_custom_parts(
+            main_vehicle.get("parts", []), whitelist=whitelist
+        )
         if custom_parts:
             penalty = payment * quantity
             await transfer_money(
@@ -312,8 +341,15 @@ async def _apply_modded_vehicle_penalty(character, payment, quantity, http_clien
 
 
 def _build_delivery_data(
-    timestamp, character, cargo_key, quantity, payment,
-    subsidy, delivery_source, delivery_destination, is_rp_mode,
+    timestamp,
+    character,
+    cargo_key,
+    quantity,
+    payment,
+    subsidy,
+    delivery_source,
+    delivery_destination,
+    is_rp_mode,
 ):
     """Construct the delivery_data dict used for Delivery creation."""
     delivery_data = {
@@ -328,15 +364,14 @@ def _build_delivery_data(
         "rp_mode": is_rp_mode,
     }
     if is_rp_mode:
-        delivery_data["subsidy"] = int(
-            (subsidy * 1.5) + (payment * quantity * 0.5)
-        )
+        delivery_data["subsidy"] = int((subsidy * 1.5) + (payment * quantity * 0.5))
     return delivery_data
 
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 async def process_cargo_log(cargo, player, character, timestamp):
     """Create a ServerCargoArrivedLog from raw cargo event data."""
@@ -371,6 +406,6 @@ async def process_cargo_log(cargo, player, character, timestamp):
 
 
 def _parse_timestamp(event):
-    from django.utils import timezone as _tz
-    current_tz = _tz.get_current_timezone()
-    return _tz.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
+    from amc.handlers.utils import parse_event_timestamp
+
+    return parse_event_timestamp(event)
