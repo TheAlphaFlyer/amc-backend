@@ -141,9 +141,10 @@ async def execute_arrest(
         name = target_chars[guid].name if guid in target_chars else "Unknown"
         arrested_names.append(name)
 
-        # Money confiscation logic — rate based on Wanted protection remaining
+        # Confiscation logic — rate based on Wanted protection remaining
         suspect_char = target_chars.get(guid)
         if suspect_char:
+            wanted = None
             try:
                 wanted = await Wanted.objects.aget(
                     character=suspect_char, expired_at__isnull=True
@@ -152,30 +153,39 @@ async def execute_arrest(
             except Wanted.DoesNotExist:
                 rate = 0.0
 
-            # Find the most recent un-confiscated Money delivery
-            recent_delivery = (
-                await Delivery.objects.filter(
-                    character=suspect_char,
-                    cargo_key="Money",
-                    confiscations__isnull=True,
-                )
-                .order_by("-timestamp")
-                .afirst()
+            # Find all un-confiscated deliveries linked to this Wanted record
+            wanted_deliveries = []
+            if wanted:
+                wanted_deliveries = [
+                    d
+                    async for d in Delivery.objects.filter(
+                        wanted=wanted,
+                        confiscations__isnull=True,
+                    )
+                ]
+
+            total_delivery_payment = sum(d.payment for d in wanted_deliveries)
+            confiscated_amount = (
+                round(total_delivery_payment * rate) if wanted_deliveries else 0
             )
 
-            confiscated_amount = (
-                round(recent_delivery.payment * rate) if recent_delivery else 0
-            )
+            # Determine the cargo key for the confiscation record
+            cargo_keys_involved = {d.cargo_key for d in wanted_deliveries}
+            conf_cargo_key = (
+                cargo_keys_involved.pop()
+                if len(cargo_keys_involved) == 1
+                else "Illicit"
+            ) if cargo_keys_involved else "Illicit"
 
             # Always create a Confiscation record for the arrest
             conf = await Confiscation.objects.acreate(
                 character=suspect_char,
                 officer=officer_character,
-                cargo_key="Money",
+                cargo_key=conf_cargo_key,
                 amount=confiscated_amount,
             )
-            if recent_delivery:
-                await conf.deliveries.aset([recent_delivery.id])
+            if wanted_deliveries:
+                await conf.deliveries.aset([d.id for d in wanted_deliveries])
 
             if confiscated_amount > 0:
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])

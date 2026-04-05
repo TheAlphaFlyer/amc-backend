@@ -12,6 +12,7 @@ import logging
 from django.core.cache import cache
 
 from amc.handlers import register
+from amc.special_cargo import ILLICIT_CARGO_KEYS
 from amc.models import (
     Character,
     Confiscation,
@@ -119,10 +120,10 @@ CONFISCATION_ANNOUNCE_DELAY = 30  # seconds
 
 @register("ServerPickupCargo")
 async def handle_pickup_cargo(event, player, character, ctx):
-    """Handle ServerPickupCargo: confiscate Money if picker is police."""
+    """Handle ServerPickupCargo: confiscate illicit cargo if picker is police."""
     cargo = event["data"].get("Cargo", {})
     cargo_key = cargo.get("Net_CargoKey")
-    if cargo_key != "Money":
+    if cargo_key not in ILLICIT_CARGO_KEYS:
         return 0, 0, 0, 0
 
     # Must be active police (on duty)
