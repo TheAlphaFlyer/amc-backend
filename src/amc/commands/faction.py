@@ -102,47 +102,15 @@ async def execute_arrest(
     arrested_names = []
     total_confiscated = 0
     for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
-        # Always attempt to exit vehicle — snapshot may be stale
-        try:
-            await force_exit_vehicle(http_client_mod, guid)
-            await asyncio.sleep(1.5)
-        except Exception:
-            pass
-
-        # Teleport to jail — try without vehicle first, fallback to with-vehicle
-        try:
-            await teleport_player(
-                http_client_mod,
-                crim_uid,
-                jail_location,
-                no_vehicles=True,
-                force=True,
-            )
-        except Exception:
-            # Player still in vehicle — teleport with vehicle as fallback
-            try:
-                await teleport_player(
-                    http_client_mod,
-                    crim_uid,
-                    jail_location,
-                    no_vehicles=False,
-                    force=True,
-                )
-            except Exception:
-                continue  # skip confiscation if teleport completely failed
-
-        # Popup notification
-        await show_popup(
-            http_client_mod,
-            "You have been arrested!",
-            player_id=crim_uid,
-        )
-
         name = target_chars[guid].name if guid in target_chars else "Unknown"
-        arrested_names.append(name)
 
-        # Confiscation logic — rate based on Wanted protection remaining
+        # --- Phase 1: Confiscation & Wanted expiry (BEFORE teleport) ---
+        # We must expire the Wanted record and link deliveries to a Confiscation
+        # record before teleporting to jail. Otherwise the ServerTeleportCharacter
+        # event handler will see an active Wanted + un-confiscated deliveries and
+        # apply a second penalty.
         suspect_char = target_chars.get(guid)
+        confiscated_amount = 0
         if suspect_char:
             wanted = None
             try:
@@ -241,13 +209,52 @@ async def execute_arrest(
 
             total_confiscated += confiscated_amount
 
-            # Expire Wanted status after arrest
+            # Expire Wanted status BEFORE teleport
             await Wanted.objects.filter(
                 character=suspect_char, expired_at__isnull=True
             ).aupdate(
                 wanted_remaining=0,
                 expired_at=timezone.now(),
             )
+
+        # --- Phase 2: Physical arrest (teleport to jail) ---
+        # Always attempt to exit vehicle — snapshot may be stale
+        try:
+            await force_exit_vehicle(http_client_mod, guid)
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
+
+        # Teleport to jail — try without vehicle first, fallback to with-vehicle
+        try:
+            await teleport_player(
+                http_client_mod,
+                crim_uid,
+                jail_location,
+                no_vehicles=True,
+                force=True,
+            )
+        except Exception:
+            # Player still in vehicle — teleport with vehicle as fallback
+            try:
+                await teleport_player(
+                    http_client_mod,
+                    crim_uid,
+                    jail_location,
+                    no_vehicles=False,
+                    force=True,
+                )
+            except Exception:
+                continue  # teleport failed but confiscation already recorded
+
+        # Popup notification
+        await show_popup(
+            http_client_mod,
+            "You have been arrested!",
+            player_id=crim_uid,
+        )
+
+        arrested_names.append(name)
 
     return arrested_names, total_confiscated
 
