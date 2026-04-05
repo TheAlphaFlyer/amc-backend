@@ -37,7 +37,9 @@ def _make_players_list(player_datas):
 @patch("amc.auto_arrest.send_system_message", new_callable=AsyncMock)
 @patch("amc.commands.faction.send_fund_to_player_wallet", new_callable=AsyncMock)
 @patch("amc.commands.faction.record_confiscation_for_level", new_callable=AsyncMock)
-@patch("amc.commands.faction.record_treasury_confiscation_income", new_callable=AsyncMock)
+@patch(
+    "amc.commands.faction.record_treasury_confiscation_income", new_callable=AsyncMock
+)
 @patch("amc.commands.faction.transfer_money", new_callable=AsyncMock)
 @patch("amc.commands.faction.teleport_player", new_callable=AsyncMock)
 @patch("amc.commands.faction.force_exit_vehicle", new_callable=AsyncMock)
@@ -72,8 +74,16 @@ class AutoArrestPatrolTests(TestCase):
         return officer, criminal
 
     async def test_auto_arrests_wanted_suspect(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Patrol tick arrests a suspect with active Wanted after enough still ticks."""
         officer, criminal = await self._setup_world()
@@ -85,10 +95,16 @@ class AutoArrestPatrolTests(TestCase):
         )
 
         # Both players near each other (within 50m = 5000 game units)
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
@@ -96,7 +112,9 @@ class AutoArrestPatrolTests(TestCase):
         # Must accumulate enough still ticks before arrest triggers
         prev_locations = {}
         still_counters = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev_locations, still_counters = await _patrol_tick(
                     mock_http, mock_http_mod, prev_locations, still_counters
@@ -113,22 +131,38 @@ class AutoArrestPatrolTests(TestCase):
         self.assertEqual(conf.character_id, criminal.id)
 
     async def test_no_arrest_without_wanted_status(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Patrol tick does NOT arrest suspects without Wanted status."""
         officer, criminal = await self._setup_world()
 
         # Criminal has NO Wanted status
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             prev = {}
             sc = {}
             for _ in range(_STILL_TICKS):
@@ -138,8 +172,16 @@ class AutoArrestPatrolTests(TestCase):
         self.assertEqual(await Confiscation.objects.acount(), 0)
 
     async def test_no_arrest_when_out_of_range(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Patrol tick does NOT arrest suspects who are too far from police."""
         officer, criminal = await self._setup_world()
@@ -150,15 +192,23 @@ class AutoArrestPatrolTests(TestCase):
         )
 
         # Criminal is 100m away (10000 game units > 1500 auto-arrest radius on foot)
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 11000, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 11000, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             prev = {}
             sc = {}
             for _ in range(_STILL_TICKS):
@@ -167,8 +217,16 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_not_called()
 
     async def test_police_not_arrested(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Police officers are never auto-arrested, even if nearby each other."""
         officer, _ = await self._setup_world()
@@ -186,15 +244,23 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(officer2.player.unique_id, officer2.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    officer2.player.unique_id, officer2.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             prev = {}
             sc = {}
             for _ in range(_STILL_TICKS):
@@ -203,8 +269,16 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_not_called()
 
     async def test_speed_check_blocks_fast_suspects(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Suspects moving too fast are NOT auto-arrested (speed > 30 km/h)."""
         officer, criminal = await self._setup_world()
@@ -221,23 +295,41 @@ class AutoArrestPatrolTests(TestCase):
         prev_criminal_data = _make_player_data(
             criminal.player.unique_id, criminal.guid, 1500, 1000, 0, vehicle="truck"
         )
-        prev_locations = _build_player_locations([(prev_criminal_data["unique_id"], prev_criminal_data)])
+        prev_locations = _build_player_locations(
+            [(prev_criminal_data["unique_id"], prev_criminal_data)]
+        )
 
         # Each call to get_players returns suspect shifted 600 units further
         tick_counter = [0]
+
         def make_players_for_tick(*args, **kwargs):
             tick_counter[0] += 1
             x = 1500 + 600 * tick_counter[0]
-            return _make_players_list([
-                _make_player_data(officer.player.unique_id, officer.guid, x, 1000, 0),
-                _make_player_data(criminal.player.unique_id, criminal.guid, x, 1000, 0, vehicle="truck"),
-            ])
+            return _make_players_list(
+                [
+                    _make_player_data(
+                        officer.player.unique_id, officer.guid, x, 1000, 0
+                    ),
+                    _make_player_data(
+                        criminal.player.unique_id,
+                        criminal.guid,
+                        x,
+                        1000,
+                        0,
+                        vehicle="truck",
+                    ),
+                ]
+            )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_players_for_tick):
+        with patch(
+            "amc.auto_arrest.get_players",
+            new_callable=AsyncMock,
+            side_effect=make_players_for_tick,
+        ):
             for _ in range(_STILL_TICKS + 2):
                 prev_locations, sc = await _patrol_tick(
                     mock_http, mock_http_mod, prev_locations, sc
@@ -246,8 +338,16 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_not_called()
 
     async def test_expired_wanted_not_arrested(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Wanted with wanted_remaining=0 does not trigger arrest."""
         officer, criminal = await self._setup_world()
@@ -258,15 +358,23 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=0,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             prev = {}
             sc = {}
             for _ in range(_STILL_TICKS):
@@ -275,8 +383,16 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_not_called()
 
     async def test_server_announcement_on_arrest(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Server announcement fires on auto-arrest after enough still ticks."""
         officer, criminal = await self._setup_world()
@@ -286,17 +402,25 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
@@ -307,8 +431,16 @@ class AutoArrestPatrolTests(TestCase):
         # No confiscation (no Money deliveries) → no "confiscated" in message
 
     async def test_system_message_to_officer(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """System message is sent to the officer on auto-arrest."""
         officer, criminal = await self._setup_world()
@@ -318,17 +450,25 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
@@ -336,15 +476,24 @@ class AutoArrestPatrolTests(TestCase):
         mock_sys_msg.assert_called()
         # Find the call specifically to the officer
         officer_calls = [
-            c for c in mock_sys_msg.call_args_list
+            c
+            for c in mock_sys_msg.call_args_list
             if c.kwargs.get("character_guid") == officer.guid
         ]
         self.assertTrue(len(officer_calls) >= 1)
         self.assertIn("auto-arrested", officer_calls[0][0][1])
 
     async def test_cooldown_prevents_rearrest(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """After auto-arrest, suspect is NOT arrested again on subsequent ticks."""
         officer, criminal = await self._setup_world()
@@ -354,10 +503,16 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
@@ -365,7 +520,9 @@ class AutoArrestPatrolTests(TestCase):
         # Accumulate still ticks until arrest fires
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
@@ -373,15 +530,25 @@ class AutoArrestPatrolTests(TestCase):
 
         # Additional ticks: should NOT arrest again (Wanted already deleted)
         mock_teleport.reset_mock()
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
 
     async def test_single_tick_does_not_arrest(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """A single tick is NOT enough to trigger auto-arrest."""
         officer, criminal = await self._setup_world()
@@ -391,23 +558,39 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 1000, 1000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             await _patrol_tick(mock_http, mock_http_mod, {})
 
         # Should NOT have arrested on a single tick
         mock_teleport.assert_not_called()
 
     async def test_arrest_still_works_after_drifting_beyond_radius(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Suspect starting within radius but drifting beyond it slowly is still arrested.
 
@@ -420,25 +603,35 @@ class AutoArrestPatrolTests(TestCase):
             wanted_remaining=300,
         )
 
-
         # Tick 1: suspect starts within radius (500 units apart, well within 1500)
         # Ticks 2-5: suspect drifts slowly beyond radius (200 units per tick = 400 u/s < 556 limit)
         tick_counter = [0]
+
         def make_drifting_players(*args, **kwargs):
             tick_counter[0] += 1
             # Suspect starts at 500 units from officer, drifts 200u per tick
             sus_x = 1000 + 500 + 200 * (tick_counter[0] - 1)
-            return _make_players_list([
-                _make_player_data(officer.player.unique_id, officer.guid, 1000, 1000, 0),
-                _make_player_data(criminal.player.unique_id, criminal.guid, sus_x, 1000, 0),
-            ])
+            return _make_players_list(
+                [
+                    _make_player_data(
+                        officer.player.unique_id, officer.guid, 1000, 1000, 0
+                    ),
+                    _make_player_data(
+                        criminal.player.unique_id, criminal.guid, sus_x, 1000, 0
+                    ),
+                ]
+            )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, side_effect=make_drifting_players):
+        with patch(
+            "amc.auto_arrest.get_players",
+            new_callable=AsyncMock,
+            side_effect=make_drifting_players,
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
@@ -447,8 +640,16 @@ class AutoArrestPatrolTests(TestCase):
         mock_teleport.assert_called_once()
 
     async def test_auto_arrest_with_police_vehicle(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Cop in a police vehicle can auto-arrest nearby suspects."""
         officer, criminal = await self._setup_world()
@@ -459,28 +660,46 @@ class AutoArrestPatrolTests(TestCase):
         )
 
         # Cop is in a police vehicle
-        players = _make_players_list([
-            _make_player_data(
-                officer.player.unique_id, officer.guid, 1000, 1000, 0,
-                vehicle={"name": "Police Car", "unique_id": 100},
-            ),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id,
+                    officer.guid,
+                    1000,
+                    1000,
+                    0,
+                    vehicle={"name": "Police Car", "unique_id": 100},
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_called_once()
 
     async def test_no_arrest_in_civilian_vehicle(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Cop in a civilian vehicle cannot auto-arrest suspects."""
         officer, criminal = await self._setup_world()
@@ -491,28 +710,46 @@ class AutoArrestPatrolTests(TestCase):
         )
 
         # Cop is in a civilian vehicle
-        players = _make_players_list([
-            _make_player_data(
-                officer.player.unique_id, officer.guid, 1000, 1000, 0,
-                vehicle={"name": "Longhorn Semi", "unique_id": 200},
-            ),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 1500, 1000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id,
+                    officer.guid,
+                    1000,
+                    1000,
+                    0,
+                    vehicle={"name": "Longhorn Semi", "unique_id": 200},
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 1500, 1000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         mock_teleport.assert_not_called()
 
     async def test_auto_arrest_on_foot_with_null_vehicle_key(
-        self, mock_popup, mock_exit_vehicle, mock_teleport, mock_transfer,
-        mock_treasury, mock_level, mock_fund_wallet, mock_sys_msg, mock_announce,
+        self,
+        mock_popup,
+        mock_exit_vehicle,
+        mock_teleport,
+        mock_transfer,
+        mock_treasury,
+        mock_level,
+        mock_fund_wallet,
+        mock_sys_msg,
+        mock_announce,
     ):
         """Regression: cop and suspect on foot with vehicle=None are handled correctly.
 
@@ -529,28 +766,41 @@ class AutoArrestPatrolTests(TestCase):
         )
 
         # Both on foot — vehicle key is explicitly None (matches real game server)
-        players = _make_players_list([
-            _make_player_data(
-                officer.player.unique_id, officer.guid, 1000, 1000, 0,
-                vehicle=None,
-            ),
-            _make_player_data(
-                criminal.player.unique_id, criminal.guid, 1500, 1000, 0,
-                vehicle=None,
-            ),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id,
+                    officer.guid,
+                    1000,
+                    1000,
+                    0,
+                    vehicle=None,
+                ),
+                _make_player_data(
+                    criminal.player.unique_id,
+                    criminal.guid,
+                    1500,
+                    1000,
+                    0,
+                    vehicle=None,
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         prev = {}
         sc = {}
-        with patch("amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.auto_arrest.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(_STILL_TICKS):
                 prev, sc = await _patrol_tick(mock_http, mock_http_mod, prev, sc)
 
         # Arrest should fire — on-foot cop is not blocked by police vehicle gate
         mock_teleport.assert_called_once()
+
 
 class IsWantedTests(TestCase):
     """Unit tests for _is_wanted helper."""

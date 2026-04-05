@@ -108,7 +108,12 @@ class MoneyLaunderingTests(TestCase):
 
     @patch("amc.special_cargo.asyncio.sleep", new_callable=AsyncMock)
     async def test_money_delivery_server_announcement(
-        self, mock_sleep, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self,
+        mock_sleep,
+        mock_sc_announce,
+        mock_announce,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """Money delivery should trigger a debounced server announcement."""
         mock_get_rp_mode.return_value = False
@@ -149,22 +154,35 @@ class MoneyLaunderingTests(TestCase):
             coro.close()
             return AsyncMock()
 
-        with patch("amc.special_cargo.asyncio.create_task", side_effect=tracking_create_task):
+        with patch(
+            "amc.special_cargo.asyncio.create_task", side_effect=tracking_create_task
+        ):
             # First delivery — should schedule laundering announcement + money_secured
-            event1 = _money_cargo_event(character.guid, player.unique_id, payment=10_000)
+            event1 = _money_cargo_event(
+                character.guid, player.unique_id, payment=10_000
+            )
             await process_event(event1, player, character, http_client=http_client)
 
             # Second delivery — laundering announcement debounced, only money_secured task
-            event2 = _money_cargo_event(character.guid, player.unique_id, payment=20_000)
+            event2 = _money_cargo_event(
+                character.guid, player.unique_id, payment=20_000
+            )
             await process_event(event2, player, character, http_client=http_client)
 
         # 3 total tasks: laundered(1st) + secured(1st) + secured(2nd)
         # Laundering announcement is debounced (only 1 task), money_secured fires per-delivery
-        laundered_tasks = [t for t in created_tasks if '_announce_laundered' in t.__qualname__]
-        self.assertEqual(len(laundered_tasks), 1, "Laundering announcement should be debounced to 1 task")
+        laundered_tasks = [
+            t for t in created_tasks if "_announce_laundered" in t.__qualname__
+        ]
+        self.assertEqual(
+            len(laundered_tasks),
+            1,
+            "Laundering announcement should be debounced to 1 task",
+        )
 
         # Verify accumulated total in cache (dict format: {total: ..., name: ...})
         from django.core.cache import cache
+
         cache_key = f"money_laundered:{character.guid}"
         data = await cache.aget(cache_key, {})
         self.assertEqual(data.get("total", 0), 30_000)

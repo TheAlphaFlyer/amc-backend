@@ -69,26 +69,22 @@ LOGGING = {
     },
     "loggers": {
         "django": {
-            "handlers": ["console"]
-            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "handlers": ["console"] + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
             "propagate": False,
         },
         "django.request": {
-            "handlers": ["console"]
-            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "handlers": ["console"] + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
             "propagate": False,
         },
         "django.security": {
-            "handlers": ["console"]
-            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "handlers": ["console"] + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
             "propagate": False,
         },
         "amc": {
-            "handlers": ["console"]
-            + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
+            "handlers": ["console"] + (["discord"] if DISCORD_ERRORS_WEBHOOK else []),
             "level": "ERROR",
             "propagate": False,
         },
@@ -321,9 +317,7 @@ DISCORD_CRIMINAL_ROLE_ID = int(
 )
 DISCORD_COP_CHANNEL_ID = int(os.environ.get("DISCORD_COP_CHANNEL_ID", 0))
 DISCORD_CRIMINAL_CHANNEL_ID = int(os.environ.get("DISCORD_CRIMINAL_CHANNEL_ID", 0))
-FACTION_SWITCH_COOLDOWN_HOURS = int(
-    os.environ.get("FACTION_SWITCH_COOLDOWN_HOURS", 24)
-)
+FACTION_SWITCH_COOLDOWN_HOURS = int(os.environ.get("FACTION_SWITCH_COOLDOWN_HOURS", 24))
 DISCORD_AUDIT_CHANNEL_ID = int(os.environ.get("DISCORD_AUDIT_CHANNEL_ID", 0))
 
 # Server management

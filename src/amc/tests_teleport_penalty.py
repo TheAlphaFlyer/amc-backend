@@ -26,7 +26,11 @@ def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock, return_value=False)
 @patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=[])
-@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock, return_value=100_000)
+@patch(
+    "amc.webhook.get_treasury_fund_balance",
+    new_callable=AsyncMock,
+    return_value=100_000,
+)
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
 @patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
 @patch("amc.mod_server.show_popup", new_callable=AsyncMock)
@@ -36,6 +40,7 @@ class TeleportPenaltyTests(TestCase):
 
     def setUp(self):
         from django.core.cache import cache
+
         cache.clear()
 
     async def _setup_character(self):
@@ -53,16 +58,26 @@ class TeleportPenaltyTests(TestCase):
             payment=payment,
         )
 
-    async def _process_teleport(self, character, hook="ServerTeleportCharacter", seq=100):
+    async def _process_teleport(
+        self, character, hook="ServerTeleportCharacter", seq=100
+    ):
         """Run a single teleport event through the full process_events pipeline."""
         events = [_teleport_event(character.guid, hook=hook, seq=seq)]
         http_client = AsyncMock()
         http_client_mod = AsyncMock()
-        await process_events(events, http_client=http_client, http_client_mod=http_client_mod)
+        await process_events(
+            events, http_client=http_client, http_client_mod=http_client_mod
+        )
 
     async def test_teleport_with_full_wanted_full_penalty(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Teleporting with full Wanted (300s) → ~100% penalty."""
         _, character = await self._setup_character()
@@ -93,8 +108,14 @@ class TeleportPenaltyTests(TestCase):
         self.assertIsNotNone(wanted.expired_at)
 
     async def test_teleport_with_half_wanted_half_penalty(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Teleporting with 50% Wanted (150s) → 50% penalty."""
         _, character = await self._setup_character()
@@ -109,8 +130,14 @@ class TeleportPenaltyTests(TestCase):
         self.assertEqual(penalty, 50_000)
 
     async def test_teleport_without_wanted_no_penalty(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Teleporting without Wanted → no penalty."""
         _, character = await self._setup_character()
@@ -124,8 +151,14 @@ class TeleportPenaltyTests(TestCase):
         )
 
     async def test_non_money_delivery_no_penalty(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Teleporting after non-Money delivery → no penalty."""
         _, character = await self._setup_character()
@@ -142,8 +175,14 @@ class TeleportPenaltyTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_police_officer_not_penalised(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Active police officers are not penalised."""
         _, character = await self._setup_character()
@@ -156,8 +195,14 @@ class TeleportPenaltyTests(TestCase):
         mock_transfer.assert_not_called()
 
     async def test_multiple_deliveries_summed(
-        self, mock_announce, mock_popup, mock_transfer, mock_refresh,
-        mock_treasury, mock_parties, mock_rp,
+        self,
+        mock_announce,
+        mock_popup,
+        mock_transfer,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
     ):
         """Multiple deliveries are summed at the same Wanted rate."""
         _, character = await self._setup_character()

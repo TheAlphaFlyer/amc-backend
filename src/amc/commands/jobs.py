@@ -83,12 +83,14 @@ async def cmd_jobs(ctx: CommandContext):
 
     jobs_str = "\n\n".join(jobs_str_list)
     await ctx.reply(
-        _("<Title>Delivery Jobs</>"
-          "\n<Secondary>Complete jobs solo or with others!</>"
-          "\n<Secondary>Treasury Boost:</> {boost_str}"
-          "{party_str}"
-          "\n\n{jobs_str}"
-          "\n\n<Title>Subsidies</>: Use /subsidies to view.").format(
+        _(
+            "<Title>Delivery Jobs</>"
+            "\n<Secondary>Complete jobs solo or with others!</>"
+            "\n<Secondary>Treasury Boost:</> {boost_str}"
+            "{party_str}"
+            "\n\n{jobs_str}"
+            "\n\n<Title>Subsidies</>: Use /subsidies to view."
+        ).format(
             jobs_str=jobs_str,
             boost_str=boost_str,
             party_str=party_str,

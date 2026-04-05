@@ -109,7 +109,9 @@ class SubsidyBugTest(TestCase):
         job.save()
 
         # Deliver 10, but only 5 can count toward the job (100 - 95 = 5)
-        delivery_data = self._make_delivery_data(quantity=10, payment=10000, subsidy=2000)
+        delivery_data = self._make_delivery_data(
+            quantity=10, payment=10000, subsidy=2000
+        )
 
         atomic_process_delivery(job.id, 10, delivery_data)
 

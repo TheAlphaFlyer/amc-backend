@@ -213,4 +213,3 @@ class PlayerProfileCogTestCase(TestCase):
 
         # "None" should NOT appear as a vehicle label
         self.assertNotIn("**None:**", vehicle_field.value)
-

@@ -145,6 +145,7 @@ class JobsCog(commands.Cog):
 
         if vehicle_key:
             from amc.enums import VehicleKey
+
             try:
                 vehicle_label = VehicleKey(vehicle_key).label
             except ValueError:
@@ -456,8 +457,7 @@ class JobsCog(commands.Cog):
             enabled=True, rp_mode=False, name__icontains=current
         ).order_by("name")[:25]
         return [
-            app_commands.Choice(name=t.name[:100], value=t.pk)
-            async for t in templates
+            app_commands.Choice(name=t.name[:100], value=t.pk) async for t in templates
         ]
 
     @app_commands.command(
@@ -498,9 +498,9 @@ class JobsCog(commands.Cog):
         )
 
         quantity_requested = tmpl.default_quantity
-        bonus_multiplier = round(
-            tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2
-        ) * treasury_mult
+        bonus_multiplier = (
+            round(tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2) * treasury_mult
+        )
         base_bonus = tmpl.completion_bonus
         # Treasury health × random variance, clamped to [0.5x, 2.0x]
         scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
@@ -546,4 +546,3 @@ class JobsCog(commands.Cog):
             f"Bonus: {completion_bonus:,} · Duration: {duration_hours:.1f}h · Qty: {quantity_requested}",
             ephemeral=True,
         )
-

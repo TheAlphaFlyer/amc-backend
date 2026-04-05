@@ -43,9 +43,7 @@ class DashboardJWTBearer(HttpBearer):
 
     async def authenticate(self, request, token: str) -> DashboardUser | None:
         try:
-            payload = jwt.decode(
-                token, settings.SECRET_KEY, algorithms=["HS256"]
-            )
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
             return None
         except jwt.InvalidTokenError:
@@ -206,9 +204,7 @@ async def verify_steam_openid(params: dict) -> tuple[int | None, Player | None]:
 
     # Verify the claimed_id format
     claimed_id = params.get("openid.claimed_id", "")
-    match = re.match(
-        r"^https://steamcommunity\.com/openid/id/(\d+)$", claimed_id
-    )
+    match = re.match(r"^https://steamcommunity\.com/openid/id/(\d+)$", claimed_id)
     if not match:
         log.warning("Invalid Steam claimed_id: %s", claimed_id)
         return None, None

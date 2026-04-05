@@ -112,9 +112,15 @@ class SourceReservationTestCase(TestCase):
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_second_job_skipped_when_source_insufficient(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -126,13 +132,21 @@ class SourceReservationTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        self.assertEqual(job_count, 1, "Should post only 1 job when source has 60 but both want 50")
+        self.assertEqual(
+            job_count, 1, "Should post only 1 job when source has 60 but both want 50"
+        )
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_both_jobs_posted_when_source_sufficient(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -150,13 +164,21 @@ class SourceReservationTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        self.assertEqual(job_count, 2, "Should post both jobs when source has 120 and each needs 50")
+        self.assertEqual(
+            job_count, 2, "Should post both jobs when source has 120 and each needs 50"
+        )
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_exactly_enough_source_for_both(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -173,13 +195,21 @@ class SourceReservationTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        self.assertEqual(job_count, 2, "Should post both when source exactly matches combined demand")
+        self.assertEqual(
+            job_count, 2, "Should post both when source exactly matches combined demand"
+        )
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_independent_sources_not_affected(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -251,9 +281,15 @@ class CrossTickConflictTestCase(TestCase):
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_second_tick_no_duplicate_from_same_template(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -275,13 +311,23 @@ class CrossTickConflictTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        self.assertEqual(count_after_second, 1, "Second tick should not duplicate the same template's job")
+        self.assertEqual(
+            count_after_second,
+            1,
+            "Second tick should not duplicate the same template's job",
+        )
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
     @patch(_PATCHES["escrow"], new_callable=AsyncMock, return_value=True)
-    @patch(_PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000"))
+    @patch(
+        _PATCHES["treasury"], new_callable=AsyncMock, return_value=Decimal("50000000")
+    )
     @patch(_PATCHES["announce"], new_callable=AsyncMock)
-    @patch(_PATCHES["get_players"], new_callable=AsyncMock, return_value=[(1, {"name": "Player1"})] * 5)
+    @patch(
+        _PATCHES["get_players"],
+        new_callable=AsyncMock,
+        return_value=[(1, {"name": "Player1"})] * 5,
+    )
     async def test_second_tick_skipped_when_source_depleted(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
@@ -305,14 +351,17 @@ class CrossTickConflictTestCase(TestCase):
 
         # First tick — posts 1 job (source=60, only enough for one via reservation)
         await DeliveryPointStorage.objects.filter(
-            delivery_point=self.source, cargo=self.wheat,
+            delivery_point=self.source,
+            cargo=self.wheat,
         ).aupdate(amount=60)
         await monitor_jobs(ctx)
         count_after_first = await DeliveryJob.objects.filter(
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        self.assertEqual(count_after_first, 1, "First tick: only 1 job fits in 60 source")
+        self.assertEqual(
+            count_after_first, 1, "First tick: only 1 job fits in 60 source"
+        )
 
         # Second tick — the remaining template shares source_points with the
         # active job, so exclude_has_conflicting_active_job blocks it
@@ -322,6 +371,7 @@ class CrossTickConflictTestCase(TestCase):
             expired_at__gte=timezone.now(),
         ).acount()
         self.assertEqual(
-            count_after_second, 1,
+            count_after_second,
+            1,
             "Second tick should not post conflicting job sharing same source + cargo",
         )

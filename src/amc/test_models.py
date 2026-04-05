@@ -181,11 +181,19 @@ class CharacterMangerTestCase(TestCase):
         from amc.tasks import _login_guid_dependent_actions
 
         mock_http = AsyncMock()
-        with patch("amc.tasks._resolve_guid", return_value=("AAAA1111BBBB2222CCCC3333DDDD4444", {})):
+        with patch(
+            "amc.tasks._resolve_guid",
+            return_value=("AAAA1111BBBB2222CCCC3333DDDD4444", {}),
+        ):
             with patch("amc.tasks.refresh_player_name", new_callable=AsyncMock):
                 await _login_guid_dependent_actions(
-                    impostor, impostor.player, "test2", 123,
-                    mock_http, mock_http, False,
+                    impostor,
+                    impostor.player,
+                    "test2",
+                    123,
+                    mock_http,
+                    mock_http,
+                    False,
                 )
 
         # Original must still own the GUID

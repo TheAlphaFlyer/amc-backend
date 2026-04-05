@@ -151,7 +151,12 @@ def seed_templates(apps, schema_editor):
                     "is_primary": True,
                 },
                 {
-                    "cargo_keys": ["CornPallet", "PotatoPallet", "CabbagePallet", "Milk"],
+                    "cargo_keys": [
+                        "CornPallet",
+                        "PotatoPallet",
+                        "CabbagePallet",
+                        "Milk",
+                    ],
                     "dest_names": [],
                     "src_names": [],
                     "ceiling": 400,

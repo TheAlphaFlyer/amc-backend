@@ -2,7 +2,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("amc", "0175_character_crossover_warning_sent_at"),
     ]

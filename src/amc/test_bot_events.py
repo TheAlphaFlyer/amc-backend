@@ -11,6 +11,7 @@ class BotEventsRedisTest(TestCase):
 
     def setUp(self):
         import amc.api.bot_events
+
         amc.api.bot_events._redis_client = None
 
     @patch("amc.api.bot_events.aioredis")

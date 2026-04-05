@@ -59,7 +59,8 @@ async def handle_load_cargo(event, player, character, ctx):
 
         main_vehicle = next(
             (
-                v for v in vehicles.values()
+                v
+                for v in vehicles.values()
                 if v.get("isLastVehicle") and v.get("index", -1) == 0
             ),
             None,
@@ -74,7 +75,9 @@ async def handle_load_cargo(event, player, character, ctx):
         ).aexists()
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
-        custom_parts = detect_custom_parts(main_vehicle.get("parts", []), whitelist=whitelist)
+        custom_parts = detect_custom_parts(
+            main_vehicle.get("parts", []), whitelist=whitelist
+        )
         if custom_parts:
             asyncio.create_task(
                 show_popup(
@@ -90,7 +93,9 @@ async def handle_load_cargo(event, player, character, ctx):
     return 0, 0, 0, 0
 
 
-async def _announce_smuggling_tipoff_after_delay(http_client, delay=SMUGGLING_TIPOFF_DELAY):
+async def _announce_smuggling_tipoff_after_delay(
+    http_client, delay=SMUGGLING_TIPOFF_DELAY
+):
     """Wait for the delay, then announce a vague smuggling tip-off."""
     await asyncio.sleep(delay)
     await announce(

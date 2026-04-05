@@ -232,32 +232,56 @@ class FeatureFlagTest(TestCase):
 
     def test_flag_enabled_with_1(self):
         with patch.dict(os.environ, {"PARTY_BONUS_ENABLED": "1"}):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertTrue(result)
 
     def test_flag_enabled_with_true(self):
         with patch.dict(os.environ, {"PARTY_BONUS_ENABLED": "true"}):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertTrue(result)
 
     def test_flag_enabled_with_TRUE(self):
         with patch.dict(os.environ, {"PARTY_BONUS_ENABLED": "TRUE"}):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertTrue(result)
 
     def test_flag_disabled_with_0(self):
         with patch.dict(os.environ, {"PARTY_BONUS_ENABLED": "0"}):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertFalse(result)
 
     def test_flag_disabled_when_unset(self):
         with patch.dict(os.environ, {}, clear=True):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertFalse(result)
 
     def test_flag_disabled_with_empty(self):
         with patch.dict(os.environ, {"PARTY_BONUS_ENABLED": ""}):
-            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in ("1", "true", "yes")
+            result = os.environ.get("PARTY_BONUS_ENABLED", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
             self.assertFalse(result)
 
 
@@ -339,8 +363,12 @@ class PartyPaymentSplitTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -392,8 +420,12 @@ class PartyPaymentSplitTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -432,7 +464,9 @@ class PartyPaymentSplitTest(TestCase):
         player_profits = []
         with (
             patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=[]),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -481,8 +515,12 @@ class PartyPaymentSplitTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -528,8 +566,12 @@ class PartyPaymentSplitTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -575,9 +617,13 @@ class PartyPaymentSplitTest(TestCase):
         events = [_make_cargo_event("XFER000000000000000000000000XFR1", payment=10_000)]
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -655,8 +701,12 @@ class PartyPaymentSplitTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -730,8 +780,12 @@ class PartyShareGovEmployeeTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -790,9 +844,13 @@ class PartyShareGovEmployeeTest(TestCase):
         events = [_make_cargo_event("GOVW000000000000000000000000GVW1", payment=10_000)]
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -855,8 +913,12 @@ class PartyShareGovEmployeeTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -880,12 +942,17 @@ class PartyShareGovEmployeeTest(TestCase):
         # share_subsidy = 1000 // 2 = 500
         self.assertEqual(len(player_profits), 2)
         gov_guids = {pp[0].guid for pp in player_profits}
-        self.assertEqual(gov_guids, {"BGOV000000000000000000000000BGV1", "BGOV000000000000000000000000BGV2"})
+        self.assertEqual(
+            gov_guids,
+            {"BGOV000000000000000000000000BGV1", "BGOV000000000000000000000000BGV2"},
+        )
         for char, subsidy, payment, contract in player_profits:
             self.assertEqual(payment, 10000)
             self.assertEqual(subsidy, 500)
 
-    async def test_mixed_gov_and_civilian_on_player_profit(self, mock_treasury, mock_rp):
+    async def test_mixed_gov_and_civilian_on_player_profit(
+        self, mock_treasury, mock_rp
+    ):
         """Verify on_player_profit handles gov and civilian paths correctly.
 
         One gov member should have income confiscated (no subsidy, no loan, no savings).
@@ -905,7 +972,8 @@ class PartyShareGovEmployeeTest(TestCase):
 
         player2 = await sync_to_async(PlayerFactory)()
         civ_char = await sync_to_async(CharacterFactory)(
-            player=player2, guid="MIXD000000000000000000000000MIX2",
+            player=player2,
+            guid="MIXD000000000000000000000000MIX2",
             reject_ubi=False,
         )
 
@@ -915,11 +983,21 @@ class PartyShareGovEmployeeTest(TestCase):
 
         # Test gov path
         with (
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch(
+                "amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock
+            ),
+            patch(
+                "amc.pipeline.profit.subsidise_player", new_callable=AsyncMock
+            ) as mock_subsidise,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
 
@@ -934,10 +1012,20 @@ class PartyShareGovEmployeeTest(TestCase):
 
         # Test civilian path
         with (
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.subsidise_player", new_callable=AsyncMock
+            ) as mock_subsidise,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit",
+                new_callable=AsyncMock,
+                return_value=0,
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(civ_char, share_subsidy, share_base, session)
 
@@ -949,7 +1037,9 @@ class PartyShareGovEmployeeTest(TestCase):
             savings_income = mock_savings.call_args[0][1]
             self.assertEqual(savings_income, 5250)
 
-    async def test_gov_earner_contribution_includes_subsidy(self, mock_treasury, mock_rp):
+    async def test_gov_earner_contribution_includes_subsidy(
+        self, mock_treasury, mock_rp
+    ):
         """Gov earner's contribution to treasury should include subsidy credit
         for level progression, even though subsidy is never actually paid."""
         mock_rp.return_value = False
@@ -970,7 +1060,9 @@ class PartyShareGovEmployeeTest(TestCase):
 
         with (
             patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock),
-            patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
+            patch(
+                "amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock
+            ) as mock_redirect,
             patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock),
         ):
             await on_player_profit(gov_char, share_subsidy, share_base, session)
@@ -981,7 +1073,9 @@ class PartyShareGovEmployeeTest(TestCase):
             self.assertEqual(mock_redirect.call_args_list[0].args[0], 10000)
             # 2. Subsidy: amount=0 (no donation), contribution=500
             self.assertEqual(mock_redirect.call_args_list[1].args[0], 0)
-            self.assertEqual(mock_redirect.call_args_list[1].kwargs["contribution"], 500)
+            self.assertEqual(
+                mock_redirect.call_args_list[1].kwargs["contribution"], 500
+            )
 
 
 @patch("amc.pipeline.profit.PARTY_BONUS_ENABLED", True)
@@ -991,6 +1085,7 @@ class PartyShareGovEmployeeTest(TestCase):
 class PartyShareLoanRepaymentTest(TestCase):
     def setUp(self):
         cache.clear()
+
     """Tests for loan repayment interactions with party sharing.
 
     Loan repayment in on_player_profit is calculated on actual_income:
@@ -1008,7 +1103,8 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=False,
+            player=player,
+            reject_ubi=False,
         )
 
         session = MagicMock()
@@ -1017,8 +1113,14 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         with (
             patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock, return_value=1000) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit",
+                new_callable=AsyncMock,
+                return_value=1000,
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(character, share_subsidy, share_base, session)
 
@@ -1036,7 +1138,8 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=True,
+            player=player,
+            reject_ubi=True,
         )
 
         session = MagicMock()
@@ -1044,9 +1147,17 @@ class PartyShareLoanRepaymentTest(TestCase):
         share_base = 5000
 
         with (
-            patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock, return_value=0) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.subsidise_player", new_callable=AsyncMock
+            ) as mock_subsidise,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit",
+                new_callable=AsyncMock,
+                return_value=0,
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(character, share_subsidy, share_base, session)
 
@@ -1070,7 +1181,8 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=False,
+            player=player,
+            reject_ubi=False,
         )
 
         session = MagicMock()
@@ -1080,11 +1192,20 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         with (
             patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit",
+                new_callable=AsyncMock,
+                return_value=5000,
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(
-                character, share_subsidy, share_base, session,
+                character,
+                share_subsidy,
+                share_base,
+                session,
                 contract_payment=share_contract,
             )
 
@@ -1115,8 +1236,12 @@ class PartyShareLoanRepaymentTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -1149,6 +1274,7 @@ class PartyShareLoanRepaymentTest(TestCase):
 class PartyShareContractTest(TestCase):
     def setUp(self):
         cache.clear()
+
     """Tests for contract completion interactions with party sharing.
 
     Contract payments flow differently from regular cargo:
@@ -1160,7 +1286,9 @@ class PartyShareContractTest(TestCase):
     with contract income they never received in their wallets.
     """
 
-    async def test_contract_split_wallet_transfers_omit_contract(self, mock_treasury, mock_rp):
+    async def test_contract_split_wallet_transfers_omit_contract(
+        self, mock_treasury, mock_rp
+    ):
         """Verify that wallet transfers do NOT include contract money.
 
         The earner_base_share only accounts for regular payment minus subsidy.
@@ -1210,9 +1338,13 @@ class PartyShareContractTest(TestCase):
         }
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1235,9 +1367,14 @@ class PartyShareContractTest(TestCase):
         # earner_wallet_share = 0 + 25000 = 25000
         # Wallet transfers: withdraw 25000 from earner, deposit to other
         transfer_calls = mock_transfer.call_args_list
-        party_transfers = [c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")]
-        self.assertEqual(len(party_transfers), 2,
-            "Contract money should be wallet-transferred to other party member")
+        party_transfers = [
+            c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")
+        ]
+        self.assertEqual(
+            len(party_transfers),
+            2,
+            "Contract money should be wallet-transferred to other party member",
+        )
         amounts = {c[0][2]: c[0][1] for c in party_transfers}
         self.assertEqual(amounts["Party Split"], -25000)
         self.assertEqual(amounts["Party Share"], 25000)
@@ -1263,11 +1400,18 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch(
+                "amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock
+            ) as mock_redirect,
         ):
             await on_player_profit(
-                gov_char, share_subsidy, share_payment, session,
+                gov_char,
+                share_subsidy,
+                share_payment,
+                session,
                 contract_payment=share_contract,
             )
 
@@ -1279,7 +1423,9 @@ class PartyShareContractTest(TestCase):
             # (guard: if base_payment > 0)
             mock_redirect.assert_not_called()
 
-    async def test_contract_with_gov_other_member_phantom_confiscation(self, mock_treasury, mock_rp):
+    async def test_contract_with_gov_other_member_phantom_confiscation(
+        self, mock_treasury, mock_rp
+    ):
         """Gov non-earner member: on_player_profit confiscates contract money
         that was never deposited to their wallet.
 
@@ -1305,11 +1451,18 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000  # this was never deposited to wallet!
 
         with (
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock),
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch(
+                "amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock
+            ),
         ):
             await on_player_profit(
-                gov_other, share_subsidy, share_payment, session,
+                gov_other,
+                share_subsidy,
+                share_payment,
+                session,
                 contract_payment=share_contract,
             )
 
@@ -1317,10 +1470,15 @@ class PartyShareContractTest(TestCase):
             # This withdraws 25000 from a wallet that received 0 contract money
             mock_transfer.assert_called_once()
             confiscation = mock_transfer.call_args[0][1]
-            self.assertEqual(confiscation, -25000,
-                "Gov non-earner has 25000 confiscated despite never receiving contract money")
+            self.assertEqual(
+                confiscation,
+                -25000,
+                "Gov non-earner has 25000 confiscated despite never receiving contract money",
+            )
 
-    async def test_contract_with_civilian_other_member_phantom_income(self, mock_treasury, mock_rp):
+    async def test_contract_with_civilian_other_member_phantom_income(
+        self, mock_treasury, mock_rp
+    ):
         """Civilian non-earner member: contract payment inflates actual_income
         for loan repayment and savings, despite never being wallet-deposited.
 
@@ -1334,7 +1492,8 @@ class PartyShareContractTest(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         civilian = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=False,
+            player=player,
+            reject_ubi=False,
         )
 
         session = MagicMock()
@@ -1344,11 +1503,20 @@ class PartyShareContractTest(TestCase):
 
         with (
             patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock, return_value=5000) as mock_repay,
-            patch("amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock) as mock_savings,
+            patch(
+                "amc.pipeline.profit.repay_loan_for_profit",
+                new_callable=AsyncMock,
+                return_value=5000,
+            ) as mock_repay,
+            patch(
+                "amc.pipeline.profit.set_aside_player_savings", new_callable=AsyncMock
+            ) as mock_savings,
         ):
             await on_player_profit(
-                civilian, share_subsidy, share_payment, session,
+                civilian,
+                share_subsidy,
+                share_payment,
+                session,
                 contract_payment=share_contract,
             )
 
@@ -1390,7 +1558,9 @@ class PartyShareContractTest(TestCase):
                 ],
             }
         ]
-        cargo_event = _make_cargo_event("CCMB000000000000000000000000CM01", payment=10_000)
+        cargo_event = _make_cargo_event(
+            "CCMB000000000000000000000000CM01", payment=10_000
+        )
         contract_event = {
             "hook": "ServerContractCargoDelivered",
             "timestamp": int(time.time()),
@@ -1406,8 +1576,12 @@ class PartyShareContractTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -1421,7 +1595,9 @@ class PartyShareContractTest(TestCase):
             get_ctx.__aexit__.return_value = None
             mock_mod.get.return_value = get_ctx
 
-            await process_events([cargo_event, contract_event], http_client_mod=mock_mod)
+            await process_events(
+                [cargo_event, contract_event], http_client_mod=mock_mod
+            )
             player_profits = mock_profits.call_args[0][0]
 
         # cargo: total_base_payment = 10000 (no subsidy rule)
@@ -1485,8 +1661,12 @@ class PartyShareContractTest(TestCase):
 
         player_profits = []
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
-            patch("amc.webhook.on_player_profits", new_callable=AsyncMock) as mock_profits,
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
+            patch(
+                "amc.webhook.on_player_profits", new_callable=AsyncMock
+            ) as mock_profits,
         ):
             from amc.webhook import process_events
 
@@ -1518,7 +1698,9 @@ class PartyShareContractTest(TestCase):
             self.assertEqual(payment, 0)
             self.assertEqual(subsidy, 0)
 
-    async def test_contract_gov_earner_burns_full_contract(self, mock_treasury, mock_rp):
+    async def test_contract_gov_earner_burns_full_contract(
+        self, mock_treasury, mock_rp
+    ):
         """Full integration: Gov earner completes contract + cargo in party.
 
         When a gov employee earner has both cargo earnings and a contract:
@@ -1543,12 +1725,21 @@ class PartyShareContractTest(TestCase):
         share_contract = 25_000
 
         with (
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
-            patch("amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock) as mock_redirect,
-            patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock) as mock_subsidise,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
+            patch(
+                "amc.gov_employee.redirect_income_to_treasury", new_callable=AsyncMock
+            ) as mock_redirect,
+            patch(
+                "amc.pipeline.profit.subsidise_player", new_callable=AsyncMock
+            ) as mock_subsidise,
         ):
             await on_player_profit(
-                gov_char, share_subsidy, share_base, session,
+                gov_char,
+                share_subsidy,
+                share_base,
+                session,
                 contract_payment=share_contract,
             )
 
@@ -1565,7 +1756,9 @@ class PartyShareContractTest(TestCase):
             self.assertEqual(mock_redirect.call_args_list[0].args[0], 5000)
             # 2. Subsidy: amount=0 (no donation), contribution=250
             self.assertEqual(mock_redirect.call_args_list[1].args[0], 0)
-            self.assertEqual(mock_redirect.call_args_list[1].kwargs["contribution"], 250)
+            self.assertEqual(
+                mock_redirect.call_args_list[1].kwargs["contribution"], 250
+            )
 
             # Subsidy paid to wallet before confiscation
             mock_subsidise.assert_called_once_with(250, gov_char, session)
@@ -1578,6 +1771,7 @@ class PartyShareContractTest(TestCase):
 class PartyContractWalletTransferBugTest(TestCase):
     def setUp(self):
         cache.clear()
+
     """Failing tests that assert the CORRECT behavior.
 
     These tests should FAIL on the current code because the party split
@@ -1586,7 +1780,9 @@ class PartyContractWalletTransferBugTest(TestCase):
     After fixing: all should pass.
     """
 
-    async def test_contract_money_transferred_to_other_member(self, mock_treasury, mock_rp):
+    async def test_contract_money_transferred_to_other_member(
+        self, mock_treasury, mock_rp
+    ):
         """BUG FIX: Contract money SHOULD be wallet-transferred to other members.
 
         Currently: earner_base_share = share_payment - share_subsidy (excludes contract)
@@ -1636,9 +1832,13 @@ class PartyContractWalletTransferBugTest(TestCase):
         }
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1659,19 +1859,30 @@ class PartyContractWalletTransferBugTest(TestCase):
         # earner_base_share = (share_payment - share_subsidy) + share_contract
         #                   = (0 - 0) + 25000 = 25000
         transfer_calls = mock_transfer.call_args_list
-        party_transfers = [c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")]
+        party_transfers = [
+            c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")
+        ]
 
         # Should have 2 transfers: withdrawal from earner + deposit to other
-        self.assertEqual(len(party_transfers), 2,
-            "Contract money should be wallet-transferred to other party member")
+        self.assertEqual(
+            len(party_transfers),
+            2,
+            "Contract money should be wallet-transferred to other party member",
+        )
 
         amounts = {c[0][2]: c[0][1] for c in party_transfers}
-        self.assertEqual(amounts["Party Split"], -25000,
-            "Should withdraw contract share from earner")
-        self.assertEqual(amounts["Party Share"], 25000,
-            "Should deposit contract share to other member")
+        self.assertEqual(
+            amounts["Party Split"], -25000, "Should withdraw contract share from earner"
+        )
+        self.assertEqual(
+            amounts["Party Share"],
+            25000,
+            "Should deposit contract share to other member",
+        )
 
-    async def test_cargo_plus_contract_combined_wallet_transfer(self, mock_treasury, mock_rp):
+    async def test_cargo_plus_contract_combined_wallet_transfer(
+        self, mock_treasury, mock_rp
+    ):
         """BUG FIX: Combined cargo+contract should transfer both base + contract shares.
 
         Currently: only base cargo share is transferred.
@@ -1706,7 +1917,9 @@ class PartyContractWalletTransferBugTest(TestCase):
                 ],
             }
         ]
-        cargo_event = _make_cargo_event("FXCC000000000000000000000000FC01", payment=10_000)
+        cargo_event = _make_cargo_event(
+            "FXCC000000000000000000000000FC01", payment=10_000
+        )
         contract_event = {
             "hook": "ServerContractCargoDelivered",
             "timestamp": int(time.time()),
@@ -1721,9 +1934,13 @@ class PartyContractWalletTransferBugTest(TestCase):
         }
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1737,13 +1954,17 @@ class PartyContractWalletTransferBugTest(TestCase):
             get_ctx.__aexit__.return_value = None
             mock_mod.get.return_value = get_ctx
 
-            await process_events([cargo_event, contract_event], http_client_mod=mock_mod)
+            await process_events(
+                [cargo_event, contract_event], http_client_mod=mock_mod
+            )
 
         # cargo: 10000, bonus=500 (subsidy only)
         # share_base=5000, share_subsidy=250, share_contract=25000
         # wallet_share = share_base + share_contract = 5000 + 25000 = 30000
         transfer_calls = mock_transfer.call_args_list
-        party_transfers = [c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")]
+        party_transfers = [
+            c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")
+        ]
 
         withdrawal = [c[0][1] for c in party_transfers if c[0][2] == "Party Split"]
         deposit = [c[0][1] for c in party_transfers if c[0][2] == "Party Share"]
@@ -1751,10 +1972,16 @@ class PartyContractWalletTransferBugTest(TestCase):
         self.assertEqual(len(withdrawal), 1)
         self.assertEqual(len(deposit), 1)
         # transfer = base_share + contract_share = 5000 + 25000 = 30000
-        self.assertEqual(withdrawal[0], -30000,
-            "Withdrawal should include both base share and contract share")
-        self.assertEqual(deposit[0], 30000,
-            "Deposit should include both base share and contract share")
+        self.assertEqual(
+            withdrawal[0],
+            -30000,
+            "Withdrawal should include both base share and contract share",
+        )
+        self.assertEqual(
+            deposit[0],
+            30000,
+            "Deposit should include both base share and contract share",
+        )
 
     async def test_three_way_contract_wallet_transfers(self, mock_treasury, mock_rp):
         """BUG FIX: 3-person party with contract should transfer to 2 other members."""
@@ -1803,9 +2030,13 @@ class PartyContractWalletTransferBugTest(TestCase):
         }
 
         with (
-            patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties),
+            patch(
+                "amc.webhook.get_parties", new_callable=AsyncMock, return_value=parties
+            ),
             patch("amc.webhook.on_player_profits", new_callable=AsyncMock),
-            patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock) as mock_transfer,
+            patch(
+                "amc.pipeline.profit.transfer_money", new_callable=AsyncMock
+            ) as mock_transfer,
         ):
             from amc.webhook import process_events
 
@@ -1825,7 +2056,9 @@ class PartyContractWalletTransferBugTest(TestCase):
         # earner_base_share = 0 + 30000 = 30000 (AFTER FIX)
         # others_withdrawal = 30000 * 2 = 60000
         transfer_calls = mock_transfer.call_args_list
-        party_transfers = [c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")]
+        party_transfers = [
+            c for c in transfer_calls if c[0][2] in ("Party Split", "Party Share")
+        ]
 
         withdrawal = [c[0][1] for c in party_transfers if c[0][2] == "Party Split"]
         deposits = [c[0][1] for c in party_transfers if c[0][2] == "Party Share"]
@@ -1833,8 +2066,10 @@ class PartyContractWalletTransferBugTest(TestCase):
         # Should have: 1 withdrawal (total) + 2 deposits (one per other member)
         self.assertEqual(len(withdrawal), 1)
         self.assertEqual(len(deposits), 2)
-        self.assertEqual(withdrawal[0], -60000,
-            "Should withdraw 2x contract share from earner")
+        self.assertEqual(
+            withdrawal[0], -60000, "Should withdraw 2x contract share from earner"
+        )
         for dep in deposits:
-            self.assertEqual(dep, 30000,
-                "Each other member should receive contract share")
+            self.assertEqual(
+                dep, 30000, "Each other member should receive contract share"
+            )

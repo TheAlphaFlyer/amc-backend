@@ -165,7 +165,9 @@ class WebhookPipelineTests(TestCase):
     @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
-    async def test_on_player_profit_gov_employee(self, mock_donation, mock_transfer, mock_subsidy):
+    async def test_on_player_profit_gov_employee(
+        self, mock_donation, mock_transfer, mock_subsidy
+    ):
         from amc.webhook import on_player_profit
 
         player = await sync_to_async(PlayerFactory)()
@@ -223,9 +225,7 @@ class WebhookPipelineTests(TestCase):
 
         session = MagicMock()
         # subsidy=5000, base_payment=10000 (game wallet deposit), contract=3000
-        await on_player_profit(
-            character, 5000, 10000, session, contract_payment=3000
-        )
+        await on_player_profit(character, 5000, 10000, session, contract_payment=3000)
 
         # transfer_money calls:
         # 1. Wallet confiscation = base_payment + contract = 10000 + 3000 = 13000

@@ -35,15 +35,20 @@ class Account(models.Model):
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     npl_warning_sent_at = models.DateTimeField(null=True, blank=True)
     min_repayment_rate = models.DecimalField(
-        max_digits=5, decimal_places=4, null=True, blank=True,
+        max_digits=5,
+        decimal_places=4,
+        null=True,
+        blank=True,
         help_text="Min repayment per period as fraction of balance (e.g. 0.10 = 10%). NULL = use global default.",
     )
     min_repayment_period_days = models.PositiveIntegerField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="Repayment period in days (e.g. 7 = weekly). NULL = use global default.",
     )
     last_credit_score_evaluated_at = models.DateTimeField(
-        null=True, blank=True,
+        null=True,
+        blank=True,
         help_text="When this loan was last evaluated for credit scoring.",
     )
 
@@ -172,7 +177,9 @@ class DailyTreasurySnapshot(models.Model):
     total_income = models.DecimalField(max_digits=14, decimal_places=2)
     total_expenses = models.DecimalField(max_digits=14, decimal_places=2)
     surplus = models.DecimalField(max_digits=14, decimal_places=2)
-    wealth_tax_collected = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    wealth_tax_collected = models.DecimalField(
+        max_digits=14, decimal_places=2, default=0
+    )
     nirc_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
     # Full breakdown stored as JSON for flexibility

@@ -15,7 +15,9 @@ from amc.special_cargo import announce_money_secured
 logger = logging.getLogger("amc.criminals")
 
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
-PROXIMITY_REF_DISTANCE = 20000  # 200m — at or beyond this distance, countdown runs at full speed
+PROXIMITY_REF_DISTANCE = (
+    20000  # 200m — at or beyond this distance, countdown runs at full speed
+)
 MIN_SLOWDOWN = 0.05  # 5% — minimum countdown speed (at very close range)
 
 # Tracks the last notified star level per character guid
@@ -42,12 +44,14 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     """Single tick of the wanted countdown. Called from an arq cron."""
     # Batch-load all active wanted records first — must always run
     wanted_list = [
-        w async for w in Wanted.objects.filter(
+        w
+        async for w in Wanted.objects.filter(
             wanted_remaining__gt=0,
         ).select_related("character")
     ]
     if not wanted_list:
         return
+    logger.info("wanted tick: %d active records", len(wanted_list))
 
     # Fetch player locations (best-effort; empty is fine)
     players = await get_players(http_client)
@@ -58,18 +62,26 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     if locations:
         online_threshold = timezone.now() - timedelta(seconds=60)
         police_sessions = [
-            ps async for ps in PoliceSession.objects.filter(
+            ps
+            async for ps in PoliceSession.objects.filter(
                 ended_at__isnull=True,
                 character__last_online__gte=online_threshold,
             ).select_related("character")
         ]
-        cop_guids = {ps.character.guid for ps in police_sessions if ps.character.guid and ps.character.guid in locations}
+        cop_guids = {
+            ps.character.guid
+            for ps in police_sessions
+            if ps.character.guid and ps.character.guid in locations
+        }
         for cg in cop_guids:
             _, cop_loc, _ = locations[cg]
             cop_locations.append(cop_loc)
 
     # No police on duty — immediately expire all wanted records
     if not cop_locations:
+        logger.info(
+            "wanted tick: no police on duty, expiring %d records", len(wanted_list)
+        )
         # Notify online suspects before expiry
         for wanted in wanted_list:
             if wanted.character.guid in locations:
@@ -80,7 +92,9 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                         character_guid=wanted.character.guid,
                     )
                 except Exception:
-                    logger.warning(f"Failed to send wanted expired message to {wanted.character.name}")
+                    logger.warning(
+                        f"Failed to send wanted expired message to {wanted.character.name}"
+                    )
         # Bulk expire all
         await Wanted.objects.filter(id__in=[w.id for w in wanted_list]).aupdate(
             wanted_remaining=0,
@@ -92,7 +106,9 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             try:
                 await refresh_player_name(char, http_client_mod)
             except Exception:
-                logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+                logger.warning(
+                    f"Failed to refresh name for {char.name} after wanted expired"
+                )
             if char.guid:
                 try:
                     await announce_money_secured(char.guid, http_client)
@@ -111,7 +127,9 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
         if sus_guid not in locations:
             # Offline suspect — tick at full speed
             if wanted.wanted_remaining > 0:
-                wanted.wanted_remaining = max(0, wanted.wanted_remaining - TICK_INTERVAL)
+                wanted.wanted_remaining = max(
+                    0, wanted.wanted_remaining - TICK_INTERVAL
+                )
                 if wanted.wanted_remaining <= 0:
                     expired_characters.append(wanted.character)
             continue
@@ -140,6 +158,11 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     # Mark expired (set expired_at instead of deleting)
     expired_ids = [w.id for w in wanted_list if w.wanted_remaining <= 0]
     if expired_ids:
+        logger.info(
+            "wanted tick: %d records expired — %s",
+            len(expired_ids),
+            [c.name for c in expired_characters],
+        )
         await Wanted.objects.filter(id__in=expired_ids).aupdate(
             wanted_remaining=0,
             expired_at=timezone.now(),
@@ -157,12 +180,16 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                     character_guid=sus_guid,
                 )
             except Exception:
-                logger.warning(f"Failed to send wanted star message to {wanted.character.name}")
+                logger.warning(
+                    f"Failed to send wanted star message to {wanted.character.name}"
+                )
         try:
             await refresh_player_name(wanted.character, http_client_mod)
             refreshed_guids.add(sus_guid)
         except Exception:
-            logger.warning(f"Failed to refresh name for {wanted.character.name} after star change")
+            logger.warning(
+                f"Failed to refresh name for {wanted.character.name} after star change"
+            )
 
     # Refresh names and announce money secured for characters whose wanted just expired
     for char in expired_characters:
@@ -171,10 +198,11 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             try:
                 await refresh_player_name(char, http_client_mod)
             except Exception:
-                logger.warning(f"Failed to refresh name for {char.name} after wanted expired")
+                logger.warning(
+                    f"Failed to refresh name for {char.name} after wanted expired"
+                )
         if char.guid:
             try:
                 await announce_money_secured(char.guid, http_client)
             except Exception:
                 logger.warning(f"Failed to announce money secured for {char.name}")
-

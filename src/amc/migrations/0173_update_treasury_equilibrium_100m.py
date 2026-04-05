@@ -16,7 +16,6 @@ def revert_treasury_equilibrium(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("amc", "0172_character_credit_score_and_more"),
     ]

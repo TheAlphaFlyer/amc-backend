@@ -81,7 +81,9 @@ class FactionCog(commands.Cog):
         label = FactionChoice(faction).label
         embed = discord.Embed(
             description=f"{emoji} **{member.display_name}** has joined the **{label}** faction!",
-            color=discord.Color.blue() if faction == FactionChoice.COP else discord.Color.red(),
+            color=discord.Color.blue()
+            if faction == FactionChoice.COP
+            else discord.Color.red(),
         )
         await channel.send(embed=embed)
 
@@ -126,7 +128,9 @@ class FactionCog(commands.Cog):
         elif action == "leave":
             await self._handle_leave(interaction, player, guild, member)
         elif action in ("cop", "criminal"):
-            await self._handle_join_or_switch(interaction, player, guild, member, action)
+            await self._handle_join_or_switch(
+                interaction, player, guild, member, action
+            )
         else:
             await interaction.followup.send(
                 "❌ Unknown action. Use `cop`, `criminal`, `leave`, or `status`.",
@@ -139,7 +143,9 @@ class FactionCog(commands.Cog):
             faction_label = membership.get_faction_display()
             remaining = membership.cooldown_remaining
             if remaining.total_seconds() > 0:
-                cooldown_str = f"⏳ Cooldown remaining: **{format_timedelta(remaining)}**"
+                cooldown_str = (
+                    f"⏳ Cooldown remaining: **{format_timedelta(remaining)}**"
+                )
             else:
                 cooldown_str = "✅ You can switch factions now."
 

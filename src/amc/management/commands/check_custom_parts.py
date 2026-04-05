@@ -17,8 +17,10 @@ from amc.mod_server import list_player_vehicles
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
 from amc.mod_detection import (
-    detect_custom_parts, detect_incompatible_parts,
-    format_custom_parts_plain, format_incompatible_parts_plain,
+    detect_custom_parts,
+    detect_incompatible_parts,
+    format_custom_parts_plain,
+    format_incompatible_parts_plain,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,11 +44,14 @@ class Command(BaseCommand):
         player_id = options.get("player_id")
         timeout = aiohttp.ClientTimeout(total=10)
 
-        async with aiohttp.ClientSession(
-            base_url=settings.MOD_SERVER_API_URL, timeout=timeout
-        ) as http_mod, aiohttp.ClientSession(
-            base_url=settings.GAME_SERVER_API_URL, timeout=timeout
-        ) as http_game:
+        async with (
+            aiohttp.ClientSession(
+                base_url=settings.MOD_SERVER_API_URL, timeout=timeout
+            ) as http_mod,
+            aiohttp.ClientSession(
+                base_url=settings.GAME_SERVER_API_URL, timeout=timeout
+            ) as http_game,
+        ):
             if player_id:
                 await self._check_player(http_mod, player_id)
             else:
@@ -62,7 +67,6 @@ class Command(BaseCommand):
 
         found_any = False
         for v_id, vehicle in player_vehicles.items():
-
             vehicle_name = format_vehicle_name(vehicle["fullName"])
             parts = vehicle.get("parts", [])
             custom = detect_custom_parts(parts)
@@ -127,7 +131,6 @@ class Command(BaseCommand):
                 continue
 
             for v_id, vehicle in player_vehicles.items():
-
                 checked += 1
                 vehicle_name = format_vehicle_name(vehicle["fullName"])
                 custom = detect_custom_parts(vehicle.get("parts", []))
@@ -160,6 +163,5 @@ class Command(BaseCommand):
                     )
 
         self.stdout.write(
-            f"\nDone: {checked} vehicle(s) checked, "
-            f"{flagged} with custom parts"
+            f"\nDone: {checked} vehicle(s) checked, {flagged} with custom parts"
         )

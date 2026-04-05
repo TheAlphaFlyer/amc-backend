@@ -265,9 +265,7 @@ async def monitor_supply_chain_events(ctx):
             await distribute_event_rewards(event, http_client)
             logger.info(f"Distributed rewards for supply chain event: {event.name}")
         except Exception:
-            logger.exception(
-                f"Failed to distribute rewards for event: {event.name}"
-            )
+            logger.exception(f"Failed to distribute rewards for event: {event.name}")
 
 
 async def get_conflicting_cargo_keys() -> set[tuple[str, int]]:

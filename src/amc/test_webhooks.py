@@ -119,7 +119,9 @@ class ProcessEventTests(TestCase):
         self.assertEqual(subsidy, 7_000)
         self.assertEqual(log.player, player)
 
-    async def test_ambulance_with_radius_ratio(self, mock_get_treasury, mock_get_rp_mode):
+    async def test_ambulance_with_radius_ratio(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
         """Ambulance with radius ratio 0.2 → +80% bonus on base payment."""
         mock_get_rp_mode.return_value = False
         player = await sync_to_async(PlayerFactory)()
@@ -154,7 +156,9 @@ class ProcessEventTests(TestCase):
         self.assertEqual(subsidy, 11_000)
         self.assertEqual(payment, 18_000)
 
-    async def test_ambulance_without_radius_ratio(self, mock_get_treasury, mock_get_rp_mode):
+    async def test_ambulance_without_radius_ratio(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
         """Ambulance without radius ratio field (backward compat) — no bonus, only subsidy."""
         mock_get_rp_mode.return_value = False
         player = await sync_to_async(PlayerFactory)()
@@ -479,7 +483,9 @@ class ProcessEventTests(TestCase):
 
         # Deliveries 1, 2 — not complete yet
         for i in range(2):
-            _, _, contract_pay, _ = await process_event(deliver_event, player, character)
+            _, _, contract_pay, _ = await process_event(
+                deliver_event, player, character
+            )
             self.assertEqual(contract_pay, 0)
 
         await log.arefresh_from_db()
@@ -500,7 +506,17 @@ class ProcessEventTests(TestCase):
     @patch("amc.handlers.cargo.list_player_vehicles", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.show_popup", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.transfer_money", new_callable=AsyncMock)
-    async def test_cargo_arrived_money_modded(self, mock_transfer, mock_show_popup, mock_list_vehicles, mock_detect, mock_refresh, mock_send_sys_msg, mock_get_treasury, mock_get_rp_mode):
+    async def test_cargo_arrived_money_modded(
+        self,
+        mock_transfer,
+        mock_show_popup,
+        mock_list_vehicles,
+        mock_detect,
+        mock_refresh,
+        mock_send_sys_msg,
+        mock_get_treasury,
+        mock_get_rp_mode,
+    ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
 
@@ -555,10 +571,19 @@ class ProcessEventTests(TestCase):
     @patch("amc.handlers.smuggling.detect_custom_parts")
     @patch("amc.handlers.smuggling.list_player_vehicles", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.show_popup", new_callable=AsyncMock)
-    async def test_load_cargo_money_modded(self, mock_show_popup, mock_list_vehicles, mock_detect, mock_refresh, mock_send_sys_msg, mock_get_treasury, mock_get_rp_mode):
+    async def test_load_cargo_money_modded(
+        self,
+        mock_show_popup,
+        mock_list_vehicles,
+        mock_detect,
+        mock_refresh,
+        mock_send_sys_msg,
+        mock_get_treasury,
+        mock_get_rp_mode,
+    ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
-        
+
         mock_list_vehicles.return_value = {
             "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
         }
@@ -583,14 +608,24 @@ class ProcessEventTests(TestCase):
         await process_event(event, player, character, http_client_mod=http_client_mod)
 
         mock_show_popup.assert_called_once()
-        self.assertIn("now allowed to use modified vehicles", mock_show_popup.call_args[0][1])
+        self.assertIn(
+            "now allowed to use modified vehicles", mock_show_popup.call_args[0][1]
+        )
 
     @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
-    @patch("amc.handlers.smuggling._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch(
+        "amc.handlers.smuggling._announce_smuggling_tipoff_after_delay",
+        new_callable=AsyncMock,
+    )
     @patch("amc.mod_detection.detect_custom_parts")
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff(
-        self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_list_vehicles,
+        mock_detect,
+        mock_announce_tipoff,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """First Money load triggers a smuggling tip-off announcement."""
         mock_get_rp_mode.return_value = False
@@ -614,8 +649,11 @@ class ProcessEventTests(TestCase):
         http_client_mod = MagicMock()
 
         await process_event(
-            event, player, character,
-            http_client=http_client, http_client_mod=http_client_mod,
+            event,
+            player,
+            character,
+            http_client=http_client,
+            http_client_mod=http_client_mod,
         )
         # Let background task run
         await asyncio.sleep(0)
@@ -623,11 +661,19 @@ class ProcessEventTests(TestCase):
         mock_announce_tipoff.assert_called_once_with(http_client, delay=15)
 
     @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
-    @patch("amc.handlers.smuggling._announce_smuggling_tipoff_after_delay", new_callable=AsyncMock)
+    @patch(
+        "amc.handlers.smuggling._announce_smuggling_tipoff_after_delay",
+        new_callable=AsyncMock,
+    )
     @patch("amc.mod_detection.detect_custom_parts")
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff_throttled(
-        self, mock_list_vehicles, mock_detect, mock_announce_tipoff, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_list_vehicles,
+        mock_detect,
+        mock_announce_tipoff,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """Second Money load within 60s cooldown does NOT trigger another tip-off."""
         mock_get_rp_mode.return_value = False
@@ -652,8 +698,11 @@ class ProcessEventTests(TestCase):
 
         # First load — triggers tip-off
         await process_event(
-            event, player, character,
-            http_client=http_client, http_client_mod=http_client_mod,
+            event,
+            player,
+            character,
+            http_client=http_client,
+            http_client_mod=http_client_mod,
         )
         await asyncio.sleep(0)
         self.assertEqual(mock_announce_tipoff.call_count, 1)
@@ -662,8 +711,11 @@ class ProcessEventTests(TestCase):
 
         # Second load — should be throttled (no new announcement)
         await process_event(
-            event, player, character,
-            http_client=http_client, http_client_mod=http_client_mod,
+            event,
+            player,
+            character,
+            http_client=http_client,
+            http_client_mod=http_client_mod,
         )
         await asyncio.sleep(0)
 
@@ -861,7 +913,8 @@ class ExtraWebhookTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, guid="test-char-shortcut",
+            player=player,
+            guid="test-char-shortcut",
             shortcut_zone_entered_at=timezone.now(),
         )
         await CharacterLocation.objects.acreate(
@@ -1870,7 +1923,10 @@ class OnPlayerProfitTests(TestCase):
         contract_payment = 50_000  # contract completion payment
 
         await on_player_profit(
-            character, total_subsidy, total_payment, session,
+            character,
+            total_subsidy,
+            total_payment,
+            session,
             contract_payment=contract_payment,
         )
 
@@ -1902,7 +1958,10 @@ class OnPlayerProfitTests(TestCase):
         contract_payment = 50_000
 
         await on_player_profit(
-            character, total_subsidy, base_payment, session,
+            character,
+            total_subsidy,
+            base_payment,
+            session,
             contract_payment=contract_payment,
         )
 
@@ -1938,7 +1997,10 @@ class OnPlayerProfitTests(TestCase):
 
         # This mirrors the fixed call in tasks.py: base_payment=0
         await on_player_profit(
-            character, subsidy_amount, 0, session,
+            character,
+            subsidy_amount,
+            0,
+            session,
         )
 
         # Subsidy of 10_000 should be paid to wallet
@@ -1979,14 +2041,18 @@ class OnPlayerProfitTests(TestCase):
 
         # Correct call: base_payment=0
         await on_player_profit(
-            character, subsidy_amount, 0, session,
+            character,
+            subsidy_amount,
+            0,
+            session,
         )
 
         # actual_income should be 10_000 (subsidy only)
         repay_call_income = mock_repay_loan.call_args[0][1]
         self.assertEqual(
-            repay_call_income, 10_000,
-            "Loan repayment income should be subsidy only, not double-counted"
+            repay_call_income,
+            10_000,
+            "Loan repayment income should be subsidy only, not double-counted",
         )
 
     @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
@@ -1995,8 +2061,12 @@ class OnPlayerProfitTests(TestCase):
     @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_subsidy_only_contribution(
-        self, mock_subsidise, mock_repay_loan, mock_savings,
-        mock_redirect, mock_transfer,
+        self,
+        mock_subsidise,
+        mock_repay_loan,
+        mock_savings,
+        mock_redirect,
+        mock_transfer,
     ):
         """Gov employee with subsidy-only profit (depot restock).
 
@@ -2008,7 +2078,8 @@ class OnPlayerProfitTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=False,
+            player=player,
+            reject_ubi=False,
             gov_employee_until=timezone.now() + timedelta(hours=24),
         )
 
@@ -2020,14 +2091,20 @@ class OnPlayerProfitTests(TestCase):
 
         # Then confiscated back
         mock_transfer.assert_called_once_with(
-            session, -10_000, "Government Service",
+            session,
+            -10_000,
+            "Government Service",
             str(character.player.unique_id),
         )
 
         # Contribution tracked with amount=0 (no donation) and contribution=10_000
         mock_redirect.assert_called_once_with(
-            0, character, "Government Service – Subsidy",
-            http_client=None, session=session, contribution=10_000,
+            0,
+            character,
+            "Government Service – Subsidy",
+            http_client=None,
+            session=session,
+            contribution=10_000,
         )
 
         # Non-gov paths should NOT be called
@@ -2040,8 +2117,12 @@ class OnPlayerProfitTests(TestCase):
     @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)
     @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     async def test_gov_employee_base_plus_subsidy_contribution(
-        self, mock_subsidise, mock_repay_loan, mock_savings,
-        mock_redirect, mock_transfer,
+        self,
+        mock_subsidise,
+        mock_repay_loan,
+        mock_savings,
+        mock_redirect,
+        mock_transfer,
     ):
         """Gov employee with both base_payment and subsidy.
 
@@ -2052,7 +2133,8 @@ class OnPlayerProfitTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, reject_ubi=False,
+            player=player,
+            reject_ubi=False,
             gov_employee_until=timezone.now() + timedelta(hours=24),
         )
 
@@ -2136,6 +2218,7 @@ class SeqDeduplicationTests(TestCase):
         )
 
         from django.core.cache import cache
+
         cache.set("webhook:last_processed_seq", 5, timeout=None)
 
         events = [
@@ -2172,6 +2255,7 @@ class SeqDeduplicationTests(TestCase):
         )
 
         from django.core.cache import cache
+
         cache.set("webhook:last_processed_seq", 99, timeout=None)
 
         # No _seq field — should not be filtered
@@ -2208,11 +2292,12 @@ class SeqDeduplicationTests(TestCase):
         )
 
         from django.core.cache import cache
+
         cache.set("webhook:last_processed_seq", 10, timeout=None)
 
         events = [
-            self._make_cargo_event(character.guid, seq=8),   # skip (old)
-            self._make_cargo_event(character.guid),           # pass (no _seq)
+            self._make_cargo_event(character.guid, seq=8),  # skip (old)
+            self._make_cargo_event(character.guid),  # pass (no _seq)
             self._make_cargo_event(character.guid, seq=11),  # process (new)
         ]
 
@@ -2244,6 +2329,7 @@ class SeqDeduplicationTests(TestCase):
         )
 
         from django.core.cache import cache
+
         # Simulate: old server session had epoch=1000, high-water mark at seq=50
         cache.set("webhook:last_processed_seq", 50, timeout=None)
         cache.set("webhook:last_epoch", 1000, timeout=None)
@@ -2296,7 +2382,11 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_no_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
+        self,
+        mock_list_vehicles,
+        mock_subsidise,
+        mock_refresh,
+        mock_send_sys_msg,
     ):
         """0 police on duty → 0% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2324,7 +2414,11 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_one_police_20pct_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
+        self,
+        mock_list_vehicles,
+        mock_subsidise,
+        mock_refresh,
+        mock_send_sys_msg,
     ):
         """1 police on duty and online → 50% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2364,7 +2458,11 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_offline_police_no_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
+        self,
+        mock_list_vehicles,
+        mock_subsidise,
+        mock_refresh,
+        mock_send_sys_msg,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2401,7 +2499,11 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_two_police_40pct_bonus(
-        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
+        self,
+        mock_list_vehicles,
+        mock_subsidise,
+        mock_refresh,
+        mock_send_sys_msg,
     ):
         """2 police on duty and online → 100% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2440,7 +2542,11 @@ class SecurityBonusTests(TestCase):
 
     @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
     async def test_money_delivery_bonus_capped_at_100pct(
-        self, mock_list_vehicles, mock_subsidise, mock_refresh, mock_send_sys_msg,
+        self,
+        mock_list_vehicles,
+        mock_subsidise,
+        mock_refresh,
+        mock_send_sys_msg,
     ):
         """6 police → would be 300%, but capped at 250%."""
         mock_list_vehicles.return_value = {}
@@ -2476,4 +2582,3 @@ class SecurityBonusTests(TestCase):
         mock_subsidise.assert_called_once_with(
             25_000, character, http_client_mod, message="Risk Premium"
         )
-

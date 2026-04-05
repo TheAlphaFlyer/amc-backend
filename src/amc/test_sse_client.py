@@ -34,13 +34,13 @@ def _parse_and_build_event(lines):
 
 class TestParseSSEEvent:
     def test_simple_event(self):
-        lines = ["id: 42", "data: {\"hook\":\"ServerCargoArrived\",\"timestamp\":1234}"]
+        lines = ["id: 42", 'data: {"hook":"ServerCargoArrived","timestamp":1234}']
         event_id, data = parse_sse_event(lines)
         assert event_id == "42"
         assert json.loads(data) == {"hook": "ServerCargoArrived", "timestamp": 1234}
 
     def test_data_only_no_id(self):
-        lines = ["data: {\"hook\":\"ServerPassengerArrived\"}"]
+        lines = ['data: {"hook":"ServerPassengerArrived"}']
         event_id, data = parse_sse_event(lines)
         assert event_id is None
         assert json.loads(data) == {"hook": "ServerPassengerArrived"}
@@ -59,7 +59,7 @@ class TestParseSSEEvent:
         lines = [
             ": this is a comment",
             "id: 10",
-            "data: {\"test\":true}",
+            'data: {"test":true}',
         ]
         event_id, data = parse_sse_event(lines)
         assert event_id == "10"
@@ -84,7 +84,7 @@ class TestParseSSEEvent:
         assert data is None
 
     def test_whitespace_handling(self):
-        lines = ["id:  7 ", "data:  {\"key\": \"value\"} "]
+        lines = ["id:  7 ", 'data:  {"key": "value"} ']
         event_id, data = parse_sse_event(lines)
         assert event_id == "7"
         assert json.loads(data) == {"key": "value"}
@@ -102,9 +102,7 @@ async def test_debounce_flushes_after_silence():
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         # Push 3 events 50ms apart
         for i in range(3):
@@ -133,9 +131,7 @@ async def test_ceiling_forces_flush_during_burst():
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         # Push events every 200ms for 3 seconds (past the 2s ceiling)
         for i in range(15):
@@ -170,9 +166,7 @@ async def test_batch_cap_forces_immediate_flush():
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         # Push exactly FLUSH_MAX_BATCH_SIZE events at once
         for i in range(FLUSH_MAX_BATCH_SIZE):
@@ -200,9 +194,7 @@ async def test_empty_buffer_no_flush():
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         signal.set()
         await asyncio.sleep(FLUSH_DEBOUNCE_SECONDS + 0.2)
@@ -224,9 +216,7 @@ async def test_multiple_separate_batches():
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         # First burst
         buffer.append(_make_event(0))
@@ -258,9 +248,7 @@ async def test_flush_handles_process_exception(caplog):
     signal = asyncio.Event()
 
     with patch("amc.webhook.process_events", mock_process):
-        task = asyncio.create_task(
-            _flush_loop(buffer, signal, None, None, None)
-        )
+        task = asyncio.create_task(_flush_loop(buffer, signal, None, None, None))
 
         buffer.append(_make_event(0))
         signal.set()
@@ -295,7 +283,10 @@ class TestSeqInjection:
         assert event["hook"] == "ServerCargoArrived"
 
     def test_seq_and_epoch_injected_from_epoch_prefixed_id(self):
-        lines = ["id: 1711400000:42", 'data: {"hook":"ServerCargoArrived","timestamp":1234}']
+        lines = [
+            "id: 1711400000:42",
+            'data: {"hook":"ServerCargoArrived","timestamp":1234}',
+        ]
         event = _parse_and_build_event(lines)
         assert event is not None
         assert event["_seq"] == 42
@@ -324,11 +315,12 @@ class TestParseEpochSeq:
 
     def test_invalid_input_raises(self):
         import pytest
+
         with pytest.raises(ValueError):
             parse_epoch_seq("not_a_number")
 
     def test_invalid_seq_part_raises(self):
         import pytest
+
         with pytest.raises(ValueError):
             parse_epoch_seq("1711400000:abc")
-

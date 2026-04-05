@@ -29,12 +29,12 @@ from amc.police import is_police_vehicle
 logger = logging.getLogger("amc.auto_arrest")
 
 # ── Tuning constants (human-readable) ────────────────────────────────
-PATROL_POLL_INTERVAL = 0.5   # seconds between each poll cycle
-AUTO_ARREST_DURATION = 4.0   # seconds suspect must be still + in range
-AUTO_ARREST_WARNING_AT = 1.5 # seconds into tracking before warning the suspect
-AUTO_ARREST_RADIUS_ON_FOOT_M = 40   # metres — cop arrest range on foot
+PATROL_POLL_INTERVAL = 0.5  # seconds between each poll cycle
+AUTO_ARREST_DURATION = 4.0  # seconds suspect must be still + in range
+AUTO_ARREST_WARNING_AT = 1.5  # seconds into tracking before warning the suspect
+AUTO_ARREST_RADIUS_ON_FOOT_M = 40  # metres — cop arrest range on foot
 AUTO_ARREST_RADIUS_IN_VEHICLE_M = 12  # metres — cop arrest range in vehicle
-AUTO_ARREST_SPEED_LIMIT_KMPH = 30   # km/h — suspects faster than this escape
+AUTO_ARREST_SPEED_LIMIT_KMPH = 30  # km/h — suspects faster than this escape
 
 # ── Derived constants (game: 100 units = 1 metre) ────────────────────
 _UNITS_PER_METRE = 100
@@ -54,7 +54,9 @@ async def _is_wanted(character) -> bool:
     ).aexists()
 
 
-async def _patrol_tick(http_client, http_client_mod, prev_locations, still_counters=None):
+async def _patrol_tick(
+    http_client, http_client_mod, prev_locations, still_counters=None
+):
     """Single patrol tick: poll players, find police, auto-arrest nearby suspects.
 
     Args:
@@ -92,7 +94,8 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
     # Identify on-duty police officers
     online_threshold = timezone.now() - timedelta(seconds=60)
     police_sessions = [
-        ps async for ps in PoliceSession.objects.filter(
+        ps
+        async for ps in PoliceSession.objects.filter(
             ended_at__isnull=True,
             character__last_online__gte=online_threshold,
         ).select_related("character", "character__player")
@@ -100,7 +103,9 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
     if not police_sessions:
         return locations, still_counters
 
-    cop_guids = {ps.character.guid for ps in police_sessions if ps.character.guid in locations}
+    cop_guids = {
+        ps.character.guid for ps in police_sessions if ps.character.guid in locations
+    }
     if not cop_guids:
         return locations, still_counters
 
@@ -116,9 +121,9 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
 
     # Batch-load suspect Characters (need player_id for money transfer)
     suspect_chars = {}
-    async for char in Character.objects.filter(
-        guid__in=suspect_guids
-    ).select_related("player"):
+    async for char in Character.objects.filter(guid__in=suspect_guids).select_related(
+        "player"
+    ):
         suspect_chars[char.guid] = char
 
     # Check ArrestZone enforcement
@@ -140,6 +145,7 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
         # Zone check — cop must be inside an active ArrestZone
         if zones_exist:
             from django.contrib.gis.geos import Point
+
             cop_point = Point(cop_loc[0], cop_loc[1], srid=3857)
             in_zone = await ArrestZone.objects.filter(
                 active=True, polygon__contains=cop_point
@@ -169,12 +175,13 @@ async def _patrol_tick(http_client, http_client_mod, prev_locations, still_count
                 if dist > arrest_radius:
                     continue
 
-            # Speed check: normalize to units/second for consistent behavior
+            # Speed check: only for suspects in vehicles (on-foot suspects
+            # are always arrestable within radius regardless of speed)
             if sus_guid in prev_locations:
                 prev_uid, prev_loc, _ = prev_locations[sus_guid]
                 distance_moved = _distance_3d(prev_loc, sus_loc)
                 speed_per_second = distance_moved / PATROL_POLL_INTERVAL
-                if speed_per_second > _SPEED_LIMIT:
+                if sus_has_vehicle and speed_per_second > _SPEED_LIMIT:
                     # Moving too fast — reset counter and notify cop if tracking was active
                     was_tracking = still_counters.pop(pair_key, 0) > 0
                     if was_tracking:

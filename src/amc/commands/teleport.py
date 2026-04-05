@@ -4,7 +4,12 @@ from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
 from amc.models import TeleportPoint, RescueRequest, PoliceSession
-from amc.mod_server import teleport_player, list_player_vehicles, show_popup, enter_last_vehicle
+from amc.mod_server import (
+    teleport_player,
+    list_player_vehicles,
+    show_popup,
+    enter_last_vehicle,
+)
 from amc.police import is_police_vehicle
 from django.conf import settings
 from django.db.models import Q
@@ -13,14 +18,16 @@ from django.utils.translation import gettext as _, gettext_lazy
 
 @registry.register(
     ["/teleport vehicle", "/tp vehicle"],
-    description=gettext_lazy("Teleport to and enter your last used vehicle (Police Only)"),
+    description=gettext_lazy(
+        "Teleport to and enter your last used vehicle (Police Only)"
+    ),
     category="Teleportation",
 )
 async def cmd_tp_vehicle(ctx: CommandContext):
     is_on_duty = await PoliceSession.objects.filter(
         character=ctx.character, ended_at__isnull=True
     ).aexists()
-    
+
     if not is_on_duty:
         await ctx.reply(_("Police Only"))
         return
@@ -41,7 +48,11 @@ async def cmd_tp_vehicle(ctx: CommandContext):
 
         # Find a police vehicle (same pattern as tasks.py line 681)
         police_vehicle = next(
-            (v for v in player_vehicles.values() if is_police_vehicle(v.get("VehicleName"))),
+            (
+                v
+                for v in player_vehicles.values()
+                if is_police_vehicle(v.get("VehicleName"))
+            ),
             None,
         )
         if not police_vehicle:
@@ -136,7 +147,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                     asyncio.create_task(
                         show_popup(
                             ctx.http_client_mod,
-                            _("This teleport location is restricted while on police duty."),
+                            _(
+                                "This teleport location is restricted while on police duty."
+                            ),
                             character_guid=ctx.character.guid,
                             player_id=str(ctx.player.unique_id),
                         )
@@ -190,7 +203,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 asyncio.create_task(
                     show_popup(
                         ctx.http_client_mod,
-                        _("Custom destination teleport is restricted while on police duty."),
+                        _(
+                            "Custom destination teleport is restricted while on police duty."
+                        ),
                         character_guid=ctx.character.guid,
                         player_id=str(ctx.player.unique_id),
                     )
@@ -198,7 +213,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 return
 
             # Teleport to Custom Waypoint
-            no_vehicles = (not player_info.get("bIsAdmin") and not rescue_tp_data) or is_on_duty
+            no_vehicles = (
+                not player_info.get("bIsAdmin") and not rescue_tp_data
+            ) or is_on_duty
             location = player_info.get("CustomDestinationAbsoluteLocation")
 
             if location and rescue_tp_data and not player_info.get("bIsAdmin"):
@@ -255,5 +272,3 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
         reset_trailers=not player_info.get("bIsAdmin"),
         reset_carried_vehicles=not player_info.get("bIsAdmin"),
     )
-
-

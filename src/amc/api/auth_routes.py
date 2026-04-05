@@ -74,9 +74,7 @@ async def discord_token(request, body: DiscordTokenRequest):
     if discord_user is None:
         return 400, {"error": "token_exchange_failed"}
 
-    token = create_session_token(
-        player, "discord", discord_user=discord_user
-    )
+    token = create_session_token(player, "discord", discord_user=discord_user)
 
     result = {"session_token": token, "discord_user": discord_user}
     if player:

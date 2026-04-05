@@ -147,7 +147,9 @@ def calc_loan_fee(amount, character, max_loan, credit_score=100):
 
 async def register_player_take_loan(amount, character):
     max_loan, _ = await get_character_max_loan(character)
-    fee = calc_loan_fee(amount, character, max_loan, credit_score=character.credit_score)
+    fee = calc_loan_fee(
+        amount, character, max_loan, credit_score=character.credit_score
+    )
     principal = Decimal(amount) + Decimal(fee)
 
     loan_account, _ = await Account.objects.aget_or_create(
@@ -256,7 +258,11 @@ def get_non_performing_loans():
     results = []
     for account in qs:
         period_days = account.min_repayment_period_days or NPL_DEFAULT_PERIOD_DAYS
-        rate = account.min_repayment_rate if account.min_repayment_rate is not None else NPL_DEFAULT_REPAYMENT_RATE
+        rate = (
+            account.min_repayment_rate
+            if account.min_repayment_rate is not None
+            else NPL_DEFAULT_REPAYMENT_RATE
+        )
         cutoff = now - timedelta(days=period_days)
 
         # Sum of credits in this account's period
@@ -265,8 +271,7 @@ def get_non_performing_loans():
                 account=account,
                 credit__gt=0,
                 journal_entry__created_at__gte=cutoff,
-            )
-            .aggregate(total=Sum("credit"))["total"]
+            ).aggregate(total=Sum("credit"))["total"]
         ) or Decimal(0)
 
         min_required = account.balance * rate
@@ -308,7 +313,11 @@ async def get_character_npl_status(character):
         return None
 
     period_days = account.min_repayment_period_days or NPL_DEFAULT_PERIOD_DAYS
-    rate = account.min_repayment_rate if account.min_repayment_rate is not None else NPL_DEFAULT_REPAYMENT_RATE
+    rate = (
+        account.min_repayment_rate
+        if account.min_repayment_rate is not None
+        else NPL_DEFAULT_REPAYMENT_RATE
+    )
     cutoff = timezone.now() - timedelta(days=period_days)
 
     total_repaid = (
@@ -341,13 +350,13 @@ async def is_character_npl(character) -> bool:
 
 # --- Credit Score ---
 
-CREDIT_SCORE_MET = 10       # +10 per period when obligations met
+CREDIT_SCORE_MET = 10  # +10 per period when obligations met
 CREDIT_SCORE_EXCEEDED = 15  # +15 per period when repaid >= 200% of required
-CREDIT_SCORE_MISSED = -30   # -30 per period when in NPL
+CREDIT_SCORE_MISSED = -30  # -30 per period when in NPL
 CREDIT_SCORE_MIN = 0
 CREDIT_SCORE_MAX = 200
 CREDIT_SCORE_MIN_BALANCE = 100_000  # minimum loan balance for credit score evaluation
-CREDIT_UTILIZATION_HIGH = Decimal("0.70")   # >70% utilization: -5 per period
+CREDIT_UTILIZATION_HIGH = Decimal("0.70")  # >70% utilization: -5 per period
 CREDIT_UTILIZATION_VERY_HIGH = Decimal("0.90")  # >90% utilization: -10 per period
 CREDIT_UTILIZATION_HIGH_PENALTY = -5
 CREDIT_UTILIZATION_VERY_HIGH_PENALTY = -10
@@ -377,6 +386,7 @@ async def evaluate_credit_scores(ctx=None):
     Uses the same repayment window as NPL detection.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     now = timezone.now()
@@ -419,7 +429,8 @@ async def evaluate_credit_scores(ctx=None):
                     credit__gt=0,
                     journal_entry__created_at__gte=cutoff,
                 ).aggregate(total=Sum("credit"))["total"]
-            ) or Decimal(0)
+            )
+            or Decimal(0)
         )()
 
         min_required = account.balance * rate
@@ -465,6 +476,7 @@ async def evaluate_credit_scores(ctx=None):
     # Bulk save
     if updated_characters:
         from amc.models import Character
+
         await sync_to_async(
             lambda: Character.objects.bulk_update(updated_characters, ["credit_score"])
         )()
@@ -549,7 +561,9 @@ def calculate_loan_repayment(
     return repayment
 
 
-async def repay_loan_for_profit(character, payment, session, repayment_override=None, game_session=None):
+async def repay_loan_for_profit(
+    character, payment, session, repayment_override=None, game_session=None
+):
     from amc.mod_server import show_popup, transfer_money
     from amc.game_server import announce
 

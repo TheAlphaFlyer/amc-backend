@@ -90,8 +90,10 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=5)
@@ -108,7 +110,9 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         result = await self._contribute(cargo_key="C::Iron")
@@ -124,7 +128,9 @@ class ContributionRecordingTests(TestCase):
         )
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         result = await self._contribute(dest=other_dest)
@@ -160,7 +166,8 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, destination_points=[self.dest],
+            event=event,
+            destination_points=[self.dest],
             # No cargos → matches any
         )
 
@@ -176,7 +183,8 @@ class ContributionRecordingTests(TestCase):
         )
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo],
+            event=event,
+            cargos=[self.cargo],
             # No destination_points → matches anywhere
         )
 
@@ -191,7 +199,9 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_ended_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         result = await self._contribute()
@@ -207,7 +217,9 @@ class ContributionRecordingTests(TestCase):
             end_at=timezone.now() + timedelta(hours=26),
         )
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         result = await self._contribute()
@@ -222,8 +234,10 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=10,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            ceiling=10,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=8)
@@ -245,8 +259,10 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=5,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            ceiling=5,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=5)  # Fill exactly
@@ -265,8 +281,10 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event()
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=None,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            ceiling=None,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=999)
@@ -281,10 +299,14 @@ class ContributionRecordingTests(TestCase):
         event1 = await _make_active_event(reward_per_item=100_000, name="Event A")
         event2 = await _make_active_event(reward_per_item=200_000, name="Event B")
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event1, cargos=[self.cargo], destination_points=[self.dest],
+            event=event1,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event2, cargos=[self.cargo], destination_points=[self.dest],
+            event=event2,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=5)
@@ -297,11 +319,14 @@ class ContributionRecordingTests(TestCase):
         event = await _make_active_event()
         # Obj1: specific cargo at specific dest
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         # Obj2: any cargo at same dest (no cargo filter)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, destination_points=[self.dest],
+            event=event,
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=3)
@@ -313,8 +338,11 @@ class ContributionRecordingTests(TestCase):
         await self.asyncSetUp()
         event = await _make_active_event(reward_per_item=100_000)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, ceiling=10, is_primary=True,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            ceiling=10,
+            is_primary=True,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
 
         await self._contribute(quantity=5)
@@ -342,20 +370,30 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, ceiling=100, is_primary=True,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            ceiling=100,
+            is_primary=True,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         # Simulate 100 units delivered total (70 Alice, 30 Bob)
         obj.quantity_fulfilled = 100
         await obj.asave(update_fields=["quantity_fulfilled"])
 
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=70, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=70,
+            timestamp=timezone.now(),
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c2,
-            cargo_key="C::Steel", quantity=30, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c2,
+            cargo_key="C::Steel",
+            quantity=30,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -372,16 +410,23 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=100_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, ceiling=10, is_primary=True,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            ceiling=10,
+            is_primary=True,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         # Simulate overshoot: 15 delivered but ceiling is 10
         obj.quantity_fulfilled = 15
         await obj.asave(update_fields=["quantity_fulfilled"])
 
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=15, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=15,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -400,25 +445,37 @@ class DistributeRewardsTests(TestCase):
         event = await _make_ended_event(reward_per_item=10_000)
         # Primary objective: 60% weight
         obj1 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=60, is_primary=True, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=60,
+            is_primary=True,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         # Secondary objective: 40% weight
         obj2 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=40,
-            cargos=[cargo2], destination_points=[dest2],
+            event=event,
+            reward_weight=40,
+            cargos=[cargo2],
+            destination_points=[dest2],
         )
         # Primary delivered 10 items → pool = 10K × 10 = 100K
         obj1.quantity_fulfilled = 10
         await obj1.asave(update_fields=["quantity_fulfilled"])
 
         await SupplyChainContribution.objects.acreate(
-            objective=obj1, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            objective=obj1,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=10,
+            timestamp=timezone.now(),
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj2, character=self.c2,
-            cargo_key="C::Coal", quantity=100, timestamp=timezone.now(),
+            objective=obj2,
+            character=self.c2,
+            cargo_key="C::Coal",
+            quantity=100,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -433,12 +490,18 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=100_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=False,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=False,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=50, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=50,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -452,14 +515,21 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         obj.quantity_fulfilled = 5
         await obj.asave(update_fields=["quantity_fulfilled"])
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=5, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=5,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -472,8 +542,12 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=10_000)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         # quantity_fulfilled=0, so pool=0
 
@@ -492,12 +566,18 @@ class DistributeRewardsTests(TestCase):
         )
         event = await _make_ended_event(reward_per_item=10_000)
         obj1 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=50, is_primary=True, ceiling=10,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=50,
+            is_primary=True,
+            ceiling=10,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         obj2 = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=50,
-            cargos=[cargo2], destination_points=[dest2],
+            event=event,
+            reward_weight=50,
+            cargos=[cargo2],
+            destination_points=[dest2],
         )
 
         # Primary delivered 10 → pool = 10K × 10 = 100K
@@ -506,12 +586,18 @@ class DistributeRewardsTests(TestCase):
 
         # Same player contributes to both objectives
         await SupplyChainContribution.objects.acreate(
-            objective=obj1, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            objective=obj1,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=10,
+            timestamp=timezone.now(),
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj2, character=self.c1,
-            cargo_key="C::Coal", quantity=20, timestamp=timezone.now(),
+            objective=obj2,
+            character=self.c1,
+            cargo_key="C::Coal",
+            quantity=20,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -530,14 +616,21 @@ class DistributeRewardsTests(TestCase):
 
         event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         obj.quantity_fulfilled = 10
         await obj.asave(update_fields=["quantity_fulfilled"])
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=10,
+            timestamp=timezone.now(),
         )
 
         await distribute_event_rewards(event)
@@ -551,14 +644,21 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True, ceiling=100,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            ceiling=100,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         obj.quantity_fulfilled = 5
         await obj.asave(update_fields=["quantity_fulfilled"])
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=5, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=5,
+            timestamp=timezone.now(),
         )
 
         await monitor_supply_chain_events({"http_client": MagicMock()})
@@ -573,12 +673,18 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_ended_event(rewards_distributed=True)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=10,
+            timestamp=timezone.now(),
         )
 
         await monitor_supply_chain_events({"http_client": MagicMock()})
@@ -591,12 +697,18 @@ class DistributeRewardsTests(TestCase):
         await self._setup()
         event = await _make_active_event(reward_per_item=10_000)
         obj = await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, reward_weight=10, is_primary=True,
-            cargos=[self.cargo], destination_points=[self.dest],
+            event=event,
+            reward_weight=10,
+            is_primary=True,
+            cargos=[self.cargo],
+            destination_points=[self.dest],
         )
         await SupplyChainContribution.objects.acreate(
-            objective=obj, character=self.c1,
-            cargo_key="C::Steel", quantity=10, timestamp=timezone.now(),
+            objective=obj,
+            character=self.c1,
+            cargo_key="C::Steel",
+            quantity=10,
+            timestamp=timezone.now(),
         )
 
         await monitor_supply_chain_events({"http_client": MagicMock()})
@@ -618,7 +730,9 @@ class ConflictingCargoKeysTests(TestCase):
         )
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[cargo], destination_points=[dest],
+            event=event,
+            cargos=[cargo],
+            destination_points=[dest],
         )
 
         conflicts = await get_conflicting_cargo_keys()
@@ -635,7 +749,9 @@ class ConflictingCargoKeysTests(TestCase):
             end_at=timezone.now() + timedelta(hours=26),
         )
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[cargo], destination_points=[dest],
+            event=event,
+            cargos=[cargo],
+            destination_points=[dest],
         )
 
         conflicts = await get_conflicting_cargo_keys()
@@ -649,7 +765,9 @@ class ConflictingCargoKeysTests(TestCase):
         )
         event = await _make_ended_event(rewards_distributed=True)
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[cargo], destination_points=[dest],
+            event=event,
+            cargos=[cargo],
+            destination_points=[dest],
         )
 
         conflicts = await get_conflicting_cargo_keys()
@@ -660,7 +778,8 @@ class ConflictingCargoKeysTests(TestCase):
         cargo = await Cargo.objects.acreate(key="C::Fuel", label="Fuel")
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[cargo],
+            event=event,
+            cargos=[cargo],
             # No destination_points
         )
 
@@ -676,7 +795,9 @@ class ConflictingCargoKeysTests(TestCase):
         )
         event = await _make_active_event()
         await sync_to_async(SupplyChainObjectiveFactory)(
-            event=event, cargos=[cargo1, cargo2], destination_points=[dest],
+            event=event,
+            cargos=[cargo1, cargo2],
+            destination_points=[dest],
         )
 
         conflicts = await get_conflicting_cargo_keys()
@@ -747,10 +868,18 @@ class TemplateInstantiationTests(TestCase):
         cargo2 = await Cargo.objects.acreate(key="C::Iron", label="Iron Ore")
         tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Multi")
         await sync_to_async(SupplyChainObjectiveTemplateFactory)(
-            template=tmpl, cargos=[cargo1], ceiling=100, reward_weight=40, is_primary=True,
+            template=tmpl,
+            cargos=[cargo1],
+            ceiling=100,
+            reward_weight=40,
+            is_primary=True,
         )
         await sync_to_async(SupplyChainObjectiveTemplateFactory)(
-            template=tmpl, cargos=[cargo2], ceiling=300, reward_weight=60, is_primary=False,
+            template=tmpl,
+            cargos=[cargo2],
+            ceiling=300,
+            reward_weight=60,
+            is_primary=False,
         )
 
         event = await create_event_from_template(tmpl)
@@ -768,7 +897,9 @@ class TemplateInstantiationTests(TestCase):
         )
         tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Dest Test")
         await sync_to_async(SupplyChainObjectiveTemplateFactory)(
-            template=tmpl, destination_points=[dest], is_primary=True,
+            template=tmpl,
+            destination_points=[dest],
+            is_primary=True,
         )
 
         event = await create_event_from_template(tmpl)
@@ -783,7 +914,9 @@ class TemplateInstantiationTests(TestCase):
         )
         tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(name="Src Test")
         await sync_to_async(SupplyChainObjectiveTemplateFactory)(
-            template=tmpl, source_points=[src], is_primary=True,
+            template=tmpl,
+            source_points=[src],
+            is_primary=True,
         )
 
         event = await create_event_from_template(tmpl)
@@ -844,7 +977,9 @@ class EndToEndLifecycleTests(TestCase):
         )
 
         self.tmpl = await sync_to_async(SupplyChainEventTemplateFactory)(
-            name="Steel Rush", reward_per_item=10_000, duration_hours=48.0,
+            name="Steel Rush",
+            reward_per_item=10_000,
+            duration_hours=48.0,
         )
         # Primary: Steel Coil → Harbor (60% weight)
         await sync_to_async(SupplyChainObjectiveTemplateFactory)(
@@ -926,18 +1061,30 @@ class EndToEndLifecycleTests(TestCase):
 
         # Alice delivers 60 steel coils to harbor (primary)
         await check_and_record_contribution(
-            delivery=None, character=alice, cargo_key="C::Steel",
-            quantity=60, destination_point=self.harbor, source_point=self.mill,
+            delivery=None,
+            character=alice,
+            cargo_key="C::Steel",
+            quantity=60,
+            destination_point=self.harbor,
+            source_point=self.mill,
         )
         # Bob delivers 40 steel coils to harbor (primary)
         await check_and_record_contribution(
-            delivery=None, character=bob, cargo_key="C::Steel",
-            quantity=40, destination_point=self.harbor, source_point=self.mill,
+            delivery=None,
+            character=bob,
+            cargo_key="C::Steel",
+            quantity=40,
+            destination_point=self.harbor,
+            source_point=self.mill,
         )
         # Alice delivers 100 coal to mill (secondary)
         await check_and_record_contribution(
-            delivery=None, character=alice, cargo_key="C::Coal",
-            quantity=100, destination_point=self.mill, source_point=self.mine,
+            delivery=None,
+            character=alice,
+            cargo_key="C::Coal",
+            quantity=100,
+            destination_point=self.mill,
+            source_point=self.mine,
         )
 
         # Fast-forward event to ended
@@ -972,12 +1119,20 @@ class EndToEndLifecycleTests(TestCase):
 
         # Primary ceiling is 100 — deliver 120 steel coils
         await check_and_record_contribution(
-            delivery=None, character=trucker, cargo_key="C::Steel",
-            quantity=80, destination_point=self.harbor, source_point=self.mill,
+            delivery=None,
+            character=trucker,
+            cargo_key="C::Steel",
+            quantity=80,
+            destination_point=self.harbor,
+            source_point=self.mill,
         )
         await check_and_record_contribution(
-            delivery=None, character=trucker, cargo_key="C::Steel",
-            quantity=40, destination_point=self.harbor, source_point=self.mill,
+            delivery=None,
+            character=trucker,
+            cargo_key="C::Steel",
+            quantity=40,
+            destination_point=self.harbor,
+            source_point=self.mill,
         )
 
         # Only 100 should be recorded (80 + 20, not 80 + 40)
@@ -1004,8 +1159,12 @@ class EndToEndLifecycleTests(TestCase):
 
         # Deliver steel coils — should match BOTH events' primary objectives
         recorded = await check_and_record_contribution(
-            delivery=None, character=char, cargo_key="C::Steel",
-            quantity=10, destination_point=self.harbor, source_point=self.mill,
+            delivery=None,
+            character=char,
+            cargo_key="C::Steel",
+            quantity=10,
+            destination_point=self.harbor,
+            source_point=self.mill,
         )
 
         # Should create 2 contributions (one per event)

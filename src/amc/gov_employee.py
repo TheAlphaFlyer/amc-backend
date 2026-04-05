@@ -64,7 +64,9 @@ async def redirect_income_to_treasury(
     await player_donation(int(amount), character, description=description)
 
     # Contributions: track full economic value (including subsidy) for levels
-    character.gov_employee_contributions = F("gov_employee_contributions") + int(contribution)
+    character.gov_employee_contributions = F("gov_employee_contributions") + int(
+        contribution
+    )
     await character.asave(update_fields=["gov_employee_contributions"])
 
     # Refresh to get actual DB value, then recalculate level

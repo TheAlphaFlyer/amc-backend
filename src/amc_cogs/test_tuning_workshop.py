@@ -139,9 +139,7 @@ class ClaimRewardCommandTestCase(TestCase):
             thread.fetch_message = AsyncMock(return_value=starter_message)
 
         # Mock channel.history() as an async iterator
-        thread.history = MagicMock(
-            return_value=AsyncIterator(history or [])
-        )
+        thread.history = MagicMock(return_value=AsyncIterator(history or []))
 
         return interaction
 
@@ -150,7 +148,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         player = await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         user1 = MagicMock(id=11111, bot=False)
@@ -239,7 +239,9 @@ class ClaimRewardCommandTestCase(TestCase):
     async def test_claim_no_reactions_at_all(self):
         now = timezone.now()
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         interaction = self._make_interaction(12345, 67890, reactions=[])
@@ -255,24 +257,33 @@ class ClaimRewardCommandTestCase(TestCase):
 
         await self.cog.claim_reward.callback(self.cog, interaction)
 
-        self.assertIn("only be used inside", interaction.response.send_message.call_args[0][0])
+        self.assertIn(
+            "only be used inside", interaction.response.send_message.call_args[0][0]
+        )
 
     async def test_claim_not_author(self):
         now = timezone.now()
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         interaction = self._make_interaction(12345, 99999)  # different user
 
         await self.cog.claim_reward.callback(self.cog, interaction)
 
-        self.assertIn("Only the thread author", interaction.response.send_message.call_args[0][0])
+        self.assertIn(
+            "Only the thread author", interaction.response.send_message.call_args[0][0]
+        )
 
     async def test_claim_skipped(self):
         now = timezone.now()
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now, skipped=True,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
+            skipped=True,
         )
 
         interaction = self._make_interaction(12345, 67890)
@@ -285,7 +296,9 @@ class ClaimRewardCommandTestCase(TestCase):
         """Claim fails if author has no linked Player record."""
         now = timezone.now()
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         user1 = MagicMock(id=11111, bot=False)
@@ -296,7 +309,9 @@ class ClaimRewardCommandTestCase(TestCase):
 
         await self.cog.claim_reward.callback(self.cog, interaction)
 
-        self.assertIn("No linked game account", interaction.followup.send.call_args[0][0])
+        self.assertIn(
+            "No linked game account", interaction.followup.send.call_args[0][0]
+        )
         self.assertEqual(await Voucher.objects.acount(), 0)
 
     async def test_claim_excludes_bot_and_author(self):
@@ -304,7 +319,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         user = MagicMock(id=11111, bot=False)
@@ -325,7 +342,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         # Starter message: 1 reactor
@@ -348,7 +367,10 @@ class ClaimRewardCommandTestCase(TestCase):
         image_msg.reactions = [image_reaction]
 
         interaction = self._make_interaction(
-            12345, 67890, reactions=[starter_reaction], history=[image_msg],
+            12345,
+            67890,
+            reactions=[starter_reaction],
+            history=[image_msg],
         )
 
         await self.cog.claim_reward.callback(self.cog, interaction)
@@ -361,7 +383,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         # Starter message: no reactions
@@ -377,7 +401,10 @@ class ClaimRewardCommandTestCase(TestCase):
         text_msg.reactions = [text_reaction]
 
         interaction = self._make_interaction(
-            12345, 67890, reactions=[], history=[text_msg],
+            12345,
+            67890,
+            reactions=[],
+            history=[text_msg],
         )
 
         await self.cog.claim_reward.callback(self.cog, interaction)
@@ -390,7 +417,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         # Another user's image message with reactions
@@ -408,7 +437,10 @@ class ClaimRewardCommandTestCase(TestCase):
         other_msg.reactions = [other_reaction]
 
         interaction = self._make_interaction(
-            12345, 67890, reactions=[], history=[other_msg],
+            12345,
+            67890,
+            reactions=[],
+            history=[other_msg],
         )
 
         await self.cog.claim_reward.callback(self.cog, interaction)
@@ -421,7 +453,9 @@ class ClaimRewardCommandTestCase(TestCase):
         now = timezone.now()
         await Player.objects.acreate(unique_id=5001, discord_user_id=67890)
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
 
         # Same user reacts on both starter and image reply
@@ -443,13 +477,17 @@ class ClaimRewardCommandTestCase(TestCase):
         image_msg.reactions = [image_reaction]
 
         interaction = self._make_interaction(
-            12345, 67890, reactions=[starter_reaction], history=[image_msg],
+            12345,
+            67890,
+            reactions=[starter_reaction],
+            history=[image_msg],
         )
 
         await self.cog.claim_reward.callback(self.cog, interaction)
 
         voucher = await Voucher.objects.afirst()
         self.assertEqual(voucher.amount, 100_000)  # Deduplicated: 1 unique reactor
+
 
 class BackfillWorkshopCommandTestCase(TestCase):
     def setUp(self):
@@ -496,7 +534,9 @@ class BackfillWorkshopCommandTestCase(TestCase):
         """Already-tracked threads are skipped (idempotent)."""
         now = timezone.now()
         await TuningWorkshopSubmission.objects.acreate(
-            thread_id=12345, author_discord_id=67890, created_at=now,
+            thread_id=12345,
+            author_discord_id=67890,
+            created_at=now,
         )
         thread = self._make_thread(12345, 67890, now - timedelta(days=5))
         interaction = self._make_interaction(forum_threads=[thread])
@@ -512,9 +552,7 @@ class BackfillWorkshopCommandTestCase(TestCase):
         now = timezone.now()
         old_thread = self._make_thread(11111, 67890, now - timedelta(days=31))
         recent_thread = self._make_thread(22222, 67890, now - timedelta(days=10))
-        interaction = self._make_interaction(
-            forum_threads=[old_thread, recent_thread]
-        )
+        interaction = self._make_interaction(forum_threads=[old_thread, recent_thread])
 
         await self.cog.backfill_workshop.callback(self.cog, interaction)
 
@@ -546,7 +584,8 @@ class BackfillWorkshopCommandTestCase(TestCase):
         active = self._make_thread(11111, 67890, now - timedelta(days=3))
         archived = self._make_thread(22222, 67890, now - timedelta(days=15))
         interaction = self._make_interaction(
-            forum_threads=[active], archived_threads=[archived],
+            forum_threads=[active],
+            archived_threads=[archived],
         )
 
         await self.cog.backfill_workshop.callback(self.cog, interaction)
@@ -570,9 +609,13 @@ class ClaimVoucherCommandTestCase(TestCase):
         ctx.character = char
         ctx.reply = AsyncMock()
 
-        with patch("amc.commands.finance.send_fund_to_player", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "amc.commands.finance.send_fund_to_player", new_callable=AsyncMock
+        ) as mock_send:
             await cmd_claim_voucher(ctx, code="TW-ABC123")
-            mock_send.assert_called_once_with(300_000, char, "Voucher: Tuning Workshop: 3 reactions")
+            mock_send.assert_called_once_with(
+                300_000, char, "Voucher: Tuning Workshop: 3 reactions"
+            )
 
         await voucher.arefresh_from_db()
         self.assertTrue(voucher.is_claimed)

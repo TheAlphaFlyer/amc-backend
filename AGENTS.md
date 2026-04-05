@@ -152,6 +152,8 @@ nix build .#staticRoot
 
 ## Development Shell
 
+> **⚠️ Do NOT use `.venv` or `uv sync` directly.** The Python environment is built by **uv2nix** via the `.#backend` Nix devShell and managed by **direnv**. Running `uv sync` or `uv pip install` will create a stale `.venv` that diverges from the Nix-managed environment, causing import errors and test failures. Always use `direnv exec .` to run commands.
+
 The devShell is managed by **direnv** via `.envrc`. It activates automatically when you `cd` into the directory. To run commands inside the devShell:
 
 ```bash
@@ -160,6 +162,9 @@ direnv exec . <command>
 
 # Or drop into a shell with the environment loaded
 direnv exec . bash
+
+# Run tests
+direnv exec . python -m pytest src/ --tb=short -q
 ```
 
 Do not use `nix develop` directly — it re-evaluates the flake each time and is slow. `direnv exec` uses the cached devShell environment.

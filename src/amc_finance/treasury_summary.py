@@ -126,16 +126,13 @@ def get_treasury_summary(target_date=None, days=1):
         total_income += amount
 
     # --- NIRC (special: internal transfer to Treasury Fund) ---
-    nirc_entries = (
-        LedgerEntry.objects.filter(
-            account__name="Treasury Fund",
-            account__account_type=Account.AccountType.ASSET,
-            account__book=Account.Book.GOVERNMENT,
-            journal_entry__description="NIRC Transfer",
-            journal_entry__date__range=[date_start, date_end],
-        )
-        .aggregate(total=Sum("debit", default=Decimal(0)))
-    )
+    nirc_entries = LedgerEntry.objects.filter(
+        account__name="Treasury Fund",
+        account__account_type=Account.AccountType.ASSET,
+        account__book=Account.Book.GOVERNMENT,
+        journal_entry__description="NIRC Transfer",
+        journal_entry__date__range=[date_start, date_end],
+    ).aggregate(total=Sum("debit", default=Decimal(0)))
     nirc_amount = nirc_entries["total"]
     income_breakdown["nirc"] = nirc_amount
     total_income += nirc_amount
@@ -185,8 +182,16 @@ def get_treasury_summary(target_date=None, days=1):
         )
     }
 
-    treasury_balance = gov_accounts["Treasury Fund"].balance if "Treasury Fund" in gov_accounts else Decimal(0)
-    reserves_balance = gov_accounts["Sovereign Reserves"].balance if "Sovereign Reserves" in gov_accounts else Decimal(0)
+    treasury_balance = (
+        gov_accounts["Treasury Fund"].balance
+        if "Treasury Fund" in gov_accounts
+        else Decimal(0)
+    )
+    reserves_balance = (
+        gov_accounts["Sovereign Reserves"].balance
+        if "Sovereign Reserves" in gov_accounts
+        else Decimal(0)
+    )
 
     # If report date is in the past, rewind balances.
     # Standard double-entry: ASSET balance += debit - credit.
@@ -295,7 +300,9 @@ def get_treasury_trend(days=7):
     )
 
     # Initialise income map
-    income_map = {d: {key: 0.0 for key in list(INCOME_CATEGORIES) + ["other"]} for d in date_range}
+    income_map = {
+        d: {key: 0.0 for key in list(INCOME_CATEGORIES) + ["other"]} for d in date_range
+    }
     for entry in revenue_qs:
         day = entry["day"]
         if hasattr(day, "date"):
@@ -340,7 +347,10 @@ def get_treasury_trend(days=7):
         .order_by("day")
     )
 
-    expense_map = {d: {key: 0.0 for key in list(EXPENSE_CATEGORIES) + ["other"]} for d in date_range}
+    expense_map = {
+        d: {key: 0.0 for key in list(EXPENSE_CATEGORIES) + ["other"]}
+        for d in date_range
+    }
     for entry in expense_qs:
         day = entry["day"]
         if hasattr(day, "date"):
@@ -382,8 +392,16 @@ def get_treasury_trend(days=7):
             name__in=["Treasury Fund", "Sovereign Reserves"],
         )
     }
-    current_treasury = float(gov_accounts["Treasury Fund"].balance) if "Treasury Fund" in gov_accounts else 0.0
-    current_reserves = float(gov_accounts["Sovereign Reserves"].balance) if "Sovereign Reserves" in gov_accounts else 0.0
+    current_treasury = (
+        float(gov_accounts["Treasury Fund"].balance)
+        if "Treasury Fund" in gov_accounts
+        else 0.0
+    )
+    current_reserves = (
+        float(gov_accounts["Sovereign Reserves"].balance)
+        if "Sovereign Reserves" in gov_accounts
+        else 0.0
+    )
 
     # Get daily net changes ONLY within the window (+ days after for backwards calc)
     treasury_txs = (
@@ -418,7 +436,9 @@ def get_treasury_trend(days=7):
     treasury_balance_series[-1] = treasury_at_end
     for i in range(len(date_range) - 2, -1, -1):
         next_day = date_range[i + 1]
-        treasury_balance_series[i] = treasury_balance_series[i + 1] - daily_treasury_changes.get(next_day, 0.0)
+        treasury_balance_series[i] = treasury_balance_series[
+            i + 1
+        ] - daily_treasury_changes.get(next_day, 0.0)
 
     # Same approach for Sovereign Reserves
     reserves_txs = (
@@ -451,18 +471,18 @@ def get_treasury_trend(days=7):
     reserves_balance_series[-1] = reserves_at_end
     for i in range(len(date_range) - 2, -1, -1):
         next_day = date_range[i + 1]
-        reserves_balance_series[i] = reserves_balance_series[i + 1] - daily_reserves_changes.get(next_day, 0.0)
+        reserves_balance_series[i] = reserves_balance_series[
+            i + 1
+        ] - daily_reserves_changes.get(next_day, 0.0)
 
     # Category labels for frontend
     all_income_labels = {
-        key: INCOME_CATEGORIES[key]["label"]
-        for key in INCOME_CATEGORIES
+        key: INCOME_CATEGORIES[key]["label"] for key in INCOME_CATEGORIES
     }
     all_income_labels["other"] = "Other"
 
     all_expense_labels = {
-        key: EXPENSE_CATEGORIES[key]["label"]
-        for key in EXPENSE_CATEGORIES
+        key: EXPENSE_CATEGORIES[key]["label"] for key in EXPENSE_CATEGORIES
     }
     all_expense_labels["other"] = "Other"
 
@@ -476,7 +496,9 @@ def get_treasury_trend(days=7):
         "expenses": {
             "series": expense_series,
             "totals": daily_expenses,
-            "category_labels": {k: all_expense_labels.get(k, k) for k in expense_series},
+            "category_labels": {
+                k: all_expense_labels.get(k, k) for k in expense_series
+            },
         },
         "surplus": daily_surplus,
         "treasury_balance": treasury_balance_series,
@@ -509,9 +531,8 @@ def save_treasury_snapshot(target_date=None):
         return obj
 
     import json
-    json_safe_data = json.loads(
-        json.dumps(summary, default=_to_json_safe)
-    )
+
+    json_safe_data = json.loads(json.dumps(summary, default=_to_json_safe))
 
     snapshot, _ = DailyTreasurySnapshot.objects.update_or_create(
         date=target_date,

@@ -4,15 +4,18 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc_finance', '0004_account_payment_plan_fields'),
+        ("amc_finance", "0004_account_payment_plan_fields"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='account',
-            name='last_credit_score_evaluated_at',
-            field=models.DateTimeField(blank=True, help_text='When this loan was last evaluated for credit scoring.', null=True),
+            model_name="account",
+            name="last_credit_score_evaluated_at",
+            field=models.DateTimeField(
+                blank=True,
+                help_text="When this loan was last evaluated for credit scoring.",
+                null=True,
+            ),
         ),
     ]

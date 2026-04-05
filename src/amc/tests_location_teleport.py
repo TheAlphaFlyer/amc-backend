@@ -26,6 +26,7 @@ class LocationTeleportDetectionTests(TestCase):
 
     def setUp(self):
         from django.core.cache import cache
+
         cache.clear()
 
     async def _setup_character(self):
@@ -150,7 +151,10 @@ class LocationTeleportDetectionTests(TestCase):
         _, character = await self._setup_character()
         await self._deliver_money(character, payment=100_000, minutes_ago=0)
 
-        from amc.locations import _check_teleport_by_location, TELEPORT_DISTANCE_THRESHOLD
+        from amc.locations import (
+            _check_teleport_by_location,
+            TELEPORT_DISTANCE_THRESHOLD,
+        )
 
         old_loc = Point(0, 0, 0)
         new_loc = Point(TELEPORT_DISTANCE_THRESHOLD, 0, 0)  # exactly at boundary
@@ -165,7 +169,10 @@ class LocationTeleportDetectionTests(TestCase):
         _, character = await self._setup_character()
         await self._deliver_money(character, payment=100_000, minutes_ago=0)
 
-        from amc.locations import _check_teleport_by_location, TELEPORT_DISTANCE_THRESHOLD
+        from amc.locations import (
+            _check_teleport_by_location,
+            TELEPORT_DISTANCE_THRESHOLD,
+        )
 
         old_loc = Point(0, 0, 0)
         new_loc = Point(TELEPORT_DISTANCE_THRESHOLD + 1, 0, 0)

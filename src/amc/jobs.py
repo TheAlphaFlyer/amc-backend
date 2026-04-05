@@ -236,7 +236,9 @@ async def monitor_jobs(ctx):
     posted = 0
     # Track source amounts already claimed by jobs posted in this tick
     # to prevent multiple jobs from depleting the same source storage
-    reserved_source: dict[tuple[int, int], int] = {}  # (cargo_id, dp_id) -> reserved qty
+    reserved_source: dict[
+        tuple[int, int], int
+    ] = {}  # (cargo_id, dp_id) -> reserved qty
 
     for template in ordered_templates:
         if posted >= slots_to_fill:
@@ -262,7 +264,12 @@ async def monitor_jobs(ctx):
         ]
         # Collect source storages with their IDs for reservation tracking
         source_storage_entries = [
-            (storage.cargo_id, storage.delivery_point_id, storage.amount, storage.capacity_normalized or 0)
+            (
+                storage.cargo_id,
+                storage.delivery_point_id,
+                storage.amount,
+                storage.capacity_normalized or 0,
+            )
             async for storage in source_storages
         ]
         destination_amount = sum(
@@ -322,9 +329,7 @@ async def monitor_jobs(ctx):
         )
         bonus_multiplier = bonus_multiplier * treasury_mult
         base_bonus = int(
-            template.completion_bonus
-            * quantity_requested
-            / template.default_quantity
+            template.completion_bonus * quantity_requested / template.default_quantity
         )
         # Treasury health × random variance, clamped to [0.5x, 2.0x]
         scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))

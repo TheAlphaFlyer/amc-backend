@@ -198,9 +198,7 @@ class TuningWorkshopCog(commands.Cog):
             ),
             color=discord.Color.green(),
         )
-        embed.set_footer(
-            text=f"Total reactions rewarded: {current_count}"
-        )
+        embed.set_footer(text=f"Total reactions rewarded: {current_count}")
         await channel.send(embed=embed)
 
     @app_commands.command(

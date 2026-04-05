@@ -5,24 +5,55 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0184_rename_amc_polices_charact_idx_amc_polices_charact_482ce7_idx_and_more'),
+        (
+            "amc",
+            "0184_rename_amc_polices_charact_idx_amc_polices_charact_482ce7_idx_and_more",
+        ),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ServerTeleportLog',
+            name="ServerTeleportLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('timestamp', models.DateTimeField()),
-                ('hook', models.CharField(max_length=50)),
-                ('data', models.JSONField(blank=True, null=True)),
-                ('character', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='teleport_logs', to='amc.character')),
-                ('player', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='teleport_logs', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("timestamp", models.DateTimeField()),
+                ("hook", models.CharField(max_length=50)),
+                ("data", models.JSONField(blank=True, null=True)),
+                (
+                    "character",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="teleport_logs",
+                        to="amc.character",
+                    ),
+                ),
+                (
+                    "player",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="teleport_logs",
+                        to="amc.player",
+                    ),
+                ),
             ],
             options={
-                'indexes': [models.Index(fields=['character', '-timestamp'], name='amc_servert_charact_a0619f_idx')],
+                "indexes": [
+                    models.Index(
+                        fields=["character", "-timestamp"],
+                        name="amc_servert_charact_a0619f_idx",
+                    )
+                ],
             },
         ),
     ]

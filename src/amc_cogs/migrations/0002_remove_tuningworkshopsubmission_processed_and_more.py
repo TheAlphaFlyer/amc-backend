@@ -4,27 +4,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc_cogs', '0001_initial'),
+        ("amc_cogs", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='tuningworkshopsubmission',
-            name='processed',
+            model_name="tuningworkshopsubmission",
+            name="processed",
         ),
         migrations.RemoveField(
-            model_name='tuningworkshopsubmission',
-            name='reward_at',
+            model_name="tuningworkshopsubmission",
+            name="reward_at",
         ),
         migrations.RemoveField(
-            model_name='tuningworkshopsubmission',
-            name='voucher',
+            model_name="tuningworkshopsubmission",
+            name="voucher",
         ),
         migrations.AddField(
-            model_name='tuningworkshopsubmission',
-            name='rewarded_reaction_count',
+            model_name="tuningworkshopsubmission",
+            name="rewarded_reaction_count",
             field=models.PositiveIntegerField(default=0),
         ),
     ]

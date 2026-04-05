@@ -72,9 +72,7 @@ class FactionDiscordRoleSyncTestCase(TestCase):
         mock_member.remove_roles = AsyncMock()
 
         with patch.object(settings, "DISCORD_COP_ROLE_ID", 111):
-            await sync_faction_discord_role(
-                mock_guild, mock_member, FactionChoice.COP
-            )
+            await sync_faction_discord_role(mock_guild, mock_member, FactionChoice.COP)
 
         mock_member.add_roles.assert_called_once()
 

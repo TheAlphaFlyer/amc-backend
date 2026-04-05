@@ -4,20 +4,25 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0155_alter_jobpostingconfig_id_and_more'),
+        ("amc", "0155_alter_jobpostingconfig_id_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='jobpostingconfig',
-            name='treasury_equilibrium',
-            field=models.PositiveBigIntegerField(default=50000000, help_text="Treasury balance at which spending is 'normal' (multiplier = 1.0)"),
+            model_name="jobpostingconfig",
+            name="treasury_equilibrium",
+            field=models.PositiveBigIntegerField(
+                default=50000000,
+                help_text="Treasury balance at which spending is 'normal' (multiplier = 1.0)",
+            ),
         ),
         migrations.AddField(
-            model_name='jobpostingconfig',
-            name='treasury_sensitivity',
-            field=models.FloatField(default=0.5, help_text='How aggressively spending changes with treasury balance (higher = steeper curve)'),
+            model_name="jobpostingconfig",
+            name="treasury_sensitivity",
+            field=models.FloatField(
+                default=0.5,
+                help_text="How aggressively spending changes with treasury balance (higher = steeper curve)",
+            ),
         ),
     ]

@@ -130,10 +130,14 @@ async def monitor_deliverypoints(ctx):
         # Update live data
         dp.data = {
             "inputInventory": [
-                normalise_inventory(inv) for inv in dp_info.get("InputInventory", {}).values() if "cargo" in inv
+                normalise_inventory(inv)
+                for inv in dp_info.get("InputInventory", {}).values()
+                if "cargo" in inv
             ],
             "outputInventory": [
-                normalise_inventory(inv) for inv in dp_info.get("OutputInventory", {}).values() if "cargo" in inv
+                normalise_inventory(inv)
+                for inv in dp_info.get("OutputInventory", {}).values()
+                if "cargo" in inv
             ],
             "deliveries": list(
                 map(normalise_delivery, dp_info.get("Deliveries", {}).values())

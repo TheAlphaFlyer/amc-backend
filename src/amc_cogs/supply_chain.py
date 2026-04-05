@@ -8,7 +8,11 @@ from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
 
-from amc.models import SupplyChainEvent, SupplyChainEventTemplate, SupplyChainContribution
+from amc.models import (
+    SupplyChainEvent,
+    SupplyChainEventTemplate,
+    SupplyChainContribution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +93,12 @@ class SupplyChainCog(commands.Cog):
             primary_tag = " ⭐" if obj.is_primary else ""
 
             # Count unique contributors
-            contributors = await SupplyChainContribution.objects.filter(
-                objective=obj
-            ).values("character_id").distinct().acount()
+            contributors = (
+                await SupplyChainContribution.objects.filter(objective=obj)
+                .values("character_id")
+                .distinct()
+                .acount()
+            )
 
             embed.add_field(
                 name=f"{label}{primary_tag} ({reward_pct}% pool)",
@@ -147,8 +154,7 @@ class SupplyChainCog(commands.Cog):
             enabled=True, name__icontains=current
         ).order_by("name")[:25]
         return [
-            app_commands.Choice(name=t.name[:100], value=t.pk)
-            async for t in templates
+            app_commands.Choice(name=t.name[:100], value=t.pk) async for t in templates
         ]
 
     @app_commands.command(
@@ -174,9 +180,7 @@ class SupplyChainCog(commands.Cog):
         try:
             tmpl = await SupplyChainEventTemplate.objects.aget(pk=template)
         except SupplyChainEventTemplate.DoesNotExist:
-            await interaction.followup.send(
-                "❌ Template not found.", ephemeral=True
-            )
+            await interaction.followup.send("❌ Template not found.", ephemeral=True)
             return
 
         event = await create_event_from_template(tmpl, duration_hours)

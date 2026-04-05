@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0174_alter_jobpostingconfig_treasury_equilibrium'),
+        ("amc", "0174_alter_jobpostingconfig_treasury_equilibrium"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='character',
-            name='crossover_warning_sent_at',
+            model_name="character",
+            name="crossover_warning_sent_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

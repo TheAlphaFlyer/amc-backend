@@ -96,13 +96,14 @@ async def npl_loans(request):
     ]
 
 
-@economy_router.get("/donations/leaderboard/", response=list[DonationsLeaderboardSchema])
+@economy_router.get(
+    "/donations/leaderboard/", response=list[DonationsLeaderboardSchema]
+)
 async def donations_leaderboard(request, limit: int = 20):
     """Top donors by total lifetime donations."""
-    characters = (
-        Character.objects.filter(total_donations__gt=0)
-        .order_by("-total_donations")[:limit]
-    )
+    characters = Character.objects.filter(total_donations__gt=0).order_by(
+        "-total_donations"
+    )[:limit]
 
     return [
         {
@@ -203,7 +204,9 @@ async def character_profile(request, character_id: int):
     }
 
 
-@characters_router.get("/{int:character_id}/vehicles/", response=list[CharacterVehicleSchema])
+@characters_router.get(
+    "/{int:character_id}/vehicles/", response=list[CharacterVehicleSchema]
+)
 async def character_vehicles(request, character_id: int):
     """Vehicles owned by a character."""
     vehicles = CharacterVehicle.objects.filter(character_id=character_id)
@@ -221,13 +224,16 @@ async def character_vehicles(request, character_id: int):
     ]
 
 
-@characters_router.get("/{int:character_id}/deliveries/", response=list[CharacterDeliverySchema])
-async def character_deliveries(request, character_id: int, limit: int = 50, offset: int = 0):
+@characters_router.get(
+    "/{int:character_id}/deliveries/", response=list[CharacterDeliverySchema]
+)
+async def character_deliveries(
+    request, character_id: int, limit: int = 50, offset: int = 0
+):
     """Delivery history for a character (no payment amounts — privacy)."""
-    deliveries = (
-        Delivery.objects.filter(character_id=character_id)
-        .order_by("-timestamp")[offset:offset + limit]
-    )
+    deliveries = Delivery.objects.filter(character_id=character_id).order_by(
+        "-timestamp"
+    )[offset : offset + limit]
 
     return [
         {
@@ -241,17 +247,18 @@ async def character_deliveries(request, character_id: int, limit: int = 50, offs
     ]
 
 
-@characters_router.get("/{int:character_id}/sessions/", response=list[CharacterSessionSchema])
-async def character_sessions(request, character_id: int, days: int = 30, limit: int = 50):
+@characters_router.get(
+    "/{int:character_id}/sessions/", response=list[CharacterSessionSchema]
+)
+async def character_sessions(
+    request, character_id: int, days: int = 30, limit: int = 50
+):
     """Login/logout session history for a character (last N days)."""
     cutoff = timezone.now() - timedelta(days=days)
-    sessions = (
-        PlayerStatusLog.objects.filter(
-            character_id=character_id,
-            timespan__startswith__gte=cutoff,
-        )
-        .order_by("-timespan")[:limit]
-    )
+    sessions = PlayerStatusLog.objects.filter(
+        character_id=character_id,
+        timespan__startswith__gte=cutoff,
+    ).order_by("-timespan")[:limit]
 
     return [
         {
@@ -290,12 +297,10 @@ async def vehicle_enums(request):
     """Vehicle and cargo key enumerations."""
     return {
         "vehicles": [
-            {"value": value, "label": label}
-            for value, label in VehicleKey.choices
+            {"value": value, "label": label} for value, label in VehicleKey.choices
         ],
         "cargos": [
-            {"value": value, "label": label}
-            for value, label in CargoKey.choices
+            {"value": value, "label": label} for value, label in CargoKey.choices
         ],
     }
 
@@ -355,7 +360,9 @@ async def supply_chain_event_detail(request, event_id: int):
     }
 
 
-@supply_chain_router.get("/{int:event_id}/leaderboard/", response=list[SupplyChainContributorSchema])
+@supply_chain_router.get(
+    "/{int:event_id}/leaderboard/", response=list[SupplyChainContributorSchema]
+)
 async def supply_chain_leaderboard(request, event_id: int, limit: int = 20):
     """Top contributors to a supply chain event."""
     contributors = (
@@ -401,9 +408,9 @@ async def server_status(request):
 async def server_status_history(request, hours: int = 24, limit: int = 288):
     """Server status history (default last 24h, sampled at ~5min intervals = 288)."""
     cutoff = timezone.now() - timedelta(hours=hours)
-    statuses = ServerStatus.objects.filter(
-        timestamp__gte=cutoff
-    ).order_by("-timestamp")[:limit]
+    statuses = ServerStatus.objects.filter(timestamp__gte=cutoff).order_by(
+        "-timestamp"
+    )[:limit]
 
     return [
         {
@@ -426,9 +433,7 @@ async def police_stats(request, days: int = 7):
 
     cutoff = timezone.now() - timedelta(days=days)
 
-    total_patrols = await PolicePatrolLog.objects.filter(
-        timestamp__gte=cutoff
-    ).acount()
+    total_patrols = await PolicePatrolLog.objects.filter(timestamp__gte=cutoff).acount()
 
     total_penalties = await PolicePenaltyLog.objects.filter(
         timestamp__gte=cutoff

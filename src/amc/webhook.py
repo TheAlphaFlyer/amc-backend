@@ -95,6 +95,7 @@ WEBHOOK_SSE_ENABLED = os.environ.get("WEBHOOK_SSE_ENABLED", "").lower() in (
 # Entry points
 # ---------------------------------------------------------------------------
 
+
 @skip_if_running
 async def monitor_webhook(ctx):
     http_client = ctx.get("http_client")
@@ -122,6 +123,7 @@ async def monitor_webhook_test(ctx):
 # ---------------------------------------------------------------------------
 # Event aggregation
 # ---------------------------------------------------------------------------
+
 
 def aggregate_homogenous_events(sorted_events):
     grouped_events = itertools.groupby(
@@ -168,6 +170,7 @@ def aggregate_homogenous_events(sorted_events):
 # ---------------------------------------------------------------------------
 # Main pipeline: process_events → process_event (via registry)
 # ---------------------------------------------------------------------------
+
 
 async def process_events(
     events, http_client=None, http_client_mod=None, discord_client=None

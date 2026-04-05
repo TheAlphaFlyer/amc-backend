@@ -55,7 +55,9 @@ class Command(BaseCommand):
                     # Completed
                     completions += 1
                     score = min(MAX_SCORE, score * BOOST_FACTOR)
-                elif job.expired_at and job.expired_at < now and job.fulfilled_at is None:
+                elif (
+                    job.expired_at and job.expired_at < now and job.fulfilled_at is None
+                ):
                     # Expired
                     expirations += 1
                     score = max(MIN_SCORE, score * DECAY_FACTOR)

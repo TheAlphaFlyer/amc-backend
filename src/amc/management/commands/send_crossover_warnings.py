@@ -128,9 +128,7 @@ class Command(BaseCommand):
             except Exception as e:
                 failed += 1
                 self.stdout.write(
-                    self.style.ERROR(
-                        f"  ✗ {character.name} (ID:{character.id}): {e}"
-                    )
+                    self.style.ERROR(f"  ✗ {character.name} (ID:{character.id}): {e}")
                 )
                 continue
 

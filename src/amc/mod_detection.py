@@ -33,9 +33,7 @@ GAME_DB_PATH = os.environ.get("GAME_DB_PATH", "/var/lib/motortown/gamedata.db")
 ATTACHMENT_SLOT_MIN = VehiclePartSlot.Attachment0.value  # 148
 
 # Part key prefixes whitelisted for characters on active police duty
-POLICE_DUTY_WHITELIST: tuple[str, ...] = (
-    "apf_",
-)
+POLICE_DUTY_WHITELIST: tuple[str, ...] = ("apf_",)
 
 # Module-level caches — loaded once on first call
 _stock_part_keys: Optional[set[str]] = None
@@ -152,7 +150,7 @@ def get_stock_part_keys() -> set[str]:
         tire_suffix_values: set[int] = set()
         for base_name, variants in bp_variants.get("TirePhysics", {}).items():
             for variant_name in variants:
-                suffix = variant_name[len(base_name):]
+                suffix = variant_name[len(base_name) :]
                 for part in suffix.lstrip("_").split("_"):
                     if part.isdigit():
                         tire_suffix_values.add(int(part))
@@ -166,7 +164,7 @@ def get_stock_part_keys() -> set[str]:
         lsd_suffix_values: set[int] = set()
         for base_name, variants in bp_variants.get("LSD", {}).items():
             for variant_name in variants:
-                suffix = variant_name[len(base_name):]
+                suffix = variant_name[len(base_name) :]
                 for part in suffix.split("_"):
                     if part.isdigit():
                         lsd_suffix_values.add(int(part))
@@ -234,11 +232,13 @@ def detect_custom_parts(
             continue
         if whitelist and key_lower.startswith(whitelist):
             continue
-        custom.append({
-            "key": key,
-            "slot": _slot_name(slot_value),
-            "slot_value": slot_value,
-        })
+        custom.append(
+            {
+                "key": key,
+                "slot": _slot_name(slot_value),
+                "slot_value": slot_value,
+            }
+        )
 
     return custom
 
@@ -275,9 +275,7 @@ def _load_compatibility_data():
         # vehicle blueprint name -> vehicle_type
         vtype_map: dict[str, str] = {}
         try:
-            for row in cursor.execute(
-                "SELECT id, vehicle_type FROM vehicles"
-            ):
+            for row in cursor.execute("SELECT id, vehicle_type FROM vehicles"):
                 vtype_map[row[0]] = row[1]
         except sqlite3.OperationalError:
             pass
@@ -321,9 +319,7 @@ def _strip_part_suffix(key: str, stock_keys: set[str]) -> str:
     return key_lower
 
 
-def detect_incompatible_parts(
-    parts: list[dict], vehicle_name: str
-) -> list[dict]:
+def detect_incompatible_parts(parts: list[dict], vehicle_name: str) -> list[dict]:
     """Check if parts are compatible with the vehicle type.
 
     Maps the vehicle blueprint name to a vehicle_type, then checks each
@@ -361,13 +357,15 @@ def detect_incompatible_parts(
         base_id = _strip_part_suffix(key, stock_keys)
         allowed = _part_compatible_types.get(base_id)
         if allowed is not None and vehicle_type not in allowed:
-            incompatible.append({
-                "key": key,
-                "slot": _slot_name(slot_value),
-                "slot_value": slot_value,
-                "vehicle_type": vehicle_type,
-                "allowed_types": sorted(allowed),
-            })
+            incompatible.append(
+                {
+                    "key": key,
+                    "slot": _slot_name(slot_value),
+                    "slot_value": slot_value,
+                    "vehicle_type": vehicle_type,
+                    "allowed_types": sorted(allowed),
+                }
+            )
 
     return incompatible
 

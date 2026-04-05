@@ -15,7 +15,9 @@ from amc.player_tags import strip_all_tags
     category="Social",
 )
 async def cmd_thank(ctx: CommandContext, target_player_name: str):
-    if target_player_name == ctx.character.name or target_player_name == strip_all_tags(ctx.character.name):
+    if target_player_name == ctx.character.name or target_player_name == strip_all_tags(
+        ctx.character.name
+    ):
         return
 
     players = await get_players(ctx.http_client)

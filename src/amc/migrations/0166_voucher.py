@@ -5,23 +5,48 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0165_alter_shortcutzone_id'),
+        ("amc", "0165_alter_shortcutzone_id"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Voucher',
+            name="Voucher",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('code', models.CharField(db_index=True, max_length=10, unique=True)),
-                ('amount', models.PositiveIntegerField()),
-                ('reason', models.CharField(max_length=200)),
-                ('claimed_at', models.DateTimeField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('claimed_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='claimed_vouchers', to='amc.character')),
-                ('player', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='vouchers', to='amc.player')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("code", models.CharField(db_index=True, max_length=10, unique=True)),
+                ("amount", models.PositiveIntegerField()),
+                ("reason", models.CharField(max_length=200)),
+                ("claimed_at", models.DateTimeField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "claimed_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="claimed_vouchers",
+                        to="amc.character",
+                    ),
+                ),
+                (
+                    "player",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="vouchers",
+                        to="amc.player",
+                    ),
+                ),
             ],
         ),
     ]

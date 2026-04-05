@@ -26,7 +26,9 @@ def _decimal_safe(obj: object) -> object:  # pyrefly: ignore
 
 
 @treasury_router.get("/summary/")
-def treasury_summary(request, days: int = 1, target_date: str | None = None):  # pyrefly: ignore
+def treasury_summary(
+    request, days: int = 1, target_date: str | None = None
+):  # pyrefly: ignore
     """Daily treasury income/expense summary with category breakdowns.
 
     Uses persisted snapshots for historical dates, live calculation otherwise.

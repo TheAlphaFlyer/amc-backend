@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc_finance', '0002_remove_account_player_account_character'),
+        ("amc_finance", "0002_remove_account_player_account_character"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='account',
-            name='npl_warning_sent_at',
+            model_name="account",
+            name="npl_warning_sent_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
     ]

@@ -5,8 +5,10 @@ from amc.models import CharacterVehicle, PoliceSession
 from amc.mod_server import list_player_vehicles, spawn_vehicle, show_popup
 from amc.enums import VehiclePartSlot
 from amc.mod_detection import (
-    detect_custom_parts, detect_incompatible_parts,
-    format_custom_parts_plain, format_incompatible_parts_plain,
+    detect_custom_parts,
+    detect_incompatible_parts,
+    format_custom_parts_plain,
+    format_incompatible_parts_plain,
     POLICE_DUTY_WHITELIST,
 )
 
@@ -14,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 # Reverse lookup: slot name -> numeric value from VehiclePartSlot enum
 _SLOT_NAME_TO_INT = {slot.name: slot.value for slot in VehiclePartSlot}
-
-
 
 
 def workshop_export_to_db_config(json_data: dict) -> dict:
@@ -64,8 +64,14 @@ def workshop_export_to_db_config(json_data: dict) -> dict:
     # Workshop: {"decal": {"decal": {"decalLayers": [...]}}}
     # DB:       {"Decal": {"DecalLayers": [...]}}
     ws_decal = json_data.get("decal", {})
-    ws_decal_inner = ws_decal.get("decal", ws_decal) if isinstance(ws_decal, dict) else {}
-    ws_layers = ws_decal_inner.get("decalLayers", []) if isinstance(ws_decal_inner, dict) else []
+    ws_decal_inner = (
+        ws_decal.get("decal", ws_decal) if isinstance(ws_decal, dict) else {}
+    )
+    ws_layers = (
+        ws_decal_inner.get("decalLayers", [])
+        if isinstance(ws_decal_inner, dict)
+        else []
+    )
 
     db_layers = []
     for layer in ws_layers:

@@ -102,9 +102,7 @@ class CrimeStatsCog(commands.Cog):
             )
 
         confiscation_str = (
-            "\n".join(confiscation_list)
-            if confiscation_list
-            else "No confiscations."
+            "\n".join(confiscation_list) if confiscation_list else "No confiscations."
         )
 
         # --- Build embed ---

@@ -348,9 +348,7 @@ async def cmd_bill(ctx: CommandContext, target_player_name: str):
 
     if not target_character.driver_level:
         await ctx.reply(
-            _("Cannot bill {name}: no driver level.").format(
-                name=target_character.name
-            )
+            _("Cannot bill {name}: no driver level.").format(name=target_character.name)
         )
         return
 

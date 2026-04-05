@@ -38,6 +38,7 @@ logger = logging.getLogger("amc.webhook.handlers.police")
 # ServerArrivedAtPolicePatrolPoint
 # ---------------------------------------------------------------------------
 
+
 @register("ServerArrivedAtPolicePatrolPoint")
 async def handle_patrol_arrived(event, player, character, ctx):
     patrol_point_id = event["data"].get("PatrolPointId", 0)
@@ -46,6 +47,7 @@ async def handle_patrol_arrived(event, player, character, ctx):
 
     if ctx.http_client_mod:
         from amc.mod_server import get_patrol_point_payments
+
         payments = await get_patrol_point_payments(ctx.http_client_mod)
         if patrol_point_id in payments:
             base_payment = payments[patrol_point_id]["BasePayment"]
@@ -67,6 +69,7 @@ async def handle_patrol_arrived(event, player, character, ctx):
 # ServerSelectPolicePullOverPenaltyResponse
 # ---------------------------------------------------------------------------
 
+
 @register("ServerSelectPolicePullOverPenaltyResponse")
 async def handle_police_penalty(event, player, character, ctx):
     timestamp = _parse_timestamp(event)
@@ -83,6 +86,7 @@ async def handle_police_penalty(event, player, character, ctx):
 # ---------------------------------------------------------------------------
 # ServerAddPolicePlayer / ServerRemovePolicePlayer
 # ---------------------------------------------------------------------------
+
 
 @register("ServerAddPolicePlayer")
 async def handle_police_shift_start(event, player, character, ctx):
@@ -194,6 +198,7 @@ async def handle_pickup_cargo(event, player, character, ctx):
 
     # 5. Track confiscation for police level
     from amc.police import record_confiscation_for_level
+
     await record_confiscation_for_level(
         character, payment, http_client=ctx.http_client, session=ctx.http_client_mod
     )
@@ -231,6 +236,6 @@ async def _announce_confiscation_after_delay(character_guid, http_client, delay=
 
 
 def _parse_timestamp(event):
-    from django.utils import timezone as _tz
-    current_tz = _tz.get_current_timezone()
-    return _tz.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
+    from amc.handlers.utils import parse_event_timestamp
+
+    return parse_event_timestamp(event)

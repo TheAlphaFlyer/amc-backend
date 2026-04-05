@@ -33,6 +33,7 @@ def calculate_criminal_level(laundered_total: int) -> int:
     Level scales infinitely: floor(total / step) + 1"""
     return (laundered_total // CRIMINAL_LEVEL_STEP) + 1
 
+
 # Handler signature: (logs, character, http_client, http_client_mod) -> None
 SpecialCargoHandler = Callable[
     [list[ServerCargoArrivedLog], Any, Any, Any],
@@ -66,6 +67,7 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
     cache_key = f"money_secured:{character_guid}"
     data = await cache.aget(cache_key)
     if not data:
+        logger.debug("announce_money_secured(%s): no cache data", character_guid)
         return
     await cache.adelete(cache_key)
 
@@ -78,15 +80,32 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
         created_at__gte=window_start,
     ).aexists()
     if was_confiscated:
+        logger.info(
+            "announce_money_secured(%s): suppressed — confiscation found",
+            character_guid,
+        )
         return
 
     total = data.get("total", 0)
     name = data.get("name", "Unknown")
     if total > 0 and http_client:
+        logger.info(
+            "announce_money_secured(%s): announcing $%s safe for %s",
+            character_guid,
+            total,
+            name,
+        )
         await announce(
             f"{name}'s ${total:,} is now safe from police",
             http_client,
             color="43B581",
+        )
+    else:
+        logger.debug(
+            "announce_money_secured(%s): skipped — total=%s http_client=%s",
+            character_guid,
+            total,
+            bool(http_client),
         )
 
 
@@ -106,16 +125,16 @@ async def handle_money_cargo(
     # --- Accumulate laundered total for criminal level ---
     money_payment = sum(log.payment for log in logs)
     if money_payment > 0:
-        character.criminal_laundered_total = F("criminal_laundered_total") + money_payment
+        character.criminal_laundered_total = (
+            F("criminal_laundered_total") + money_payment
+        )
         await character.asave(update_fields=["criminal_laundered_total"])
         await character.arefresh_from_db(fields=["criminal_laundered_total"])
 
     # --- Criminal record ---
-    active_record = await (
-        CriminalRecord.objects.filter(
-            character=character, expires_at__gt=timezone.now()
-        ).afirst()
-    )
+    active_record = await CriminalRecord.objects.filter(
+        character=character, expires_at__gt=timezone.now()
+    ).afirst()
     if active_record:
         active_record.expires_at = timezone.now() + timedelta(days=7)
         await active_record.asave(update_fields=["expires_at"])
@@ -197,5 +216,6 @@ async def run_special_cargo_handlers(
         if log.cargo_key in SPECIAL_CARGO_HANDLERS:
             logs_by_key[log.cargo_key].append(log)
     for key, matching_logs in logs_by_key.items():
-        await SPECIAL_CARGO_HANDLERS[key](matching_logs, character, http_client, http_client_mod)
-
+        await SPECIAL_CARGO_HANDLERS[key](
+            matching_logs, character, http_client, http_client_mod
+        )

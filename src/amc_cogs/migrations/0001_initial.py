@@ -5,26 +5,41 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('amc', '0166_voucher'),
+        ("amc", "0166_voucher"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='TuningWorkshopSubmission',
+            name="TuningWorkshopSubmission",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('thread_id', models.PositiveBigIntegerField(unique=True)),
-                ('author_discord_id', models.PositiveBigIntegerField()),
-                ('created_at', models.DateTimeField()),
-                ('reward_at', models.DateTimeField()),
-                ('processed', models.BooleanField(default=False)),
-                ('skipped', models.BooleanField(default=False)),
-                ('reaction_count', models.PositiveIntegerField(default=0)),
-                ('voucher', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='amc.voucher')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("thread_id", models.PositiveBigIntegerField(unique=True)),
+                ("author_discord_id", models.PositiveBigIntegerField()),
+                ("created_at", models.DateTimeField()),
+                ("reward_at", models.DateTimeField()),
+                ("processed", models.BooleanField(default=False)),
+                ("skipped", models.BooleanField(default=False)),
+                ("reaction_count", models.PositiveIntegerField(default=0)),
+                (
+                    "voucher",
+                    models.OneToOneField(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to="amc.voucher",
+                    ),
+                ),
             ],
         ),
     ]

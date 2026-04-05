@@ -76,6 +76,6 @@ async def handle_contract_delivered(event, player, character, ctx):
 
 
 def _parse_timestamp(event):
-    from django.utils import timezone as _tz
-    current_tz = _tz.get_current_timezone()
-    return _tz.datetime.fromtimestamp(event["timestamp"], tz=current_tz)
+    from amc.handlers.utils import parse_event_timestamp
+
+    return parse_event_timestamp(event)

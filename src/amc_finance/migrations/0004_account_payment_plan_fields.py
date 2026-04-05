@@ -4,20 +4,29 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc_finance', '0003_account_npl_warning_sent_at'),
+        ("amc_finance", "0003_account_npl_warning_sent_at"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='account',
-            name='min_repayment_period_days',
-            field=models.PositiveIntegerField(blank=True, help_text='Repayment period in days (e.g. 7 = weekly). NULL = use global default.', null=True),
+            model_name="account",
+            name="min_repayment_period_days",
+            field=models.PositiveIntegerField(
+                blank=True,
+                help_text="Repayment period in days (e.g. 7 = weekly). NULL = use global default.",
+                null=True,
+            ),
         ),
         migrations.AddField(
-            model_name='account',
-            name='min_repayment_rate',
-            field=models.DecimalField(blank=True, decimal_places=4, help_text='Min repayment per period as fraction of balance (e.g. 0.10 = 10%). NULL = use global default.', max_digits=5, null=True),
+            model_name="account",
+            name="min_repayment_rate",
+            field=models.DecimalField(
+                blank=True,
+                decimal_places=4,
+                help_text="Min repayment per period as fraction of balance (e.g. 0.10 = 10%). NULL = use global default.",
+                max_digits=5,
+                null=True,
+            ),
         ),
     ]

@@ -25,8 +25,6 @@ async def application(scope, receive, send):
         try:
             await player_positions_ws_app(scope, receive, send)
         except NotImplementedError:
-            raise NotImplementedError(
-                f"Unhandled WebSocket route: {scope.get('path')}"
-            )
+            raise NotImplementedError(f"Unhandled WebSocket route: {scope.get('path')}")
     else:
         raise NotImplementedError(f"Unknown scope type {scope['type']}")

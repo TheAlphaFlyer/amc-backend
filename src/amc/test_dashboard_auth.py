@@ -35,10 +35,13 @@ class DiscordTokenExchangeTest(TestCase):
         }
         mock_exchange.return_value = (discord_user, player)
 
-        response = await cast(Any, self.api_client.post(
-            "/discord/token",
-            json={"code": "test-auth-code"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.post(
+                "/discord/token",
+                json={"code": "test-auth-code"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -59,10 +62,13 @@ class DiscordTokenExchangeTest(TestCase):
         }
         mock_exchange.return_value = (discord_user, None)
 
-        response = await cast(Any, self.api_client.post(
-            "/discord/token",
-            json={"code": "test-auth-code"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.post(
+                "/discord/token",
+                json={"code": "test-auth-code"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -74,10 +80,13 @@ class DiscordTokenExchangeTest(TestCase):
         """Failed Discord token exchange returns 400."""
         mock_exchange.return_value = (None, None)
 
-        response = await cast(Any, self.api_client.post(
-            "/discord/token",
-            json={"code": "bad-code"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.post(
+                "/discord/token",
+                json={"code": "bad-code"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 400)
         data = response.json()
@@ -96,12 +105,15 @@ class SteamCallbackTest(TestCase):
         player = await sync_to_async(PlayerFactory)(unique_id=76561198012345678)
         mock_verify.return_value = (76561198012345678, player)
 
-        response = await cast(Any, self.api_client.get(
-            "/steam/callback?"
-            "openid.claimed_id=https://steamcommunity.com/openid/id/76561198012345678"
-            "&openid.mode=id_res"
-            "&openid.signed=signed,op_endpoint"
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/steam/callback?"
+                "openid.claimed_id=https://steamcommunity.com/openid/id/76561198012345678"
+                "&openid.mode=id_res"
+                "&openid.signed=signed,op_endpoint"
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -114,11 +126,14 @@ class SteamCallbackTest(TestCase):
         """Valid Steam OpenID with no matching Player returns token but no player."""
         mock_verify.return_value = (99999999999999999, None)
 
-        response = await cast(Any, self.api_client.get(
-            "/steam/callback?"
-            "openid.claimed_id=https://steamcommunity.com/openid/id/99999999999999999"
-            "&openid.mode=id_res"
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/steam/callback?"
+                "openid.claimed_id=https://steamcommunity.com/openid/id/99999999999999999"
+                "&openid.mode=id_res"
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -130,11 +145,14 @@ class SteamCallbackTest(TestCase):
         """Failed Steam validation returns 400."""
         mock_verify.return_value = (None, None)
 
-        response = await cast(Any, self.api_client.get(
-            "/steam/callback?"
-            "openid.claimed_id=https://evil.com/id/12345"
-            "&openid.mode=id_res"
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/steam/callback?"
+                "openid.claimed_id=https://evil.com/id/12345"
+                "&openid.mode=id_res"
+            ),
+        )
 
         self.assertEqual(response.status_code, 400)
 
@@ -143,11 +161,14 @@ class SteamCallbackTest(TestCase):
         """Steam returning is_valid:false results in 400."""
         mock_verify.return_value = (None, None)
 
-        response = await cast(Any, self.api_client.get(
-            "/steam/callback?"
-            "openid.claimed_id=https://steamcommunity.com/openid/id/76561198012345678"
-            "&openid.mode=id_res"
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/steam/callback?"
+                "openid.claimed_id=https://steamcommunity.com/openid/id/76561198012345678"
+                "&openid.mode=id_res"
+            ),
+        )
 
         self.assertEqual(response.status_code, 400)
 
@@ -164,14 +185,23 @@ class JWTValidationTest(TestCase):
             unique_id=2001, discord_user_id=111222333
         )
         token = create_session_token(
-            player, "discord",
-            discord_user={"id": "111222333", "username": "tester", "global_name": "Tester", "avatar": None},
+            player,
+            "discord",
+            discord_user={
+                "id": "111222333",
+                "username": "tester",
+                "global_name": "Tester",
+                "avatar": None,
+            },
         )
 
-        response = await cast(Any, self.api_client.get(
-            "/me",
-            headers={"Authorization": f"Bearer {token}"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {token}"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -183,14 +213,23 @@ class JWTValidationTest(TestCase):
     async def test_valid_jwt_without_player(self):
         """Valid JWT with no player (unverified user) returns null player."""
         token = create_session_token(
-            None, "discord",
-            discord_user={"id": "999", "username": "noone", "global_name": None, "avatar": None},
+            None,
+            "discord",
+            discord_user={
+                "id": "999",
+                "username": "noone",
+                "global_name": None,
+                "avatar": None,
+            },
         )
 
-        response = await cast(Any, self.api_client.get(
-            "/me",
-            headers={"Authorization": f"Bearer {token}"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {token}"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -206,19 +245,25 @@ class JWTValidationTest(TestCase):
         }
         token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
 
-        response = await cast(Any, self.api_client.get(
-            "/me",
-            headers={"Authorization": f"Bearer {token}"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {token}"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 401)
 
     async def test_malformed_jwt(self):
         """Malformed JWT returns 401."""
-        response = await cast(Any, self.api_client.get(
-            "/me",
-            headers={"Authorization": "Bearer not-a-real-jwt"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/me",
+                headers={"Authorization": "Bearer not-a-real-jwt"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 401)
 
@@ -237,9 +282,9 @@ class SteamLoginRedirectTest(TestCase):
     async def test_steam_login_returns_redirect_url(self):
         """Steam login endpoint returns a valid OpenID redirect URL."""
         callback = "https://dashboard.aseanmotorclub.com/auth/steam/callback"
-        response = await cast(Any, self.api_client.get(
-            f"/steam/login?callback_url={callback}"
-        ))
+        response = await cast(
+            Any, self.api_client.get(f"/steam/login?callback_url={callback}")
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -261,10 +306,13 @@ class PrivacyTest(TestCase):
         )
         token = create_session_token(player, "discord")
 
-        response = await cast(Any, self.api_client.get(
-            "/me",
-            headers={"Authorization": f"Bearer {token}"},
-        ))
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {token}"},
+            ),
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()

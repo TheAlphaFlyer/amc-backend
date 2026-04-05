@@ -55,7 +55,7 @@ class TreasuryMultiplierTestCase(SimpleTestCase):
                 results[i],
                 results[i - 1],
                 f"Multiplier should increase: balance {balances[i]} gave {results[i]} "
-                f"but balance {balances[i-1]} gave {results[i-1]}",
+                f"but balance {balances[i - 1]} gave {results[i - 1]}",
             )
 
     def test_higher_sensitivity_gives_steeper_curve(self):
@@ -72,7 +72,9 @@ class TreasuryMultiplierTestCase(SimpleTestCase):
     def test_representative_values(self):
         """Verify multiplier at key treasury balances with default params."""
         # Near-broke: should reduce spending
-        at_zero = calculate_treasury_multiplier(0, equilibrium=50_000_000, sensitivity=0.5)
+        at_zero = calculate_treasury_multiplier(
+            0, equilibrium=50_000_000, sensitivity=0.5
+        )
         self.assertLess(at_zero, 1.0)
 
         # Half: should moderately reduce spending
@@ -125,9 +127,7 @@ class TreasuryMultiplierTestCase(SimpleTestCase):
             treasury_mult = calculate_treasury_multiplier(
                 balance, equilibrium=100_000_000, sensitivity=0.5
             )
-            scaling_factor = max(
-                0.5, min(2.0, treasury_mult * rng.uniform(0.7, 1.3))
-            )
+            scaling_factor = max(0.5, min(2.0, treasury_mult * rng.uniform(0.7, 1.3)))
             completion_bonus = int(base_bonus * scaling_factor)
             self.assertGreaterEqual(
                 completion_bonus,
@@ -139,4 +139,3 @@ class TreasuryMultiplierTestCase(SimpleTestCase):
                 int(base_bonus * 2.0),
                 f"Bonus {completion_bonus} above ceiling at balance {balance}",
             )
-

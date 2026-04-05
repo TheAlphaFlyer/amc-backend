@@ -786,8 +786,10 @@ This notice was issued by Officer {interaction.user.display_name}. If you wish t
             return
 
         from amc.mod_detection import (
-            detect_custom_parts, detect_incompatible_parts,
-            format_custom_parts, format_incompatible_parts,
+            detect_custom_parts,
+            detect_incompatible_parts,
+            format_custom_parts,
+            format_incompatible_parts,
         )
 
         for vehicle in main_vehicles.values():

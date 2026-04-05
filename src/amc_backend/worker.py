@@ -26,7 +26,11 @@ from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 from amc.auto_arrest import run_patrol_loop  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
-from amc_finance.services import apply_interest_to_bank_accounts, apply_wealth_tax, transfer_nirc  # noqa: E402
+from amc_finance.services import (  # noqa: E402
+    apply_interest_to_bank_accounts,
+    apply_wealth_tax,
+    transfer_nirc,
+)
 from amc_finance.loans import evaluate_credit_scores  # noqa: E402
 
 REDIS_SETTINGS = RedisSettings(**settings.REDIS_SETTINGS)
@@ -77,7 +81,6 @@ async def startup(ctx):
         base_url=settings.EVENT_MOD_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
     )
 
-
     if settings.DISCORD_TOKEN:
         ctx["discord_client"] = discord_client
         bot_task_handle = asyncio.create_task(run_discord())
@@ -104,9 +107,11 @@ async def startup(ctx):
     if not WEBHOOK_SSE_ENABLED:
         current_seq = cache.get(LAST_SEQ_CACHE_KEY, 0)
         if not current_seq:
-            latest_id = await ServerCargoArrivedLog.objects.order_by("-id").values_list(
-                "id", flat=True
-            ).afirst()
+            latest_id = (
+                await ServerCargoArrivedLog.objects.order_by("-id")
+                .values_list("id", flat=True)
+                .afirst()
+            )
             if latest_id:
                 cache.set(LAST_SEQ_CACHE_KEY, latest_id, timeout=None)
                 print(f"Bootstrapped {LAST_SEQ_CACHE_KEY} from DB: {latest_id}")
@@ -119,7 +124,9 @@ async def startup(ctx):
             if events:
                 max_ts = max(e["timestamp"] for e in events)
                 cache.set(LAST_TS_CACHE_KEY, max_ts, timeout=None)
-                print(f"Bootstrapped {LAST_TS_CACHE_KEY} from mod buffer: {max_ts} ({len(events)} events)")
+                print(
+                    f"Bootstrapped {LAST_TS_CACHE_KEY} from mod buffer: {max_ts} ({len(events)} events)"
+                )
         except Exception as e:
             print(f"Failed to bootstrap timestamp floor: {e}")
 
@@ -158,8 +165,6 @@ async def shutdown(ctx):
     if http_client := ctx.get("http_client_event_mod"):
         await http_client.close()
 
-
-
     if bot_task_handle and (discord_client := ctx.get("discord_client")):
         asyncio.run_coroutine_threadsafe(discord_client.close(), discord_client.loop)
         await bot_task_handle
@@ -188,10 +193,14 @@ class WorkerSettings:
     ]
     cron_jobs = [
         # Polling cron — only active when SSE is disabled (default)
-        *([
-            # pyrefly: ignore [bad-argument-type]
-            cron(monitor_webhook, second=set(range(0, 60, 4))),
-        ] if not WEBHOOK_SSE_ENABLED else []),
+        *(
+            [
+                # pyrefly: ignore [bad-argument-type]
+                cron(monitor_webhook, second=set(range(0, 60, 4))),
+            ]
+            if not WEBHOOK_SSE_ENABLED
+            else []
+        ),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_locations, second=None),
         # pyrefly: ignore [bad-argument-type]

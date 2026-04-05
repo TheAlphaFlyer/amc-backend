@@ -31,11 +31,13 @@ def register(hook_name: str):
         async def handle_cargo_arrived(event, player, character, ctx):
             ...
     """
+
     def decorator(fn: EventHandler) -> EventHandler:
         if hook_name in REGISTRY:
             logger.warning("Overwriting handler for hook %s", hook_name)
         REGISTRY[hook_name] = fn
         return fn
+
     return decorator
 
 

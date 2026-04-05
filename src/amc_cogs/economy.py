@@ -753,7 +753,9 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         # Income breakdown
         income_lines = []
         for key, data in summary["income"]["breakdown"].items():
-            income_lines.append(f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`")
+            income_lines.append(
+                f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`"
+            )
         income_str = "\n".join(income_lines) if income_lines else "No income recorded."
         embed.add_field(
             name=f"📈 Total Income: `${summary['income']['total']:,}`",
@@ -764,8 +766,12 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         # Expense breakdown
         expense_lines = []
         for key, data in summary["expenses"]["breakdown"].items():
-            expense_lines.append(f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`")
-        expense_str = "\n".join(expense_lines) if expense_lines else "No expenses recorded."
+            expense_lines.append(
+                f"{data['emoji']} **{data['label']}:** `${data['amount']:,}`"
+            )
+        expense_str = (
+            "\n".join(expense_lines) if expense_lines else "No expenses recorded."
+        )
         embed.add_field(
             name=f"📉 Total Expenses: `${summary['expenses']['total']:,}`",
             value=expense_str,
@@ -864,7 +870,9 @@ The purpose of this transfer is to ensure sufficient liquidity within the server
         description="Withdraws funds from the bank back to the treasury",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def treasury_bank_withdrawal(self, interaction, amount: int, description: str):
+    async def treasury_bank_withdrawal(
+        self, interaction, amount: int, description: str
+    ):
         now = timezone.now()
         try:
             await make_treasury_bank_withdrawal(amount, description)
@@ -1071,7 +1079,9 @@ The purpose of this transfer is to return funds from the bank to the government 
             except discord.Forbidden:
                 logger.info(f"Cannot DM user {player.discord_user_id} (DMs disabled)")
             except Exception:
-                logger.exception(f"Failed to send NPL warning to {player.discord_user_id}")
+                logger.exception(
+                    f"Failed to send NPL warning to {player.discord_user_id}"
+                )
                 continue
             account.npl_warning_sent_at = timezone.now()
             await account.asave(update_fields=["npl_warning_sent_at"])
@@ -1088,7 +1098,9 @@ The purpose of this transfer is to return funds from the bank to the government 
         for account in crossover_accounts:
             character = account.character
             if character.crossover_warning_sent_at is not None:
-                if timezone.now() < character.crossover_warning_sent_at + timedelta(days=30):
+                if timezone.now() < character.crossover_warning_sent_at + timedelta(
+                    days=30
+                ):
                     continue
             player = character.player
             if not player or not player.discord_user_id:
@@ -1110,7 +1122,9 @@ The purpose of this transfer is to return funds from the bank to the government 
             except discord.Forbidden:
                 logger.info(f"Cannot DM user {player.discord_user_id} (DMs disabled)")
             except Exception:
-                logger.exception(f"Failed to send crossover warning to {player.discord_user_id}")
+                logger.exception(
+                    f"Failed to send crossover warning to {player.discord_user_id}"
+                )
                 continue
             character.crossover_warning_sent_at = timezone.now()
             await character.asave(update_fields=["crossover_warning_sent_at"])
@@ -1133,7 +1147,11 @@ The purpose of this transfer is to return funds from the bank to the government 
         for account in npl_accounts:
             pct = 0
             if account.min_required_repayment > 0:
-                pct = int(account.total_repaid_in_period / account.min_required_repayment * 100)
+                pct = int(
+                    account.total_repaid_in_period
+                    / account.min_required_repayment
+                    * 100
+                )
             lines.append(
                 f"**{account.character.name}** — `${account.balance:,.0f}` (repaid {pct}% of minimum)"
             )
@@ -1150,8 +1168,7 @@ The purpose of this transfer is to return funds from the bank to the government 
             title="🏦 Bank of ASEAN — Collections Board",
             description=(
                 "The following accounts have not met the minimum repayment "
-                "for their payment plan period.\n\n"
-                + description
+                "for their payment plan period.\n\n" + description
             ),
             color=discord.Color.red(),
             timestamp=timezone.now(),
@@ -1166,7 +1183,9 @@ The purpose of this transfer is to return funds from the bank to the government 
             value=f"`{len(lines)}`",
             inline=True,
         )
-        embed.set_footer(text="Make deliveries or repayments to clear your name from this list.")
+        embed.set_footer(
+            text="Make deliveries or repayments to clear your name from this list."
+        )
 
         treasury_channel_id = getattr(
             settings, "DISCORD_TREASURY_CHANNEL_ID", 1402660537619320872
@@ -1189,7 +1208,9 @@ The purpose of this transfer is to return funds from the bank to the government 
         npl_accounts = await sync_to_async(get_non_performing_loans)()
 
         if not npl_accounts:
-            await interaction.followup.send("No non-performing loans found.", ephemeral=True)
+            await interaction.followup.send(
+                "No non-performing loans found.", ephemeral=True
+            )
             return
 
         # Sort by shortfall (required - repaid) descending
@@ -1200,7 +1221,7 @@ The purpose of this transfer is to return funds from the bank to the government 
 
         # Build compact table
         header = f"{'Name':<16} | {'Balance':>10} | {'Repaid':>8} | {'Req':>8} | {'Per':>3}\n"
-        separator = f"{'-'*16}-+-{'-'*10}-+-{'-'*8}-+-{'-'*8}-+-{'-'*3}\n"
+        separator = f"{'-' * 16}-+-{'-' * 10}-+-{'-' * 8}-+-{'-' * 8}-+-{'-' * 3}\n"
         table_lines = []
         total_balance = 0
 
@@ -1239,7 +1260,11 @@ The purpose of this transfer is to return funds from the bank to the government 
             value=f"`${total_balance:,.0f}`",
             inline=True,
         )
-        from amc_finance.loans import NPL_DEFAULT_REPAYMENT_RATE, NPL_DEFAULT_PERIOD_DAYS
+        from amc_finance.loans import (
+            NPL_DEFAULT_REPAYMENT_RATE,
+            NPL_DEFAULT_PERIOD_DAYS,
+        )
+
         embed.set_footer(
             text=f"Default plan: {int(NPL_DEFAULT_REPAYMENT_RATE * 100)}% per {NPL_DEFAULT_PERIOD_DAYS}d | Req = required, Per = period"
         )

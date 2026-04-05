@@ -2,7 +2,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("amc", "0173_update_treasury_equilibrium_100m"),
     ]

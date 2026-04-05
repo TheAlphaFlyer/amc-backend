@@ -55,7 +55,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_criminal_record_created_on_first_money_delivery(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -77,7 +81,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_criminal_record_reset_on_repeat_delivery(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -86,7 +94,9 @@ class MoneyCargoHandlerTests(TestCase):
         # Pre-existing record expiring in 3 days
         original_expiry = timezone.now() + timedelta(days=3)
         await CriminalRecord.objects.acreate(
-            character=character, reason="Money delivery", expires_at=original_expiry,
+            character=character,
+            reason="Money delivery",
+            expires_at=original_expiry,
         )
 
         event = self._money_event(character)
@@ -104,7 +114,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_player_tag_refreshed(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -118,7 +132,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_treasury_expense_recorded(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
@@ -133,7 +151,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_non_money_cargo_no_special_handler(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """Non-Money cargos should not trigger criminal record or treasury expense."""
         mock_get_rp_mode.return_value = False
@@ -159,14 +181,20 @@ class MoneyCargoHandlerTests(TestCase):
         }
         await process_event(event, player, character)
 
-        self.assertEqual(await CriminalRecord.objects.filter(character=character).acount(), 0)
+        self.assertEqual(
+            await CriminalRecord.objects.filter(character=character).acount(), 0
+        )
         mock_refresh.assert_not_called()
         mock_treasury_expense.assert_not_called()
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_criminal_laundered_total_accumulated(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """criminal_laundered_total is incremented by money payment amount."""
         mock_get_rp_mode.return_value = False
@@ -182,7 +210,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_criminal_laundered_total_accumulates_across_deliveries(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """Multiple deliveries accumulate into criminal_laundered_total."""
         mock_get_rp_mode.return_value = False
@@ -201,7 +233,11 @@ class MoneyCargoHandlerTests(TestCase):
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_criminal_level_increases_with_total(
-        self, mock_treasury_expense, mock_refresh, mock_get_treasury, mock_get_rp_mode,
+        self,
+        mock_treasury_expense,
+        mock_refresh,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         """Criminal level increases after crossing 50k threshold."""
         from amc.special_cargo import calculate_criminal_level
@@ -214,10 +250,14 @@ class MoneyCargoHandlerTests(TestCase):
         event1 = self._money_event(character, payment=50_000)
         await process_event(event1, player, character)
         await character.arefresh_from_db()
-        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 2)
+        self.assertEqual(
+            calculate_criminal_level(character.criminal_laundered_total), 2
+        )
 
         # Second delivery: 60k → total 110k → level 3
         event2 = self._money_event(character, payment=60_000)
         await process_event(event2, player, character)
         await character.arefresh_from_db()
-        self.assertEqual(calculate_criminal_level(character.criminal_laundered_total), 3)
+        self.assertEqual(
+            calculate_criminal_level(character.criminal_laundered_total), 3
+        )

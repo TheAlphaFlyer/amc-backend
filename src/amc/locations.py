@@ -7,7 +7,13 @@ from django.contrib.gis.geos import Point
 from django.utils import timezone
 from django.conf import settings
 
-from amc.models import Character, CharacterLocation, Delivery, PoliceSession, ShortcutZone
+from amc.models import (
+    Character,
+    CharacterLocation,
+    Delivery,
+    PoliceSession,
+    ShortcutZone,
+)
 from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
 
@@ -116,7 +122,9 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
 
         # Proximity WARNING (e.g. 2000 units away)
         was_outside_warning = distance_old > SHORTCUT_ZONE_WARNING_RADIUS
-        is_inside_warning = distance_new <= SHORTCUT_ZONE_WARNING_RADIUS and distance_new > 0
+        is_inside_warning = (
+            distance_new <= SHORTCUT_ZONE_WARNING_RADIUS and distance_new > 0
+        )
 
         if was_outside_warning and is_inside_warning:
             await show_popup(
@@ -181,7 +189,8 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
 
     logger.info(
         "Teleport detected via location delta for %s (distance=%.0f)",
-        character.name, distance,
+        character.name,
+        distance,
     )
 
     # Reuse the existing penalty handler from webhook.py
@@ -309,6 +318,10 @@ async def monitor_locations(ctx):
     if characters_to_update:
         await Character.objects.abulk_update(
             characters_to_update,
-            ["last_location", "last_vehicle_key", "last_online", "shortcut_zone_entered_at"],
+            [
+                "last_location",
+                "last_vehicle_key",
+                "last_online",
+                "shortcut_zone_entered_at",
+            ],
         )
-

@@ -124,7 +124,6 @@ async def register_player_withdrawal(amount, character, player):
     )
 
 
-
 async def player_donation(amount, character, description="Player Donation"):
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
@@ -227,7 +226,9 @@ async def record_treasury_expense(amount, description="Treasury Expense"):
     )
 
 
-async def record_treasury_confiscation_income(amount, description="Police Confiscation"):
+async def record_treasury_confiscation_income(
+    amount, description="Police Confiscation"
+):
     """Credit the treasury via confiscation (Dr. Treasury Fund / Cr. Confiscation Revenue).
 
     Unlike player_donation, this does NOT increment total_donations.
@@ -399,9 +400,9 @@ WEALTH_TAX_EXEMPT = 1_000_000
 WEALTH_TAX_S = 2163  # time scale in hours (~90 days)
 WEALTH_TAX_BRACKETS = [
     # (floor, ceiling, k)
-    (1_000_000,   20_000_000,   0.65),  # Low
-    (20_000_000,  100_000_000,  1.05),  # Mid
-    (100_000_000, float('inf'), 1.55),  # High
+    (1_000_000, 20_000_000, 0.65),  # Low
+    (20_000_000, 100_000_000, 1.05),  # Mid
+    (100_000_000, float("inf"), 1.55),  # High
 ]
 
 # Sovereign Reserves — NIRC (Net Investment Returns Contribution)

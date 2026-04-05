@@ -28,7 +28,9 @@ def swap_reserves_wealth_tax_entries(apps, schema_editor):
         count += 1
 
     if count:
-        print(f"\n  Swapped {count} Sovereign Reserves wealth tax entries (credit→debit)")
+        print(
+            f"\n  Swapped {count} Sovereign Reserves wealth tax entries (credit→debit)"
+        )
 
 
 def reverse_swap(apps, schema_editor):

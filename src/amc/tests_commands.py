@@ -395,18 +395,23 @@ class CommandsTestCase(TestCase):
     async def test_cmd_tp_vehicle_police(self):
         with (
             patch("amc.commands.teleport.PoliceSession.objects.filter") as mock_filter,
-            patch("amc.commands.teleport.enter_last_vehicle", new=AsyncMock(return_value={"status": "success"})) as mock_enter,
+            patch(
+                "amc.commands.teleport.enter_last_vehicle",
+                new=AsyncMock(return_value={"status": "success"}),
+            ) as mock_enter,
         ):
             mock_filter.return_value.aexists = AsyncMock(return_value=True)
 
             await cmd_tp_vehicle(self.ctx)
 
             mock_enter.assert_called_with(self.ctx.http_client_mod, "guid-123")
-            
+
     async def test_cmd_tp_vehicle_not_police(self):
         with (
             patch("amc.commands.teleport.PoliceSession.objects.filter") as mock_filter,
-            patch("amc.commands.teleport.enter_last_vehicle", new=AsyncMock()) as mock_enter,
+            patch(
+                "amc.commands.teleport.enter_last_vehicle", new=AsyncMock()
+            ) as mock_enter,
         ):
             mock_filter.return_value.aexists = AsyncMock(return_value=False)
 
@@ -574,7 +579,10 @@ class CommandsTestCase(TestCase):
             mock_job.source_points.all.return_value = [sp_mock]
             mock_job.destination_points.all.return_value = [dp_mock]
 
-            with patch("amc.commands.jobs.calculate_treasury_multiplier", new=MagicMock(return_value=1.5)):
+            with patch(
+                "amc.commands.jobs.calculate_treasury_multiplier",
+                new=MagicMock(return_value=1.5),
+            ):
                 await cmd_jobs(self.ctx)
                 self.ctx.reply.assert_called()
                 args, _ = self.ctx.reply.call_args
@@ -663,9 +671,7 @@ class CommandsTestCase(TestCase):
         """When called with event_id, sets up that event."""
         mock_event = MagicMock()
 
-        with patch(
-            "amc.models.ScheduledEvent.objects.select_related"
-        ) as mock_sr:
+        with patch("amc.models.ScheduledEvent.objects.select_related") as mock_sr:
             mock_sr.return_value.filter.return_value.aget = AsyncMock(
                 return_value=mock_event
             )
@@ -1498,7 +1504,9 @@ class CommandsTestCase(TestCase):
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
-                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+                return_value=[
+                    {"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}
+                ],
             ),
             patch(
                 "amc.commands.vehicles.detect_incompatible_parts",
@@ -1620,7 +1628,9 @@ class CommandsTestCase(TestCase):
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
-                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+                return_value=[
+                    {"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}
+                ],
             ),
             patch(
                 "amc.commands.vehicles.detect_incompatible_parts",
@@ -1689,7 +1699,9 @@ class CommandsTestCase(TestCase):
             }
             mod_detection._vehicle_type_map = {"Jemusi": "Small"}
             mod_detection._stock_part_keys = {
-                "bike_i2_30hp", "smallblock_140hp", "stockbrake",
+                "bike_i2_30hp",
+                "smallblock_140hp",
+                "stockbrake",
             }
 
             parts = [
@@ -1796,13 +1808,15 @@ class CommandsTestCase(TestCase):
             ),
             patch(
                 "amc.commands.vehicles.detect_incompatible_parts",
-                return_value=[{
-                    "key": "Bike_I2_30HP",
-                    "slot": "Engine",
-                    "slot_value": 0,
-                    "vehicle_type": "Small",
-                    "allowed_types": ["Bike"],
-                }],
+                return_value=[
+                    {
+                        "key": "Bike_I2_30HP",
+                        "slot": "Engine",
+                        "slot_value": 0,
+                        "vehicle_type": "Small",
+                        "allowed_types": ["Bike"],
+                    }
+                ],
             ),
         ):
             await cmd_check_mods(self.ctx)
@@ -1880,7 +1894,9 @@ class CommandsTestCase(TestCase):
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
-                return_value=[{"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}],
+                return_value=[
+                    {"key": "CustomTurbo_XYZ", "slot": "Turbocharger", "slot_value": 5}
+                ],
             ),
             patch("amc.commands.vehicles.detect_incompatible_parts", return_value=[]),
         ):
@@ -1892,6 +1908,7 @@ class CommandsTestCase(TestCase):
             self.assertIn("AWD (Part-time)", output)
             self.assertIn("4/4 wheels", output)
             self.assertIn("2/2 axles", output)
+
 
 class ArrestCommandTestCase(TestCase):
     """Tests for /arrest command."""
@@ -1947,9 +1964,9 @@ class ArrestCommandTestCase(TestCase):
                     uid = str(self.criminal_player.unique_id)
                     name = "CriminalPlayer"
                 else:
-                    guid = f"CRIM_GUID_{i+1:03d}"
-                    uid = f"7656119800000{i+10:04d}"
-                    name = f"Criminal{i+1}"
+                    guid = f"CRIM_GUID_{i + 1:03d}"
+                    uid = f"7656119800000{i + 10:04d}"
+                    name = f"Criminal{i + 1}"
                 crim_data = {
                     "name": name,
                     "unique_id": uid,
@@ -1957,7 +1974,10 @@ class ArrestCommandTestCase(TestCase):
                     "location": f"X={loc[0]} Y={loc[1]} Z={loc[2]}",
                 }
                 if has_vehicle:
-                    crim_data["vehicle"] = {"name": "Longhorn Semi", "unique_id": 12345 + i}
+                    crim_data["vehicle"] = {
+                        "name": "Longhorn Semi",
+                        "unique_id": 12345 + i,
+                    }
                 players.append((uid, crim_data))
         return players
 
@@ -1969,7 +1989,9 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_not_cop(self):
         """Non-cop player gets rejection."""
-        with patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys:
+        with patch(
+            "amc.commands.faction.send_system_message", new=AsyncMock()
+        ) as mock_sys:
             await cmd_arrest(self.ctx)
             mock_sys.assert_called()
             self.assertIn("police duty", mock_sys.call_args[0][1])
@@ -1986,7 +2008,9 @@ class ArrestCommandTestCase(TestCase):
                 "amc.commands.faction.get_players",
                 new=AsyncMock(return_value=mock_players),
             ),
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             await cmd_arrest(self.ctx)
             mock_sys.assert_called()
@@ -2010,7 +2034,9 @@ class ArrestCommandTestCase(TestCase):
                 "amc.commands.faction.get_players",
                 new=AsyncMock(return_value=mock_players),
             ),
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             await cmd_arrest(self.ctx)
             mock_sys.assert_called()
@@ -2041,13 +2067,16 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
             msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("too fast" in m for m in msgs), f"Expected 'too fast' in msgs: {msgs}"
+                any("too fast" in m for m in msgs),
+                f"Expected 'too fast' in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_cop_moved_still_succeeds(self):
@@ -2112,7 +2141,9 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2129,7 +2160,9 @@ class ArrestCommandTestCase(TestCase):
 
         with (
             patch("amc.commands.faction.cache") as mock_cache,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = True  # cooldown active
             await cmd_arrest(self.ctx)
@@ -2164,21 +2197,17 @@ class ArrestCommandTestCase(TestCase):
             patch(
                 "amc.commands.faction.force_exit_vehicle", new=AsyncMock()
             ) as mock_exit,
+            patch("amc.commands.faction.teleport_player", new=AsyncMock()) as mock_tp,
+            patch("amc.commands.faction.show_popup", new=AsyncMock()) as mock_popup,
             patch(
-                "amc.commands.faction.teleport_player", new=AsyncMock()
-            ) as mock_tp,
-            patch(
-                "amc.commands.faction.show_popup", new=AsyncMock()
-            ) as mock_popup,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
             # Vehicle exit called
-            mock_exit.assert_called_with(
-                self.ctx.http_client_mod, "CRIM_GUID_001"
-            )
+            mock_exit.assert_called_with(self.ctx.http_client_mod, "CRIM_GUID_001")
 
             # Teleported to jail
             mock_tp.assert_called_with(
@@ -2204,16 +2233,21 @@ class ArrestCommandTestCase(TestCase):
 
             # Server-wide announcement
             self.ctx.announce.assert_called()
-            self.assertIn(
-                "arrested", self.ctx.announce.call_args[0][0]
-            )
+            self.assertIn("arrested", self.ctx.announce.call_args[0][0])
 
             # Cooldown set
             mock_cache.set.assert_called()
 
     async def test_cmd_arrest_retroactive_confiscates_money(self):
         """Criminal arrested — Wanted at 270s (90%) → 90% confiscation."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation, Wanted
+        from amc.models import (
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+            Delivery,
+            Confiscation,
+            Wanted,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2230,10 +2264,14 @@ class ArrestCommandTestCase(TestCase):
         # Delivery + Wanted at 90% protection (540s remaining)
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=25_000, quantity=1,
+            cargo_key="Money",
+            payment=25_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=270)
+        await Wanted.objects.acreate(
+            character=self.criminal_character, wanted_remaining=270
+        )
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2241,43 +2279,69 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()),
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
-            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
-            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
-            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()) as mock_prog,
-            patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()) as mock_fund_wallet,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
+            patch(
+                "amc.commands.faction.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.faction.record_treasury_confiscation_income",
+                new=AsyncMock(),
+            ) as mock_treasury,
+            patch(
+                "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
+            ) as mock_prog,
+            patch(
+                "amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()
+            ) as mock_fund_wallet,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
             self.assertEqual(mock_transfer.call_count, 2)
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, -22500,
-                "Money Confiscated", str(self.criminal_player.unique_id),
+                self.ctx.http_client_mod,
+                -22500,
+                "Money Confiscated",
+                str(self.criminal_player.unique_id),
             )
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, 22500,
-                "Confiscation Reward", str(self.player.unique_id),
+                self.ctx.http_client_mod,
+                22500,
+                "Confiscation Reward",
+                str(self.player.unique_id),
             )
             mock_treasury.assert_called_once_with(22500, "Police Confiscation")
             mock_prog.assert_called_once_with(
-                self.character, 22500,
-                http_client=self.ctx.http_client, session=self.ctx.http_client_mod,
+                self.character,
+                22500,
+                http_client=self.ctx.http_client,
+                session=self.ctx.http_client_mod,
             )
-            mock_fund_wallet.assert_called_once_with(22500, self.character, "Confiscation Reward")
+            mock_fund_wallet.assert_called_once_with(
+                22500, self.character, "Confiscation Reward"
+            )
 
-            await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
+            await self.criminal_character.arefresh_from_db(
+                fields=["criminal_laundered_total"]
+            )
             self.assertEqual(self.criminal_character.criminal_laundered_total, 27_500)
 
             self.assertTrue(
                 await Confiscation.objects.filter(
-                    amount=22500, officer=self.character, character=self.criminal_character,
+                    amount=22500,
+                    officer=self.character,
+                    character=self.criminal_character,
                 ).aexists()
             )
 
@@ -2298,7 +2362,13 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_confiscation_5min_half(self):
         """Wanted at 150s (50%) → 50% confiscation."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Wanted
+        from amc.models import (
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+            Delivery,
+            Wanted,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2311,10 +2381,14 @@ class ArrestCommandTestCase(TestCase):
 
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=20_000, quantity=1,
+            cargo_key="Money",
+            payment=20_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=150)
+        await Wanted.objects.acreate(
+            character=self.criminal_character, wanted_remaining=150
+        )
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2322,30 +2396,48 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()),
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
             patch("amc.commands.faction.send_system_message", new=AsyncMock()),
-            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
-            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
-            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.faction.record_treasury_confiscation_income",
+                new=AsyncMock(),
+            ) as mock_treasury,
+            patch(
+                "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
+            ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, -10000, "Money Confiscated",
+                self.ctx.http_client_mod,
+                -10000,
+                "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
             mock_treasury.assert_called_once_with(10000, "Police Confiscation")
 
     async def test_cmd_arrest_confiscation_9min_minimal(self):
         """Wanted at 30s (10%) → 10% confiscation."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Wanted
+        from amc.models import (
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+            Delivery,
+            Wanted,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2358,10 +2450,14 @@ class ArrestCommandTestCase(TestCase):
 
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=50_000, quantity=1,
+            cargo_key="Money",
+            payment=50_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
-        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=30)
+        await Wanted.objects.acreate(
+            character=self.criminal_character, wanted_remaining=30
+        )
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2369,30 +2465,48 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()),
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
             patch("amc.commands.faction.send_system_message", new=AsyncMock()),
-            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
-            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
-            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.faction.record_treasury_confiscation_income",
+                new=AsyncMock(),
+            ) as mock_treasury,
+            patch(
+                "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
+            ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, -5000, "Money Confiscated",
+                self.ctx.http_client_mod,
+                -5000,
+                "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
             mock_treasury.assert_called_once_with(5000, "Police Confiscation")
 
     async def test_cmd_arrest_confiscation_expired(self):
         """No Wanted record → $0 confiscated."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation
+        from amc.models import (
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+            Delivery,
+            Confiscation,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2406,7 +2520,9 @@ class ArrestCommandTestCase(TestCase):
         # Delivery exists but no Wanted record — expired/already safe
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=100_000, quantity=1,
+            cargo_key="Money",
+            payment=100_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
 
@@ -2416,16 +2532,26 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()),
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
             patch("amc.commands.faction.send_system_message", new=AsyncMock()),
-            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
-            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
-            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.faction.record_treasury_confiscation_income",
+                new=AsyncMock(),
+            ) as mock_treasury,
+            patch(
+                "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
+            ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
@@ -2437,7 +2563,14 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_confiscation_multi_delivery_scaling(self):
         """Multiple deliveries — only the most recent is confiscated."""
-        from amc.models import FactionMembership, FactionChoice, TeleportPoint, Delivery, Confiscation, Wanted
+        from amc.models import (
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+            Delivery,
+            Confiscation,
+            Wanted,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2454,16 +2587,22 @@ class ArrestCommandTestCase(TestCase):
         # Two deliveries — only the most recent (30_000) should be confiscated
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=50_000, quantity=1,
+            cargo_key="Money",
+            payment=50_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
         await Delivery.objects.acreate(
             character=self.criminal_character,
-            cargo_key="Money", payment=30_000, quantity=1,
+            cargo_key="Money",
+            payment=30_000,
+            quantity=1,
             timestamp=timezone.now(),
         )
         # Wanted at 240s (80%) → int(30000*0.8) = 24000 (only most recent delivery)
-        await Wanted.objects.acreate(character=self.criminal_character, wanted_remaining=240)
+        await Wanted.objects.acreate(
+            character=self.criminal_character, wanted_remaining=240
+        )
 
         mock_players = self._make_player_list(
             cop_loc=(100, 200, 300),
@@ -2471,33 +2610,45 @@ class ArrestCommandTestCase(TestCase):
         )
 
         with (
-            patch("amc.commands.faction.get_players", new=AsyncMock(return_value=mock_players)),
+            patch(
+                "amc.commands.faction.get_players",
+                new=AsyncMock(return_value=mock_players),
+            ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
             patch("amc.commands.faction.force_exit_vehicle", new=AsyncMock()),
             patch("amc.commands.faction.teleport_player", new=AsyncMock()),
             patch("amc.commands.faction.show_popup", new=AsyncMock()),
             patch("amc.commands.faction.send_system_message", new=AsyncMock()),
-            patch("amc.commands.faction.transfer_money", new=AsyncMock()) as mock_transfer,
-            patch("amc.commands.faction.record_treasury_confiscation_income", new=AsyncMock()) as mock_treasury,
-            patch("amc.commands.faction.record_confiscation_for_level", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.transfer_money", new=AsyncMock()
+            ) as mock_transfer,
+            patch(
+                "amc.commands.faction.record_treasury_confiscation_income",
+                new=AsyncMock(),
+            ) as mock_treasury,
+            patch(
+                "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
+            ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
 
             mock_transfer.assert_any_call(
-                self.ctx.http_client_mod, -24000, "Money Confiscated",
+                self.ctx.http_client_mod,
+                -24000,
+                "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
             mock_treasury.assert_called_once_with(24000, "Police Confiscation")
 
-            await self.criminal_character.arefresh_from_db(fields=["criminal_laundered_total"])
+            await self.criminal_character.arefresh_from_db(
+                fields=["criminal_laundered_total"]
+            )
             self.assertEqual(self.criminal_character.criminal_laundered_total, 176_000)
 
-            self.assertTrue(
-                await Confiscation.objects.filter(amount=24000).aexists()
-            )
+            self.assertTrue(await Confiscation.objects.filter(amount=24000).aexists())
 
     async def test_cmd_arrest_no_jail(self):
         """Jail TeleportPoint doesn't exist → error message."""
@@ -2519,7 +2670,9 @@ class ArrestCommandTestCase(TestCase):
             ),
             patch("amc.commands.faction.asyncio.sleep", new=AsyncMock()),
             patch("amc.commands.faction.cache") as mock_cache,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2531,7 +2684,12 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_arrest_inside_zone(self):
         """Cop inside an active ArrestZone → arrest proceeds normally."""
-        from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
+        from amc.models import (
+            ArrestZone,
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+        )
         from django.contrib.gis.geos import Point, Polygon
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2606,7 +2764,9 @@ class ArrestCommandTestCase(TestCase):
                 new=AsyncMock(return_value=mock_players),
             ),
             patch("amc.commands.faction.cache") as mock_cache,
-            patch("amc.commands.faction.send_system_message", new=AsyncMock()) as mock_sys,
+            patch(
+                "amc.commands.faction.send_system_message", new=AsyncMock()
+            ) as mock_sys,
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2614,13 +2774,21 @@ class ArrestCommandTestCase(TestCase):
             mock_sys.assert_called()
             msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("designated" in m.lower() or "arrest zone" in m.lower() for m in msgs),
+                any(
+                    "designated" in m.lower() or "arrest zone" in m.lower()
+                    for m in msgs
+                ),
                 f"Expected zone rejection in msgs: {msgs}",
             )
 
     async def test_cmd_arrest_no_zones_defined(self):
         """No ArrestZone rows → arrests allowed everywhere (backward-compat)."""
-        from amc.models import ArrestZone, FactionMembership, FactionChoice, TeleportPoint
+        from amc.models import (
+            ArrestZone,
+            FactionMembership,
+            FactionChoice,
+            TeleportPoint,
+        )
         from django.contrib.gis.geos import Point
 
         await PoliceSession.objects.acreate(character=self.character)
@@ -2673,38 +2841,53 @@ class ArrestCommandTestCase(TestCase):
         # Create characters with different criminal levels (IDs avoid setUp collision)
         player_a = await Player.objects.acreate(unique_id="76561198000000101")
         char_online = await Character.objects.acreate(
-            name="OnlineCriminal", player=player_a, guid="guid-online",
+            name="OnlineCriminal",
+            player=player_a,
+            guid="guid-online",
             criminal_laundered_total=250_000,  # level 6
         )
         player_b = await Player.objects.acreate(unique_id="76561198000000102")
         char_offline = await Character.objects.acreate(
-            name="OfflineCriminal", player=player_b, guid="guid-offline",
+            name="OfflineCriminal",
+            player=player_b,
+            guid="guid-offline",
             criminal_laundered_total=500_000,  # level 11
         )
         player_c = await Player.objects.acreate(unique_id="76561198000000103")
         char_online2 = await Character.objects.acreate(
-            name="OnlineCriminal2", player=player_c, guid="guid-online2",
+            name="OnlineCriminal2",
+            player=player_c,
+            guid="guid-online2",
             criminal_laundered_total=100_000,  # level 3
         )
 
         # Create active records
         await CriminalRecord.objects.acreate(
-            character=char_online, reason="Money delivery",
+            character=char_online,
+            reason="Money delivery",
             expires_at=now + timedelta(days=3),
         )
         await CriminalRecord.objects.acreate(
-            character=char_offline, reason="Money delivery",
+            character=char_offline,
+            reason="Money delivery",
             expires_at=now + timedelta(days=5),
         )
         await CriminalRecord.objects.acreate(
-            character=char_online2, reason="Money delivery",
+            character=char_online2,
+            reason="Money delivery",
             expires_at=now + timedelta(days=1),
         )
 
         # Mock online players: only guid-online and guid-online2 are online
         mock_players = [
-            ("76561198000000101", {"character_guid": "guid-online", "name": "OnlineCriminal"}),
-            ("76561198000000103", {"character_guid": "guid-online2", "name": "OnlineCriminal2"}),
+            (
+                "76561198000000101",
+                {"character_guid": "guid-online", "name": "OnlineCriminal"},
+            ),
+            (
+                "76561198000000103",
+                {"character_guid": "guid-online2", "name": "OnlineCriminal2"},
+            ),
         ]
 
         with patch(
@@ -2745,11 +2928,14 @@ class ArrestCommandTestCase(TestCase):
         now = timezone.now()
         player_x = await Player.objects.acreate(unique_id="76561198000000104")
         char = await Character.objects.acreate(
-            name="ExpiredCriminal", player=player_x, guid="guid-expired",
+            name="ExpiredCriminal",
+            player=player_x,
+            guid="guid-expired",
             criminal_laundered_total=100_000,
         )
         await CriminalRecord.objects.acreate(
-            character=char, reason="Money delivery",
+            character=char,
+            reason="Money delivery",
             expires_at=now - timedelta(days=1),  # expired yesterday
         )
 
@@ -2768,11 +2954,14 @@ class ArrestCommandTestCase(TestCase):
         # Criminal with active police session — should be excluded
         player_cop = await Player.objects.acreate(unique_id="76561198000000201")
         char_cop = await Character.objects.acreate(
-            name="CopWithRecord", player=player_cop, guid="guid-cop-record",
+            name="CopWithRecord",
+            player=player_cop,
+            guid="guid-cop-record",
             criminal_laundered_total=300_000,
         )
         await CriminalRecord.objects.acreate(
-            character=char_cop, reason="Money delivery",
+            character=char_cop,
+            reason="Money delivery",
             expires_at=now + timedelta(days=3),
         )
         await PoliceSession.objects.acreate(character=char_cop)  # active session
@@ -2780,11 +2969,14 @@ class ArrestCommandTestCase(TestCase):
         # Regular criminal — should appear
         player_crim = await Player.objects.acreate(unique_id="76561198000000202")
         char_crim = await Character.objects.acreate(
-            name="RegularCriminal", player=player_crim, guid="guid-regular-crim",
+            name="RegularCriminal",
+            player=player_crim,
+            guid="guid-regular-crim",
             criminal_laundered_total=200_000,
         )
         await CriminalRecord.objects.acreate(
-            character=char_crim, reason="Money delivery",
+            character=char_crim,
+            reason="Money delivery",
             expires_at=now + timedelta(days=5),
         )
 

@@ -46,8 +46,9 @@ class Command(BaseCommand):
 
             characters = Character.objects.filter(
                 Exists(
-                    CharacterLocation.objects.filter(character=OuterRef("pk"))
-                    .values("pk")[:1]
+                    CharacterLocation.objects.filter(character=OuterRef("pk")).values(
+                        "pk"
+                    )[:1]
                 )
             ).order_by("id")
 
@@ -66,7 +67,9 @@ class Command(BaseCommand):
                 )
                 if existing.last_computed_at and existing.total_location_records > 0:
                     # Already has stats — do incremental
-                    await refresh_vehicle_stats(character, since=existing.last_computed_at)
+                    await refresh_vehicle_stats(
+                        character, since=existing.last_computed_at
+                    )
                 else:
                     await refresh_vehicle_stats(character)
             except CharacterLocationStats.DoesNotExist:

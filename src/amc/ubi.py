@@ -44,11 +44,7 @@ async def handout_ubi(ctx):
     }
 
     # Filter out characters with no driver_level (driver_level=0 is falsy)
-    eligible = {
-        guid: c
-        for guid, c in characters.items()
-        if c.driver_level
-    }
+    eligible = {guid: c for guid, c in characters.items() if c.driver_level}
 
     if not eligible:
         return
@@ -92,23 +88,20 @@ async def handout_ubi(ctx):
             else:
                 label = "Universal Basic Income"
 
-            await send_fund_to_player_wallet(
-                amount, character, label
-            )
-            await transfer_money(
-                http_client_mod, int(amount), label, player_id
-            )
+            await send_fund_to_player_wallet(amount, character, label)
+            await transfer_money(http_client_mod, int(amount), label, player_id)
 
             # Auto-repay loan with UBI
             loan_balance = await get_player_loan_balance(character)
             if loan_balance > 0:
                 repayment = min(amount, loan_balance)
                 await repay_loan_for_profit(
-                    character, amount, http_client_mod,
+                    character,
+                    amount,
+                    http_client_mod,
                     repayment_override=repayment,
                     game_session=http_client,
                 )
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
             continue
-

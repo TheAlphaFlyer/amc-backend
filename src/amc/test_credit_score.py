@@ -101,6 +101,7 @@ class EvaluateCreditScoresTest(TestCase):
     @sync_to_async
     def _make_character(self, credit_score=100):
         from amc.models import Character, Player
+
         player = Player.objects.create(unique_id=self._next_player_id())
         return Character.objects.create(
             player=player,
@@ -111,6 +112,7 @@ class EvaluateCreditScoresTest(TestCase):
     @sync_to_async
     def _make_loan_account(self, character, balance, last_evaluated=None):
         from amc_finance.models import Account
+
         account, _ = Account.objects.get_or_create(
             account_type=Account.AccountType.ASSET,
             book=Account.Book.BANK,
@@ -121,7 +123,10 @@ class EvaluateCreditScoresTest(TestCase):
                 "last_credit_score_evaluated_at": last_evaluated,
             },
         )
-        if account.balance != balance or account.last_credit_score_evaluated_at != last_evaluated:
+        if (
+            account.balance != balance
+            or account.last_credit_score_evaluated_at != last_evaluated
+        ):
             account.balance = balance
             account.last_credit_score_evaluated_at = last_evaluated
             account.save()
@@ -130,6 +135,7 @@ class EvaluateCreditScoresTest(TestCase):
     @sync_to_async
     def _create_repayment(self, account, amount, when=None):
         from amc_finance.models import JournalEntry, LedgerEntry
+
         now = when or timezone.now()
         je = JournalEntry.objects.create(
             date=now.date(),
@@ -263,7 +269,10 @@ class EvaluateCreditScoresTest(TestCase):
             await evaluate_credit_scores()
 
         # +10 (met) + (-5 utilization) = +5
-        self.assertEqual(await self._refresh_score(char), 100 + CREDIT_SCORE_MET + CREDIT_UTILIZATION_HIGH_PENALTY)
+        self.assertEqual(
+            await self._refresh_score(char),
+            100 + CREDIT_SCORE_MET + CREDIT_UTILIZATION_HIGH_PENALTY,
+        )
 
     async def test_very_high_utilization_penalty(self):
         """Balance/max_loan > 90% → extra -10 penalty."""
@@ -276,7 +285,10 @@ class EvaluateCreditScoresTest(TestCase):
             await evaluate_credit_scores()
 
         # +10 (met) + (-10 utilization) = 0
-        self.assertEqual(await self._refresh_score(char), 100 + CREDIT_SCORE_MET + CREDIT_UTILIZATION_VERY_HIGH_PENALTY)
+        self.assertEqual(
+            await self._refresh_score(char),
+            100 + CREDIT_SCORE_MET + CREDIT_UTILIZATION_VERY_HIGH_PENALTY,
+        )
 
     async def test_low_utilization_no_penalty(self):
         """Balance/max_loan <= 70% → no utilization penalty."""
@@ -301,4 +313,7 @@ class EvaluateCreditScoresTest(TestCase):
             await evaluate_credit_scores()
 
         # -30 (missed) + (-10 utilization) = -40
-        self.assertEqual(await self._refresh_score(char), 100 + CREDIT_SCORE_MISSED + CREDIT_UTILIZATION_VERY_HIGH_PENALTY)
+        self.assertEqual(
+            await self._refresh_score(char),
+            100 + CREDIT_SCORE_MISSED + CREDIT_UTILIZATION_VERY_HIGH_PENALTY,
+        )

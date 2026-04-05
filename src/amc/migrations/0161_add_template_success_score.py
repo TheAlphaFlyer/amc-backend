@@ -4,25 +4,33 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0160_characterlocationstats'),
+        ("amc", "0160_characterlocationstats"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='deliveryjobtemplate',
-            name='lifetime_completions',
-            field=models.PositiveIntegerField(default=0, help_text='Total jobs completed from this template (observability)'),
+            model_name="deliveryjobtemplate",
+            name="lifetime_completions",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Total jobs completed from this template (observability)",
+            ),
         ),
         migrations.AddField(
-            model_name='deliveryjobtemplate',
-            name='lifetime_expirations',
-            field=models.PositiveIntegerField(default=0, help_text='Total jobs expired from this template (observability)'),
+            model_name="deliveryjobtemplate",
+            name="lifetime_expirations",
+            field=models.PositiveIntegerField(
+                default=0,
+                help_text="Total jobs expired from this template (observability)",
+            ),
         ),
         migrations.AddField(
-            model_name='deliveryjobtemplate',
-            name='success_score',
-            field=models.FloatField(default=1.0, help_text='Adaptive posting multiplier [0.1-2.0]. Boosted on completion, decayed on expiry.'),
+            model_name="deliveryjobtemplate",
+            name="success_score",
+            field=models.FloatField(
+                default=1.0,
+                help_text="Adaptive posting multiplier [0.1-2.0]. Boosted on completion, decayed on expiry.",
+            ),
         ),
     ]

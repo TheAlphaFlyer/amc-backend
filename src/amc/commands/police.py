@@ -1,6 +1,11 @@
 from amc.command_framework import registry, CommandContext
 from amc.mod_server import send_system_message
-from amc.police import activate_police, deactivate_police, is_police, calculate_police_level
+from amc.police import (
+    activate_police,
+    deactivate_police,
+    is_police,
+    calculate_police_level,
+)
 from django.utils.translation import gettext as _, gettext_lazy
 
 

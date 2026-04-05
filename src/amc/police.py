@@ -75,7 +75,9 @@ async def deactivate_police(character, session):
     await refresh_player_name(character, session)
 
 
-async def record_confiscation_for_level(character, amount, http_client=None, session=None):
+async def record_confiscation_for_level(
+    character, amount, http_client=None, session=None
+):
     """Increment confiscated total and check for level-up.
 
     Args:

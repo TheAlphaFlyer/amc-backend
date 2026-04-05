@@ -81,7 +81,6 @@ cargo_names = {
 }
 
 
-
 DEFAULT_SAVING_RATE = 1
 
 
@@ -203,7 +202,6 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
         factor = float(best_rule.reward_value)
         if best_rule.reward_type == SubsidyRule.RewardType.PERCENTAGE:
             subsidy_factor = factor
-
 
             subsidy_amount = int(int(cargo.payment) * subsidy_factor)
         else:

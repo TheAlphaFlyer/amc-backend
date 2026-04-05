@@ -151,7 +151,9 @@ class InterestTestCase(TestCase):
 
         # 30 days offline → should get even less
         character_30d = await sync_to_async(CharacterFactory)()
-        character_30d.last_online = timezone.now() - timedelta(days=30)  # pyrefly: ignore
+        character_30d.last_online = timezone.now() - timedelta(
+            days=30
+        )  # pyrefly: ignore
         await character_30d.asave(update_fields=["last_online"])
         account_30d = await Account.objects.acreate(
             account_type=Account.AccountType.LIABILITY,
@@ -177,6 +179,7 @@ class WealthTaxTestCase(TestCase):
     async def test_exempt_bracket(self):
         """Balances at or below 500K should never be taxed."""
         from .services import calculate_wealth_tax
+
         self.assertEqual(calculate_wealth_tax(500_000, 1000), 0)
         self.assertEqual(calculate_wealth_tax(400_000, 5000), 0)
         self.assertEqual(calculate_wealth_tax(0, 10000), 0)
@@ -184,12 +187,14 @@ class WealthTaxTestCase(TestCase):
     async def test_no_tax_under_one_hour(self):
         """No tax if offline less than 1 hour."""
         from .services import calculate_wealth_tax
+
         self.assertEqual(calculate_wealth_tax(10_000_000, 0.5), 0)
         self.assertEqual(calculate_wealth_tax(10_000_000, 0), 0)
 
     async def test_low_bracket_only(self):
         """Balance in 500K-2.5M range should only use Low bracket (k=0.15)."""
         from .services import calculate_wealth_tax
+
         # 1M balance, 60 days offline
         tax = calculate_wealth_tax(1_000_000, 60 * 24)
         self.assertGreater(tax, 0)
@@ -199,6 +204,7 @@ class WealthTaxTestCase(TestCase):
     async def test_progressive_all_brackets(self):
         """Balance of 15M should use all three brackets marginally."""
         from .services import calculate_wealth_tax
+
         hours = 90 * 24
         tax_15m = calculate_wealth_tax(15_000_000, hours)
         tax_5m = calculate_wealth_tax(5_000_000, hours)
@@ -212,6 +218,7 @@ class WealthTaxTestCase(TestCase):
     async def test_tax_increases_with_time(self):
         """Tax rate should increase with offline duration (then plateau)."""
         from .services import calculate_wealth_tax
+
         tax_7d = calculate_wealth_tax(10_000_000, 7 * 24)
         tax_30d = calculate_wealth_tax(10_000_000, 30 * 24)
         tax_90d = calculate_wealth_tax(10_000_000, 90 * 24)
@@ -222,6 +229,7 @@ class WealthTaxTestCase(TestCase):
     async def test_tax_rate_eventually_decreases(self):
         """Hourly rate should peak then decrease (ln²-decay property)."""
         from .services import wealth_tax_hourly_rate
+
         rate_30d = wealth_tax_hourly_rate(0.25, 30 * 24)
         rate_5yr = wealth_tax_hourly_rate(0.25, 5 * 365 * 24)
 
@@ -367,6 +375,7 @@ class NIRCTransferTestCase(TestCase):
         await treasury.arefresh_from_db()
         self.assertEqual(treasury.balance, 100_000_000)
 
+
 class NPLTestCase(TestCase):
     async def _create_loan_account(self, character, balance=1_000_000):
         """Helper to create a loan account with a given balance."""
@@ -487,7 +496,9 @@ class NPLTestCase(TestCase):
         character = await sync_to_async(CharacterFactory)()
 
         # No loan taken — should exit early without calling transfer_money
-        with patch("amc.subsidies.transfer_money", new_callable=AsyncMock) as mock_transfer:
+        with patch(
+            "amc.subsidies.transfer_money", new_callable=AsyncMock
+        ) as mock_transfer:
             await on_vehicle_sold(character, "Tuscan", None)
             mock_transfer.assert_not_called()
 
@@ -537,7 +548,9 @@ class TreasuryBankTransferTestCase(TestCase):
             book=Account.Book.GOVERNMENT, name="Treasury Fund (in Bank)"
         )
         bank_vault = await Account.objects.aget(
-            book=Account.Book.BANK, character=None, account_type=Account.AccountType.ASSET
+            book=Account.Book.BANK,
+            character=None,
+            account_type=Account.AccountType.ASSET,
         )
         bank_equity = await Account.objects.aget(
             book=Account.Book.BANK, account_type=Account.AccountType.EQUITY
@@ -567,17 +580,20 @@ class CrossoverTestCase(TestCase):
     async def test_calculate_hourly_interest_basic(self):
         """Interest should be positive for a non-zero balance."""
         from .services import calculate_hourly_interest
+
         interest = calculate_hourly_interest(10_000_000, 24)
         self.assertGreater(interest, 0)
 
     async def test_calculate_hourly_interest_zero_balance(self):
         """Zero balance should return zero interest."""
         from .services import calculate_hourly_interest
+
         self.assertEqual(calculate_hourly_interest(0, 100), 0)
 
     async def test_calculate_hourly_interest_decays_offline(self):
         """Interest should decay with longer offline time."""
         from .services import calculate_hourly_interest
+
         interest_1d = calculate_hourly_interest(10_000_000, 24)
         interest_30d = calculate_hourly_interest(10_000_000, 30 * 24)
         self.assertGreater(interest_1d, interest_30d)
@@ -596,6 +612,7 @@ class CrossoverTestCase(TestCase):
         )
 
         from .services import get_crossover_accounts
+
         accounts = await sync_to_async(get_crossover_accounts)()
         char_ids = [a.character_id for a in accounts]
         self.assertIn(character.id, char_ids)
@@ -614,6 +631,7 @@ class CrossoverTestCase(TestCase):
         )
 
         from .services import get_crossover_accounts
+
         accounts = await sync_to_async(get_crossover_accounts)()
         char_ids = [a.character_id for a in accounts]
         self.assertNotIn(character.id, char_ids)
@@ -632,6 +650,7 @@ class CrossoverTestCase(TestCase):
         )
 
         from .services import get_crossover_accounts
+
         accounts = await sync_to_async(get_crossover_accounts)()
         char_ids = [a.character_id for a in accounts]
         self.assertNotIn(character.id, char_ids)
@@ -673,12 +692,14 @@ class TreasurySummaryTestCase(TestCase):
     def _create_journal_entry(self, description, entries, days_ago=0):
         """Create a journal entry with ledger entries."""
         from amc_finance.services import create_journal_entry
+
         date = (timezone.now() - timedelta(days=days_ago)).date()
         return create_journal_entry(date, description, None, entries)
 
     def test_get_treasury_summary_empty(self):
         """No transactions should return zeroes."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         self._create_gov_accounts()
 
         result = get_treasury_summary(target_date=timezone.now().date())
@@ -691,100 +712,143 @@ class TreasurySummaryTestCase(TestCase):
     def test_income_categorization_donation(self):
         """Player Donation should appear in income.breakdown.donations."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, revenue, _, _ = self._create_gov_accounts()
 
         # Balanced: Dr Treasury Fund, Cr Revenue
-        self._create_journal_entry("Player Donation", [
-            {"account": treasury_fund, "debit": Decimal(50_000), "credit": 0},
-            {"account": revenue, "debit": 0, "credit": Decimal(50_000)},
-        ])
+        self._create_journal_entry(
+            "Player Donation",
+            [
+                {"account": treasury_fund, "debit": Decimal(50_000), "credit": 0},
+                {"account": revenue, "debit": 0, "credit": Decimal(50_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["income"]["total"], Decimal(50_000))
         self.assertIn("donations", result["income"]["breakdown"])
-        self.assertEqual(result["income"]["breakdown"]["donations"]["amount"], Decimal(50_000))
+        self.assertEqual(
+            result["income"]["breakdown"]["donations"]["amount"], Decimal(50_000)
+        )
 
     def test_income_categorization_gov_employee(self):
         """Government Service entries should be categorized as gov_employee."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, revenue, _, _ = self._create_gov_accounts()
 
-        self._create_journal_entry("Government Service - Earnings", [
-            {"account": treasury_fund, "debit": Decimal(15_000), "credit": 0},
-            {"account": revenue, "debit": 0, "credit": Decimal(15_000)},
-        ])
-        self._create_journal_entry("Government Service - Job Bonus", [
-            {"account": treasury_fund, "debit": Decimal(5_000), "credit": 0},
-            {"account": revenue, "debit": 0, "credit": Decimal(5_000)},
-        ])
+        self._create_journal_entry(
+            "Government Service - Earnings",
+            [
+                {"account": treasury_fund, "debit": Decimal(15_000), "credit": 0},
+                {"account": revenue, "debit": 0, "credit": Decimal(15_000)},
+            ],
+        )
+        self._create_journal_entry(
+            "Government Service - Job Bonus",
+            [
+                {"account": treasury_fund, "debit": Decimal(5_000), "credit": 0},
+                {"account": revenue, "debit": 0, "credit": Decimal(5_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["income"]["total"], Decimal(20_000))
         self.assertIn("gov_employee", result["income"]["breakdown"])
-        self.assertEqual(result["income"]["breakdown"]["gov_employee"]["amount"], Decimal(20_000))
+        self.assertEqual(
+            result["income"]["breakdown"]["gov_employee"]["amount"], Decimal(20_000)
+        )
 
     def test_income_nirc_transfer(self):
         """NIRC Transfer should appear in income breakdown as nirc."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, _, _, reserves = self._create_gov_accounts()
 
-        self._create_journal_entry("NIRC Transfer", [
-            {"account": reserves, "debit": 0, "credit": Decimal(25_000)},
-            {"account": treasury_fund, "debit": Decimal(25_000), "credit": 0},
-        ])
+        self._create_journal_entry(
+            "NIRC Transfer",
+            [
+                {"account": reserves, "debit": 0, "credit": Decimal(25_000)},
+                {"account": treasury_fund, "debit": Decimal(25_000), "credit": 0},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertIn("nirc", result["income"]["breakdown"])
-        self.assertEqual(result["income"]["breakdown"]["nirc"]["amount"], Decimal(25_000))
+        self.assertEqual(
+            result["income"]["breakdown"]["nirc"]["amount"], Decimal(25_000)
+        )
         self.assertEqual(result["income"]["total"], Decimal(25_000))
 
     def test_expense_categorization_subsidy(self):
         """Subsidy entries should appear in expenses.breakdown.subsidies."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, _, expenses, _ = self._create_gov_accounts()
 
         # Balanced: Dr Expenses, Cr Treasury Fund
-        self._create_journal_entry("ASEAN Subsidy", [
-            {"account": expenses, "debit": Decimal(30_000), "credit": 0},
-            {"account": treasury_fund, "debit": 0, "credit": Decimal(30_000)},
-        ])
+        self._create_journal_entry(
+            "ASEAN Subsidy",
+            [
+                {"account": expenses, "debit": Decimal(30_000), "credit": 0},
+                {"account": treasury_fund, "debit": 0, "credit": Decimal(30_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["expenses"]["total"], Decimal(30_000))
         self.assertIn("subsidies", result["expenses"]["breakdown"])
-        self.assertEqual(result["expenses"]["breakdown"]["subsidies"]["amount"], Decimal(30_000))
+        self.assertEqual(
+            result["expenses"]["breakdown"]["subsidies"]["amount"], Decimal(30_000)
+        )
 
     def test_expense_categorization_ubi(self):
         """UBI and Government Salary should be categorized together."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, _, expenses, _ = self._create_gov_accounts()
 
-        self._create_journal_entry("Universal Basic Income", [
-            {"account": expenses, "debit": Decimal(6_000), "credit": 0},
-            {"account": treasury_fund, "debit": 0, "credit": Decimal(6_000)},
-        ])
-        self._create_journal_entry("Government Salary", [
-            {"account": expenses, "debit": Decimal(12_000), "credit": 0},
-            {"account": treasury_fund, "debit": 0, "credit": Decimal(12_000)},
-        ])
+        self._create_journal_entry(
+            "Universal Basic Income",
+            [
+                {"account": expenses, "debit": Decimal(6_000), "credit": 0},
+                {"account": treasury_fund, "debit": 0, "credit": Decimal(6_000)},
+            ],
+        )
+        self._create_journal_entry(
+            "Government Salary",
+            [
+                {"account": expenses, "debit": Decimal(12_000), "credit": 0},
+                {"account": treasury_fund, "debit": 0, "credit": Decimal(12_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertIn("ubi", result["expenses"]["breakdown"])
-        self.assertEqual(result["expenses"]["breakdown"]["ubi"]["amount"], Decimal(18_000))
+        self.assertEqual(
+            result["expenses"]["breakdown"]["ubi"]["amount"], Decimal(18_000)
+        )
 
     def test_surplus_calculation(self):
         """Income > expenses should result in positive surplus."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, revenue, expenses, _ = self._create_gov_accounts()
 
-        self._create_journal_entry("Player Donation", [
-            {"account": treasury_fund, "debit": Decimal(100_000), "credit": 0},
-            {"account": revenue, "debit": 0, "credit": Decimal(100_000)},
-        ])
-        self._create_journal_entry("ASEAN Subsidy", [
-            {"account": expenses, "debit": Decimal(30_000), "credit": 0},
-            {"account": treasury_fund, "debit": 0, "credit": Decimal(30_000)},
-        ])
+        self._create_journal_entry(
+            "Player Donation",
+            [
+                {"account": treasury_fund, "debit": Decimal(100_000), "credit": 0},
+                {"account": revenue, "debit": 0, "credit": Decimal(100_000)},
+            ],
+        )
+        self._create_journal_entry(
+            "ASEAN Subsidy",
+            [
+                {"account": expenses, "debit": Decimal(30_000), "credit": 0},
+                {"account": treasury_fund, "debit": 0, "credit": Decimal(30_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["surplus"], Decimal(70_000))
@@ -792,16 +856,23 @@ class TreasurySummaryTestCase(TestCase):
     def test_deficit_calculation(self):
         """Expenses > income should result in negative surplus."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         treasury_fund, revenue, expenses, _ = self._create_gov_accounts()
 
-        self._create_journal_entry("Player Donation", [
-            {"account": treasury_fund, "debit": Decimal(10_000), "credit": 0},
-            {"account": revenue, "debit": 0, "credit": Decimal(10_000)},
-        ])
-        self._create_journal_entry("ASEAN Subsidy", [
-            {"account": expenses, "debit": Decimal(50_000), "credit": 0},
-            {"account": treasury_fund, "debit": 0, "credit": Decimal(50_000)},
-        ])
+        self._create_journal_entry(
+            "Player Donation",
+            [
+                {"account": treasury_fund, "debit": Decimal(10_000), "credit": 0},
+                {"account": revenue, "debit": 0, "credit": Decimal(10_000)},
+            ],
+        )
+        self._create_journal_entry(
+            "ASEAN Subsidy",
+            [
+                {"account": expenses, "debit": Decimal(50_000), "credit": 0},
+                {"account": treasury_fund, "debit": 0, "credit": Decimal(50_000)},
+            ],
+        )
 
         result = get_treasury_summary(target_date=timezone.now().date())
         self.assertEqual(result["surplus"], Decimal(-40_000))
@@ -809,6 +880,7 @@ class TreasurySummaryTestCase(TestCase):
     def test_wealth_tax_tracked_separately(self):
         """Wealth tax should be tracked in wealth_tax_collected, not income."""
         from amc_finance.treasury_summary import get_treasury_summary
+
         _, _, _, reserves = self._create_gov_accounts()
 
         character = CharacterFactory()
@@ -826,12 +898,16 @@ class TreasurySummaryTestCase(TestCase):
             creator=character,
         )
         LedgerEntry.objects.create(
-            journal_entry=je, account=bank_account,
-            debit=Decimal(10_000), credit=0,
+            journal_entry=je,
+            account=bank_account,
+            debit=Decimal(10_000),
+            credit=0,
         )
         LedgerEntry.objects.create(
-            journal_entry=je, account=reserves,
-            debit=Decimal(10_000), credit=0,
+            journal_entry=je,
+            account=reserves,
+            debit=Decimal(10_000),
+            credit=0,
         )
 
         result = get_treasury_summary(target_date=timezone.now().date())
@@ -841,6 +917,7 @@ class TreasurySummaryTestCase(TestCase):
     def test_get_treasury_trend_7_days(self):
         """Trend should return 7 days of data arrays."""
         from amc_finance.treasury_summary import get_treasury_trend
+
         self._create_gov_accounts()
 
         result = get_treasury_trend(days=7)
@@ -850,4 +927,3 @@ class TreasurySummaryTestCase(TestCase):
         self.assertEqual(len(result["surplus"]), 7)
         self.assertEqual(len(result["treasury_balance"]), 7)
         self.assertEqual(len(result["reserves_balance"]), 7)
-

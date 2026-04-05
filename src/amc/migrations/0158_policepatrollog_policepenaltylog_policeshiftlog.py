@@ -3,7 +3,6 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("amc", "0157_update_oak_logs_subsidy"),
     ]

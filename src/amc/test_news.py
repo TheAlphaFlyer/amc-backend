@@ -14,9 +14,7 @@ class NewsItemModelTests(TestCase):
         """Explicit expires_at is stored as-is."""
         custom = timezone.now() + timedelta(days=30)
         item = NewsItem.objects.create(title="Custom", expires_at=custom)
-        self.assertAlmostEqual(
-            item.expires_at.timestamp(), custom.timestamp(), delta=1
-        )
+        self.assertAlmostEqual(item.expires_at.timestamp(), custom.timestamp(), delta=1)
 
 
 class NewsItemGetActiveTests(TestCase):

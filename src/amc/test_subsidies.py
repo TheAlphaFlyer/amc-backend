@@ -317,10 +317,10 @@ class CalculateLoanRepaymentTest(TestCase):
         from amc_finance.loans import calculate_loan_repayment
 
         # payment=1000, loan=1, max_loan=1_000_000 → ~0% util → 50%
-        result = calculate_loan_repayment(
-            Decimal(1000), Decimal(1), Decimal(1_000_000)
-        )
-        self.assertEqual(result, Decimal(1))  # min(1, max(1, 1000*0.5=500)) → capped at loan_balance=1
+        result = calculate_loan_repayment(Decimal(1000), Decimal(1), Decimal(1_000_000))
+        self.assertEqual(
+            result, Decimal(1)
+        )  # min(1, max(1, 1000*0.5=500)) → capped at loan_balance=1
 
     def test_half_utilisation(self):
         """At 50% utilisation, repayment should be 100% (with REPAYMENT_FULL_AT=0.5)."""
@@ -375,7 +375,9 @@ class CalculateLoanRepaymentTest(TestCase):
 
         # 0% util → system rate 50%, player rate 90% → effective 90%
         result = calculate_loan_repayment(
-            Decimal(10_000), Decimal(100_000), Decimal(1_000_000),
+            Decimal(10_000),
+            Decimal(100_000),
+            Decimal(1_000_000),
             character_repayment_rate=Decimal("0.90"),
         )
         self.assertEqual(result, Decimal(9_000))
@@ -386,7 +388,9 @@ class CalculateLoanRepaymentTest(TestCase):
 
         # 50% util → system rate 100%, player rate 30% → system wins (100%)
         result = calculate_loan_repayment(
-            Decimal(10_000), Decimal(500_000), Decimal(1_000_000),
+            Decimal(10_000),
+            Decimal(500_000),
+            Decimal(1_000_000),
             character_repayment_rate=Decimal("0.30"),
         )
         self.assertEqual(result, Decimal(10_000))
@@ -402,8 +406,13 @@ class RepayLoanNPLExitTest(TestCase):
     @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_npl_exit_triggers_announcement(
-        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
-        mock_repay, mock_announce,
+        self,
+        mock_is_npl,
+        mock_balance,
+        mock_max_loan,
+        mock_transfer,
+        mock_repay,
+        mock_announce,
     ):
         """When player transitions NPL→not-NPL, announce it."""
         from amc_finance.loans import repay_loan_for_profit
@@ -437,8 +446,13 @@ class RepayLoanNPLExitTest(TestCase):
     @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_no_announcement_when_still_npl(
-        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
-        mock_repay, mock_announce,
+        self,
+        mock_is_npl,
+        mock_balance,
+        mock_max_loan,
+        mock_transfer,
+        mock_repay,
+        mock_announce,
     ):
         """No announcement when player remains NPL after repayment."""
         from amc_finance.loans import repay_loan_for_profit
@@ -466,8 +480,13 @@ class RepayLoanNPLExitTest(TestCase):
     @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_no_announcement_when_not_npl_before(
-        self, mock_is_npl, mock_balance, mock_max_loan, mock_transfer,
-        mock_repay, mock_announce,
+        self,
+        mock_is_npl,
+        mock_balance,
+        mock_max_loan,
+        mock_transfer,
+        mock_repay,
+        mock_announce,
     ):
         """No announcement when player was not NPL before repayment."""
         from amc_finance.loans import repay_loan_for_profit
@@ -496,8 +515,12 @@ class RepayLoanNPLExitTest(TestCase):
     @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_repayment_override_bypasses_calculation(
-        self, mock_is_npl, mock_balance, mock_transfer,
-        mock_repay, mock_announce,
+        self,
+        mock_is_npl,
+        mock_balance,
+        mock_transfer,
+        mock_repay,
+        mock_announce,
     ):
         """repayment_override uses exact amount instead of calculate_loan_repayment."""
         from amc_finance.loans import repay_loan_for_profit
@@ -512,13 +535,19 @@ class RepayLoanNPLExitTest(TestCase):
         session = MagicMock()
 
         result = await repay_loan_for_profit(
-            character, 10_000, session, repayment_override=5_000,
+            character,
+            10_000,
+            session,
+            repayment_override=5_000,
         )
 
         self.assertEqual(result, 5_000)
         # transfer_money should use -5000
         mock_transfer.assert_called_once_with(
-            session, -5_000, "ASEAN Loan Repayment", "101",
+            session,
+            -5_000,
+            "ASEAN Loan Repayment",
+            "101",
         )
 
     @patch("amc.game_server.announce", new_callable=AsyncMock)
@@ -527,8 +556,12 @@ class RepayLoanNPLExitTest(TestCase):
     @patch("amc_finance.loans.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc_finance.loans.is_character_npl", new_callable=AsyncMock)
     async def test_game_session_used_for_announce(
-        self, mock_is_npl, mock_balance, mock_transfer,
-        mock_repay, mock_announce,
+        self,
+        mock_is_npl,
+        mock_balance,
+        mock_transfer,
+        mock_repay,
+        mock_announce,
     ):
         """game_session is used for announce instead of mod server session."""
         from amc_finance.loans import repay_loan_for_profit
@@ -544,7 +577,9 @@ class RepayLoanNPLExitTest(TestCase):
         game_session = MagicMock(name="game_session")
 
         await repay_loan_for_profit(
-            character, 10_000, mod_session,
+            character,
+            10_000,
+            mod_session,
             repayment_override=5_000,
             game_session=game_session,
         )
@@ -553,4 +588,3 @@ class RepayLoanNPLExitTest(TestCase):
         mock_announce.assert_called_once()
         # The announce should use game_session, not mod_session
         self.assertEqual(mock_announce.call_args[0][1], game_session)
-

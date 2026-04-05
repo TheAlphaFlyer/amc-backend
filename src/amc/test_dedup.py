@@ -145,7 +145,7 @@ class DeduplicateEventsTests(SimpleTestCase):
     def test_timestamp_floor_filters_old_events(self):
         cache.set(LAST_TS_CACHE_KEY, 100, timeout=None)
         events = [
-            {"hook": "X", "timestamp": 50},   # old, no _seq
+            {"hook": "X", "timestamp": 50},  # old, no _seq
             {"hook": "X", "timestamp": 100},  # equal, filtered
             {"hook": "X", "timestamp": 101},  # newer, passes
             {"hook": "X", "timestamp": 50, "_seq": 1},  # has _seq, bypasses ts filter
@@ -237,8 +237,9 @@ class MultiCallEpochRegressionTests(SimpleTestCase):
 
         # Cache must now have watermark=2
         self.assertEqual(
-            cache.get(LAST_SEQ_CACHE_KEY), 2,
-            "After epoch change, watermark must be updated to new max_seq"
+            cache.get(LAST_SEQ_CACHE_KEY),
+            2,
+            "After epoch change, watermark must be updated to new max_seq",
         )
 
         # --- Call 2: same epoch, continued seqs ---
@@ -250,8 +251,7 @@ class MultiCallEpochRegressionTests(SimpleTestCase):
 
         # Both events must pass through (not dropped!)
         self.assertEqual(
-            len(result_2), 2,
-            "Events after epoch change must not be silently dropped"
+            len(result_2), 2, "Events after epoch change must not be silently dropped"
         )
         self.assertEqual(max_seq_2, 4)
         self.assertEqual(last_processed_2, 2)
@@ -266,8 +266,7 @@ class MultiCallEpochRegressionTests(SimpleTestCase):
 
         # Call 1: epoch 1→2, seqs 1-3
         events_1 = [
-            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2}
-            for i in range(1, 4)
+            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2} for i in range(1, 4)
         ]
         _, max_seq, last_proc = deduplicate_events(events_1)
         self.assertEqual(last_proc, 0)  # epoch reset
@@ -276,8 +275,7 @@ class MultiCallEpochRegressionTests(SimpleTestCase):
 
         # Call 2: same epoch, seqs 4-6
         events_2 = [
-            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2}
-            for i in range(4, 7)
+            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2} for i in range(4, 7)
         ]
         result_2, max_seq, last_proc = deduplicate_events(events_2)
         self.assertEqual(len(result_2), 3, "Call 2: all events must pass")
@@ -285,8 +283,7 @@ class MultiCallEpochRegressionTests(SimpleTestCase):
 
         # Call 3: same epoch, seqs 7-9
         events_3 = [
-            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2}
-            for i in range(7, 10)
+            {"hook": "X", "timestamp": i, "_seq": i, "_epoch": 2} for i in range(7, 10)
         ]
         result_3, max_seq, last_proc = deduplicate_events(events_3)
         self.assertEqual(len(result_3), 3, "Call 3: all events must pass")

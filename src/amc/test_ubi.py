@@ -80,7 +80,11 @@ class HandoutUbiLoanRepaymentTest(TestCase):
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_loan_larger_than_ubi(
-        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        self,
+        mock_get_players,
+        mock_loan_balance,
+        mock_send,
+        mock_transfer,
         mock_repay,
     ):
         """When loan > UBI, repay_loan_for_profit is called with full UBI as override."""
@@ -109,7 +113,11 @@ class HandoutUbiLoanRepaymentTest(TestCase):
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_loan_smaller_than_ubi(
-        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        self,
+        mock_get_players,
+        mock_loan_balance,
+        mock_send,
+        mock_transfer,
         mock_repay,
     ):
         """When loan < UBI, repayment_override is capped to loan balance."""
@@ -136,7 +144,11 @@ class HandoutUbiLoanRepaymentTest(TestCase):
     @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     async def test_gov_employee_with_loan(
-        self, mock_get_players, mock_loan_balance, mock_send, mock_transfer,
+        self,
+        mock_get_players,
+        mock_loan_balance,
+        mock_send,
+        mock_transfer,
         mock_repay,
     ):
         """Gov employee gets 2x UBI, full amount goes to repayment."""

@@ -14,10 +14,14 @@ class Command(BaseCommand):
         cutoff = timezone.now() - timedelta(days=7)
 
         # Backfill cargo_key on rows that only have it in JSON data
-        updated = ServerCargoArrivedLog.objects.filter(
-            data__Net_CargoKey="Money",
-            timestamp__gte=cutoff,
-        ).exclude(cargo_key="Money").update(cargo_key="Money")
+        updated = (
+            ServerCargoArrivedLog.objects.filter(
+                data__Net_CargoKey="Money",
+                timestamp__gte=cutoff,
+            )
+            .exclude(cargo_key="Money")
+            .update(cargo_key="Money")
+        )
         if updated:
             self.stdout.write(f"  Updated cargo_key on {updated} rows")
 
@@ -67,5 +71,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"  Created record for character {character_id}")
 
         self.stdout.write(
-            self.style.SUCCESS(f"Backfill done. Created {created}, extended {extended}.")
+            self.style.SUCCESS(
+                f"Backfill done. Created {created}, extended {extended}."
+            )
         )

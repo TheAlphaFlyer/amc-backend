@@ -29,6 +29,7 @@ def parse_epoch_seq(event_id: str) -> tuple[int | None, int]:
         return int(epoch_str), int(seq_str)
     return None, int(event_id)
 
+
 # Debounce: flush buffered events after this much silence
 FLUSH_DEBOUNCE_SECONDS = 0.5
 
@@ -65,7 +66,9 @@ def parse_sse_event(raw_lines: list[str]) -> tuple[str | None, str | None]:
     return None, None
 
 
-async def _flush_loop(event_buffer, event_signal, http_client, http_client_mod, discord_client):
+async def _flush_loop(
+    event_buffer, event_signal, http_client, http_client_mod, discord_client
+):
     """Dedicated flush loop with debounce, max-wait ceiling, and batch cap.
 
     Waits for events to arrive (via event_signal), then enters a
@@ -130,6 +133,7 @@ async def run_sse_listener(ctx):
 
     from django.core.cache import cache
     from amc.webhook import LAST_SEQ_CACHE_KEY, LAST_EPOCH_CACHE_KEY
+
     current_epoch = await cache.aget(LAST_EPOCH_CACHE_KEY)
     if current_epoch is not None:
         # Build epoch-prefixed Last-Event-ID so the C++ server can
@@ -172,16 +176,16 @@ async def run_sse_listener(ctx):
 
                 logger.info(
                     "SSE connecting to %s/events/stream (Last-Event-ID: %s)",
-                    base_url, last_event_id,
+                    base_url,
+                    last_event_id,
                 )
 
-                async with session.get(
-                    "/events/stream", headers=headers
-                ) as resp:
+                async with session.get("/events/stream", headers=headers) as resp:
                     if resp.status != 200:
                         logger.warning(
                             "SSE endpoint returned %s, retrying in %ss",
-                            resp.status, backoff,
+                            resp.status,
+                            backoff,
                         )
                         await asyncio.sleep(backoff)
                         backoff = min(backoff * 2, MAX_BACKOFF)
@@ -197,8 +201,11 @@ async def run_sse_listener(ctx):
 
                     flush_task = asyncio.create_task(
                         _flush_loop(
-                            event_buffer, event_signal,
-                            http_client, http_client_mod, discord_client,
+                            event_buffer,
+                            event_signal,
+                            http_client,
+                            http_client_mod,
+                            discord_client,
                         )
                     )
 
@@ -209,14 +216,20 @@ async def run_sse_listener(ctx):
                                     resp.content.readline(), timeout=120.0
                                 )
                             except asyncio.TimeoutError:
-                                logger.warning("SSE read timeout (no events/heartbeats for 120s), forcing fresh reconnect")
+                                logger.warning(
+                                    "SSE read timeout (no events/heartbeats for 120s), forcing fresh reconnect"
+                                )
                                 await cache.aset(LAST_SEQ_CACHE_KEY, 0, timeout=None)
                                 break  # Break loop to trigger reconnect
 
                             if not raw_line:
                                 break  # EOF
 
-                            line = raw_line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+                            line = (
+                                raw_line.decode("utf-8", errors="replace")
+                                .rstrip("\n")
+                                .rstrip("\r")
+                            )
 
                             if line == "":
                                 # Blank line = end of SSE event block
@@ -228,22 +241,38 @@ async def run_sse_listener(ctx):
                                         parsed_seq = None
                                         if event_id:
                                             try:
-                                                parsed_epoch, parsed_seq = parse_epoch_seq(event_id)
+                                                parsed_epoch, parsed_seq = (
+                                                    parse_epoch_seq(event_id)
+                                                )
                                             except ValueError:
-                                                logger.warning("SSE: invalid event ID: %s", event_id)
+                                                logger.warning(
+                                                    "SSE: invalid event ID: %s",
+                                                    event_id,
+                                                )
                                             last_event_id = event_id
 
                                             # Detect epoch change (server restart)
-                                            if parsed_epoch is not None and current_epoch is not None and parsed_epoch != current_epoch:
+                                            if (
+                                                parsed_epoch is not None
+                                                and current_epoch is not None
+                                                and parsed_epoch != current_epoch
+                                            ):
                                                 logger.warning(
                                                     "SSE epoch changed: %s -> %s (server restarted), resetting seq high-water mark",
-                                                    current_epoch, parsed_epoch,
+                                                    current_epoch,
+                                                    parsed_epoch,
                                                 )
-                                                await cache.aset(LAST_SEQ_CACHE_KEY, 0, timeout=None)
+                                                await cache.aset(
+                                                    LAST_SEQ_CACHE_KEY, 0, timeout=None
+                                                )
 
                                             if parsed_epoch is not None:
                                                 current_epoch = parsed_epoch
-                                                await cache.aset(LAST_EPOCH_CACHE_KEY, current_epoch, timeout=None)
+                                                await cache.aset(
+                                                    LAST_EPOCH_CACHE_KEY,
+                                                    current_epoch,
+                                                    timeout=None,
+                                                )
 
                                         try:
                                             event_obj = json.loads(data)
@@ -271,11 +300,20 @@ async def run_sse_listener(ctx):
                         # Flush any remaining events before reconnecting
                         if event_buffer:
                             from amc.webhook import process_events
+
                             remaining = list(event_buffer)
                             event_buffer.clear()
-                            logger.info("SSE flushing %d remaining events before reconnect", len(remaining))
+                            logger.info(
+                                "SSE flushing %d remaining events before reconnect",
+                                len(remaining),
+                            )
                             try:
-                                await process_events(remaining, http_client, http_client_mod, discord_client)
+                                await process_events(
+                                    remaining,
+                                    http_client,
+                                    http_client_mod,
+                                    discord_client,
+                                )
                             except Exception:
                                 logger.exception("SSE: error flushing remaining events")
 
@@ -290,7 +328,11 @@ async def run_sse_listener(ctx):
                 backoff = INITIAL_BACKOFF
                 continue  # skip the sleep at the bottom
             else:
-                logger.info("SSE stream ended after %.0fs, retrying in %ss", session_duration, backoff)
+                logger.info(
+                    "SSE stream ended after %.0fs, retrying in %ss",
+                    session_duration,
+                    backoff,
+                )
 
         except asyncio.CancelledError:
             logger.info("SSE listener shutting down")

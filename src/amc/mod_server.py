@@ -32,7 +32,9 @@ async def set_character_name(session, character_guid, name):
     async with session.put(f"/players/{character_guid}/name", json=transfer) as resp:
         if resp.status != 200:
             body = await resp.text()
-            raise Exception(f"Failed to change name (status={resp.status}, body={body[:200]})")
+            raise Exception(
+                f"Failed to change name (status={resp.status}, body={body[:200]})"
+            )
 
 
 async def transfer_money(session, amount, message, player_id):
@@ -130,12 +132,15 @@ async def teleport_player(
     no_vehicles=False,
     reset_trailers=None,
     reset_carried_vehicles=None,
+    force=False,
 ):
     data = {
         "Location": location,
     }
     if no_vehicles:
         data["NoVehicles"] = True
+    if force:
+        data["Force"] = True
     if reset_trailers is not None:
         data["bResetTrailers"] = reset_trailers
     if reset_carried_vehicles is not None:

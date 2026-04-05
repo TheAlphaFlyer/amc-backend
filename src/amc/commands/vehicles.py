@@ -109,7 +109,8 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
     # Recalculate [MODS] tag when checking own vehicle
     if checking_self:
         await refresh_player_name(
-            ctx.character, ctx.http_client_mod,
+            ctx.character,
+            ctx.http_client_mod,
             has_custom_parts=bool(custom or incompatible),
         )
 
@@ -148,7 +149,9 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
 
     if issues:
         await ctx.reply(
-            _("<Title>Mod Check</>\n\n<Bold>{name}</> — {vehicle}{drive}{issues}").format(
+            _(
+                "<Title>Mod Check</>\n\n<Bold>{name}</> — {vehicle}{drive}{issues}"
+            ).format(
                 name=target_player_name,
                 vehicle=vehicle_name,
                 drive=drive_line,

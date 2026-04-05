@@ -112,31 +112,43 @@ class WantedCountdownTickTests(TestCase):
     # --- No-cops immediate expiry tests ---
 
     async def test_no_cops_immediately_expires_online(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """With no cops online, online suspects get wanted cleared instantly."""
         criminal = await self._setup_criminal(wanted_remaining=300)
 
-        players = _make_players_list([
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         wanted = await Wanted.objects.aget(character=criminal)
         self.assertEqual(wanted.wanted_remaining, 0)
         self.assertIsNotNone(wanted.expired_at)
         mock_sys_msg.assert_called_once_with(
-            mock_http_mod, "Your wanted status has expired.", character_guid=criminal.guid,
+            mock_http_mod,
+            "Your wanted status has expired.",
+            character_guid=criminal.guid,
         )
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
 
     async def test_no_cops_immediately_expires_offline(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """With no cops online, offline suspects get wanted cleared instantly."""
         criminal = await self._setup_criminal(wanted_remaining=300)
@@ -144,7 +156,9 @@ class WantedCountdownTickTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=None):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=None
+        ):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         wanted = await Wanted.objects.aget(character=criminal)
@@ -154,7 +168,9 @@ class WantedCountdownTickTests(TestCase):
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
 
     async def test_no_cops_clears_last_star_notified(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """_last_star_notified entry is removed when no-cops immediate expiry fires."""
         criminal = await self._setup_criminal(wanted_remaining=300)
@@ -163,7 +179,9 @@ class WantedCountdownTickTests(TestCase):
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=None):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=None
+        ):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         self.assertNotIn(criminal.guid, _last_star_notified)
@@ -171,7 +189,9 @@ class WantedCountdownTickTests(TestCase):
     # --- Countdown with cops present ---
 
     async def test_star_transitions_all_sent(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """Stars drop from 5→0 as wanted_remaining decrements, sending 4 messages.
 
@@ -181,15 +201,23 @@ class WantedCountdownTickTests(TestCase):
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             # 300 → 0 (300 ticks, crosses 180, 120, 60, 0)
             for _ in range(300):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
@@ -199,22 +227,32 @@ class WantedCountdownTickTests(TestCase):
             self.assertEqual(call.kwargs["character_guid"], criminal.guid)
 
     async def test_first_star_change_message(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """First star change (5→4 at 180s) sends '4 stars remaining'."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
         # Tick 120 times: 300 → 180 (crosses 180 boundary)
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(120):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -222,42 +260,62 @@ class WantedCountdownTickTests(TestCase):
         self.assertIn("4 stars remaining", mock_sys_msg.call_args[0][1])
 
     async def test_refresh_player_name_on_expiry(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """When wanted_remaining hits 0, refresh_player_name is called."""
         criminal = await self._setup_criminal(wanted_remaining=1.5)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(3):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
 
     async def test_wanted_record_marked_expired(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """Wanted record has expired_at set when remaining reaches 0."""
         criminal = await self._setup_criminal(wanted_remaining=1.5)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(3):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -266,20 +324,28 @@ class WantedCountdownTickTests(TestCase):
         self.assertIsNotNone(wanted.expired_at)
 
     async def test_offline_suspect_still_decrements(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """Suspects not in the player list still have their wanted decremented when cops exist."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(10):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -287,20 +353,28 @@ class WantedCountdownTickTests(TestCase):
         self.assertAlmostEqual(wanted.wanted_remaining, 290, delta=1)
 
     async def test_no_messages_sent_to_offline_suspect(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """System messages are not sent to offline suspects even when stars change."""
         await self._setup_criminal(wanted_remaining=181)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             # Tick past the 180 boundary
             for _ in range(2):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
@@ -308,21 +382,31 @@ class WantedCountdownTickTests(TestCase):
         mock_sys_msg.assert_not_called()
 
     async def test_nearby_cop_slows_decrement(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """With a nearby cop, wanted decrements slower than full speed."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 5000, 5000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5010, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 5000, 5000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5010, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(10):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -330,21 +414,31 @@ class WantedCountdownTickTests(TestCase):
         self.assertGreater(wanted.wanted_remaining, 295)
 
     async def test_distant_cop_full_speed(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """With a distant cop (>20km), countdown runs at full speed (not faster)."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(10):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -352,28 +446,40 @@ class WantedCountdownTickTests(TestCase):
         self.assertAlmostEqual(wanted.wanted_remaining, 290, delta=1)
 
     async def test_no_message_when_star_unchanged(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """No message is sent if star count hasn't changed."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(10):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_sys_msg.assert_not_called()
 
     async def test_no_wanted_records_skips_processing(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """If no wanted records exist, nothing happens."""
         mock_http = AsyncMock()
@@ -385,85 +491,125 @@ class WantedCountdownTickTests(TestCase):
         mock_refresh.assert_not_called()
 
     async def test_last_star_notified_cleaned_up_on_expiry(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """_last_star_notified entry is removed when wanted expires via countdown."""
         criminal = await self._setup_criminal(wanted_remaining=1.5)
         officer = await self._setup_police()
         _last_star_notified[criminal.guid] = 5
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(3):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         self.assertNotIn(criminal.guid, _last_star_notified)
 
     async def test_star_message_at_180_boundary(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """At 181→180s, message says '4 stars remaining'."""
         criminal = await self._setup_criminal(wanted_remaining=181)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_sys_msg.assert_called_once()
         self.assertIn("4 stars remaining", mock_sys_msg.call_args[0][1])
 
     async def test_star_message_at_60_boundary(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """At 61→60s, message says '2 stars remaining'."""
         criminal = await self._setup_criminal(wanted_remaining=61)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_sys_msg.assert_called_once()
         self.assertIn("2 stars remaining", mock_sys_msg.call_args[0][1])
 
     async def test_expiry_no_1_star_message(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """When wanted drops from 2→0 in one tick, no intermediate 1-star message."""
         criminal = await self._setup_criminal(wanted_remaining=1.5)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(3):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -472,21 +618,31 @@ class WantedCountdownTickTests(TestCase):
     # --- Star change → name refresh sync tests ---
 
     async def test_refresh_called_on_star_boundary(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """refresh_player_name is called exactly once when the star count crosses a boundary (5→4)."""
         criminal = await self._setup_criminal(wanted_remaining=181)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             # One tick: 181 → 180 (crosses 5→4 boundary)
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -494,21 +650,31 @@ class WantedCountdownTickTests(TestCase):
         mock_sys_msg.assert_called_once()  # message and refresh in sync
 
     async def test_full_lifecycle_messages_and_refreshes_synced(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """Full 300→0 countdown: 4 star transitions, each with both a message and a name refresh."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-            _make_player_data(criminal.player.unique_id, criminal.guid, 5000, 5000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+                _make_player_data(
+                    criminal.player.unique_id, criminal.guid, 5000, 5000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             for _ in range(300):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
@@ -518,21 +684,29 @@ class WantedCountdownTickTests(TestCase):
         self.assertEqual(mock_refresh.call_count, 4)
 
     async def test_no_refresh_for_offline_star_change(
-        self, mock_sys_msg, mock_refresh,
+        self,
+        mock_sys_msg,
+        mock_refresh,
     ):
         """Offline suspects don't get name refreshes even when their stars change."""
         await self._setup_criminal(wanted_remaining=181)
         officer = await self._setup_police()
 
         # Only officer online — criminal is offline
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, 500000, 500000, 0),
-        ])
+        players = _make_players_list(
+            [
+                _make_player_data(
+                    officer.player.unique_id, officer.guid, 500000, 500000, 0
+                ),
+            ]
+        )
 
         mock_http = AsyncMock()
         mock_http_mod = AsyncMock()
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+        with patch(
+            "amc.criminals.get_players", new_callable=AsyncMock, return_value=players
+        ):
             # Two ticks: 181 → 179 (crosses 5→4 boundary while offline)
             for _ in range(2):
                 await tick_wanted_countdown(mock_http, mock_http_mod)

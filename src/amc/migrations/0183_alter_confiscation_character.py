@@ -5,15 +5,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('amc', '0182_policesession_police_confiscated_total'),
+        ("amc", "0182_policesession_police_confiscated_total"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='confiscation',
-            name='character',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='confiscations_received', to='amc.character'),
+            model_name="confiscation",
+            name="character",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="confiscations_received",
+                to="amc.character",
+            ),
         ),
     ]

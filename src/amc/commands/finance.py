@@ -214,7 +214,9 @@ async def cmd_loan(ctx: CommandContext, amount: str, verification_code: str = ""
     )
 
     if not verified:
-        fee = calc_loan_fee(amount_int, ctx.character, max_loan, credit_score=ctx.character.credit_score)
+        fee = calc_loan_fee(
+            amount_int, ctx.character, max_loan, credit_score=ctx.character.credit_score
+        )
         credit_label = get_credit_score_label(ctx.character.credit_score)
         # Calculate fee adjustment percentage vs neutral (score=100)
         base_fee = calc_loan_fee(amount_int, ctx.character, max_loan, credit_score=100)
@@ -226,7 +228,13 @@ async def cmd_loan(ctx: CommandContext, amount: str, verification_code: str = ""
         await ctx.reply(
             _(
                 "<Title>Loan</>\nFee: {fee:,}{fee_adj}\nCredit Score: {credit_label}\nConfirm: /loan {amount} {code_expected}"
-            ).format(fee=fee, fee_adj=fee_adj, credit_label=credit_label, amount=amount, code_expected=code_expected.upper())
+            ).format(
+                fee=fee,
+                fee_adj=fee_adj,
+                credit_label=credit_label,
+                amount=amount,
+                code_expected=code_expected.upper(),
+            )
         )
         return
 
@@ -419,7 +427,6 @@ async def cmd_repay_loan(ctx: CommandContext, amount: str = ""):
     )
 
 
-
 async def _gov_ranking_text(character):
     """Build ranking and top-10 leaderboard text for gov employees."""
     from amc.models import Character
@@ -568,7 +575,9 @@ async def cmd_claim_voucher(ctx: CommandContext, code: str):
         return
 
     # Deposit to bank account
-    await send_fund_to_player(voucher.amount, ctx.character, f"Voucher: {voucher.reason}")
+    await send_fund_to_player(
+        voucher.amount, ctx.character, f"Voucher: {voucher.reason}"
+    )
 
     # Mark as claimed
     voucher.claimed_by = ctx.character
@@ -589,4 +598,3 @@ async def cmd_claim_voucher(ctx: CommandContext, code: str):
             character=ctx.character.name,
         )
     )
-

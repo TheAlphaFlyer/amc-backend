@@ -252,9 +252,7 @@ class CharacterDeliveriesAPITest(TestCase):
             quantity=10,
             payment=5000,
         )
-        response = await cast(
-            Any, self.api_client.get(f"/{character.id}/deliveries/")
-        )
+        response = await cast(Any, self.api_client.get(f"/{character.id}/deliveries/"))
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
@@ -328,9 +326,7 @@ class SupplyChainEventsAPITest(TestCase):
     async def test_leaderboard(self):
         event = await sync_to_async(SupplyChainEventFactory)()
         obj = await sync_to_async(SupplyChainObjectiveFactory)(event=event)
-        await sync_to_async(SupplyChainContributionFactory)(
-            objective=obj, quantity=100
-        )
+        await sync_to_async(SupplyChainContributionFactory)(objective=obj, quantity=100)
         response = await cast(Any, self.api_client.get(f"/{event.id}/leaderboard/"))
         self.assertEqual(response.status_code, 200)
         data = response.json()
