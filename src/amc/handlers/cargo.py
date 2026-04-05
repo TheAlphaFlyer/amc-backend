@@ -21,7 +21,11 @@ from amc.models import (
     PoliceSession,
     ServerCargoArrivedLog,
     SubsidyRule,
-    Wanted,
+)
+from amc.special_cargo import (
+    ILLICIT_CARGO_KEYS,
+    create_or_refresh_wanted,
+    link_delivery_to_wanted,
 )
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.mod_server import (
@@ -155,8 +159,8 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         cargo_name = group_list[0].get_cargo_key_display()
 
-        # Modded vehicle penalty for Money cargo
-        if cargo_key == "Money" and ctx.http_client_mod:
+        # Modded vehicle penalty for illicit cargo
+        if cargo_key in ILLICIT_CARGO_KEYS and ctx.http_client_mod:
             await _apply_modded_vehicle_penalty(
                 character, payment, quantity, ctx.http_client_mod
             )
@@ -226,29 +230,16 @@ async def handle_cargo_arrived(event, player, character, ctx):
                     ctx.http_client_mod,
                     message="Risk Premium",
                 )
-            if character:
-                active_wanted = await Wanted.objects.filter(
-                    character=character,
-                    expired_at__isnull=True,
-                ).afirst()
-                if active_wanted:
-                    active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_SECONDS
-                    await active_wanted.asave(update_fields=["wanted_remaining"])
-                else:
-                    await Wanted.objects.acreate(
-                        character=character,
-                        wanted_remaining=Wanted.INITIAL_WANTED_SECONDS,
-                    )
-                from amc.player_tags import refresh_player_name
-                from amc.mod_server import send_system_message
 
-                await refresh_player_name(character, ctx.http_client_mod)
-                asyncio.create_task(
-                    send_system_message(
-                        ctx.http_client_mod,
-                        "You are wanted. Police are closing in!",
-                        character_guid=character.guid,
-                    )
+        # Wanted status for all illicit cargo
+        if cargo_key in ILLICIT_CARGO_KEYS and character:
+            wanted = await create_or_refresh_wanted(
+                character, ctx.http_client_mod
+            )
+            # Link delivery to the wanted record
+            if delivery_obj:
+                await link_delivery_to_wanted(
+                    character, wanted, cargo_key, timestamp
                 )
 
         # Discord notification

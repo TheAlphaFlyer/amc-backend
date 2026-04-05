@@ -86,7 +86,12 @@ class CargoKey(models.TextChoices):
     Cement = "Cement", "Cement"
     Terra = "Terra", "Terra"
     SunflowerSeed = "SunflowerSeed", "Sunflower Seed"
-    Money = "Money", "Money"
+    Money = "Money", "Money Stack"
+    Ganja = "Ganja", "Ganja Pack"
+    CocaLeavesPallet = "CocaLeavesPallet", "Coca Leaves Pallet"
+    GanjaPallet = "GanjaPallet", "Ganja Pallet"
+    Cocaine = "Cocaine", "Cocaine Pack"
+    MoneyPallet = "MoneyPallet", "Money Pallet"
 
 
 class VehicleKey(models.TextChoices):

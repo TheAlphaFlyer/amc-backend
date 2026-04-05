@@ -396,7 +396,7 @@ class Confiscation(models.Model):
 
 @final
 class Wanted(models.Model):
-    """Active wanted status for a criminal who recently delivered Money.
+    """Active wanted status for a criminal who recently delivered illicit cargo.
 
     The wanted_remaining field is a proximity-based countdown (seconds).
     Each patrol tick decrements it at a rate influenced by the nearest police
@@ -1467,6 +1467,9 @@ class Delivery(models.Model):
     )
     job = models.ForeignKey(
         "DeliveryJob", models.SET_NULL, null=True, blank=True, related_name="deliveries"
+    )
+    wanted = models.ForeignKey(
+        "Wanted", models.SET_NULL, null=True, blank=True, related_name="deliveries"
     )
 
 

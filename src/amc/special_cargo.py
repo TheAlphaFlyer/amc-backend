@@ -1,7 +1,7 @@
 """Special cargo handler registry.
 
-Certain cargo keys (e.g. "Money") trigger custom side effects beyond the
-standard delivery/subsidy flow. This module provides a registry mapping
+Certain cargo keys (e.g. "Money", "Ganja") trigger custom side effects beyond
+the standard delivery/subsidy flow. This module provides a registry mapping
 cargo keys to async handler functions and a single dispatch entry point
 called from handle_cargo_arrived() in webhook.py.
 """
@@ -19,13 +19,23 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from amc.game_server import announce
-from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog
+from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog, Wanted
 from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
 
 logger = logging.getLogger("amc.special_cargo")
 
 CRIMINAL_LEVEL_STEP = 50_000
+
+# All cargo keys that are considered illicit and trigger a Wanted level
+ILLICIT_CARGO_KEYS: set[str] = {
+    "Money",
+    "Ganja",
+    "CocaLeavesPallet",
+    "GanjaPallet",
+    "Cocaine",
+    "MoneyPallet",
+}
 
 
 def calculate_criminal_level(laundered_total: int) -> int:
@@ -72,8 +82,6 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
     await cache.adelete(cache_key)
 
     # Check if any confiscation happened during the wanted period
-    from amc.models import Wanted
-
     window_start = timezone.now() - timedelta(seconds=Wanted.MAX_WANTED_DURATION)
     was_confiscated = await Confiscation.objects.filter(
         character__guid=character_guid,
@@ -107,6 +115,60 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
             total,
             bool(http_client),
         )
+
+
+# ---------------------------------------------------------------------------
+# Wanted status management (shared by all illicit cargo)
+# ---------------------------------------------------------------------------
+
+
+async def create_or_refresh_wanted(character, http_client_mod) -> Wanted:
+    """Create or refresh a Wanted record for the given character.
+
+    Returns the active Wanted instance (created or updated).
+    Called by cargo handlers for all illicit cargo types.
+    """
+    from amc.mod_server import send_system_message
+
+    active_wanted = await Wanted.objects.filter(
+        character=character,
+        expired_at__isnull=True,
+    ).afirst()
+    if active_wanted:
+        active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_SECONDS
+        await active_wanted.asave(update_fields=["wanted_remaining"])
+    else:
+        active_wanted = await Wanted.objects.acreate(
+            character=character,
+            wanted_remaining=Wanted.INITIAL_WANTED_SECONDS,
+        )
+
+    await refresh_player_name(character, http_client_mod)
+    asyncio.create_task(
+        send_system_message(
+            http_client_mod,
+            "You are wanted. Police are closing in!",
+            character_guid=character.guid,
+        )
+    )
+    return active_wanted
+
+
+async def link_delivery_to_wanted(character, wanted, cargo_key, timestamp) -> None:
+    """Associate the Delivery record created for this cargo with the Wanted record."""
+    from amc.models import Delivery
+
+    delivery = await Delivery.objects.filter(
+        character=character, cargo_key=cargo_key, timestamp=timestamp
+    ).afirst()
+    if delivery and not delivery.wanted_id:
+        delivery.wanted = wanted
+        await delivery.asave(update_fields=["wanted"])
+
+
+# ---------------------------------------------------------------------------
+# Per-cargo-type handlers
+# ---------------------------------------------------------------------------
 
 
 async def handle_money_cargo(
@@ -145,9 +207,6 @@ async def handle_money_cargo(
             expires_at=timezone.now() + timedelta(days=7),
         )
 
-    # --- Player tag refresh ---
-    await refresh_player_name(character, http_client_mod)
-
     # --- Debounced announcement + treasury cost ---
     if money_payment > 0:
         if http_client:
@@ -173,8 +232,6 @@ async def handle_money_cargo(
 
     # --- Accumulate "money secured" total (announced when wanted expires) ---
     if money_payment > 0:
-        from amc.models import Wanted
-
         secured_cache_key = f"money_secured:{character.guid}"
         prev_secured = await cache.aget(secured_cache_key)
         secured_total = (
@@ -193,12 +250,44 @@ async def handle_money_cargo(
         )
 
 
+async def handle_contraband_cargo(
+    logs: list[ServerCargoArrivedLog],
+    character,
+    http_client,
+    http_client_mod,
+) -> None:
+    """Side effects for contraband deliveries (Ganja, Cocaine, etc.).
+
+    - Create or reset criminal record (7 days from now)
+    - Refresh player name tag ([C])
+    """
+    # --- Criminal record ---
+    active_record = await CriminalRecord.objects.filter(
+        character=character, expires_at__gt=timezone.now()
+    ).afirst()
+    if active_record:
+        active_record.expires_at = timezone.now() + timedelta(days=7)
+        await active_record.asave(update_fields=["expires_at"])
+    else:
+        cargo_key = logs[0].cargo_key if logs else "Contraband"
+        await CriminalRecord.objects.acreate(
+            character=character,
+            reason=f"{cargo_key} delivery",
+            expires_at=timezone.now() + timedelta(days=7),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 SPECIAL_CARGO_HANDLERS: dict[str, SpecialCargoHandler] = {
     "Money": handle_money_cargo,
+    "Ganja": handle_contraband_cargo,
+    "CocaLeavesPallet": handle_contraband_cargo,
+    "GanjaPallet": handle_contraband_cargo,
+    "Cocaine": handle_contraband_cargo,
+    "MoneyPallet": handle_contraband_cargo,
 }
 
 
