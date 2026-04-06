@@ -396,24 +396,35 @@ class Confiscation(models.Model):
 
 @final
 class Wanted(models.Model):
-    """Active wanted status for a criminal who recently delivered illicit cargo.
+    """Active wanted status for a criminal who delivered illicit cargo.
 
-    The wanted_remaining field is a proximity-based countdown (seconds).
-    Each patrol tick decrements it at a rate influenced by the nearest police
-    distance — closer police means the countdown runs slower, giving officers
-    more time to arrest. When wanted_remaining reaches 0, the suspect
-    is no longer arrestable.
+    Wanted status is **permanent** until police physically chase the suspect
+    and reduce ``wanted_remaining`` through proximity.  There is no automatic
+    time-based countdown or expiry.
+
+    Police proximity decay uses the inverse-square law (1/r²):
+    - Close police → fast decay (point-blank clears in ~30s)
+    - 50m → ~5 minutes to clear
+    - 200m+ → negligible effect
+
+    The ``amount`` field tracks the cumulative illicit delivery payment
+    associated with this wanted record (used for confiscation calculations).
     """
 
-    INITIAL_WANTED_SECONDS = 300  # 5 minutes
-    MAX_WANTED_DURATION = (
-        7200  # 2 hours — generous upper bound for proximity-slowed countdowns
-    )
+    INITIAL_WANTED_LEVEL = 300  # all wanted levels start at the same value
+
+    # 1/r² decay constants (game units; 100 units = 1 metre)
+    REF_DISTANCE = 5000  # 50m — distance where decay_rate = 1.0/tick
+    MIN_DISTANCE = 1000  # 10m — clamp to avoid infinity
+    MAX_DECAY = 10.0  # cap at very close range
+
+    LEVEL_PER_STAR = 60  # wanted_remaining bands for W1–W5 display
 
     character = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="wanted_records"
     )
     wanted_remaining = models.FloatField()  # seconds (float for fractional decrements)
+    amount = models.PositiveBigIntegerField(default=0)  # cumulative illicit delivery payment
     created_at = models.DateTimeField(auto_now_add=True)
     expired_at = models.DateTimeField(null=True, blank=True)
 

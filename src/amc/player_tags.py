@@ -1,5 +1,4 @@
 import re
-import math
 import logging
 from amc.mod_server import set_character_name
 
@@ -7,8 +6,10 @@ logger = logging.getLogger(__name__)
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G/P/W/★, optionally followed by more letters/digits/stars
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [★★★★★], [CW3], [MP], [MPG3], [MC1★★★★★G3]
+    # New compact format: must start with C/M/G/P/W, optionally followed by more letters/digits
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [W5], [CW3], [MP], [MPG3], [MC1W5G3]
+    re.compile(r"\[(?=[CMGPW])[CMGPW\d]+\]\s*"),
+    # Legacy formats with Unicode stars (for players who logged in before W-level refactor)
     re.compile(r"\[(?=[CMGPW\u2605])[CMGPW\d\u2605]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
     re.compile(r"\[(?=[CMGP])[CMGP₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
@@ -36,15 +37,15 @@ def build_display_name(
     has_custom_parts: bool = False,
     police_level: int = 0,
     gov_level: int = 0,
-    wanted_minutes: int = 0,
+    wanted_stars: int = 0,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MP1★★★★★C1G3] BaseName  (order: M, P, C, ★, G)
+    Tag format: [MP1W5C1G3] BaseName  (order: M, P, W, C, G)
       M = Modded vehicle parts
       P1 = Police level (active session)
+      W5 = Wanted level (1–5, based on wanted_remaining heat)
       C1 = Criminal level (suppressed when police is active)
-      ★★★★★ = Wanted status (★ per minute remaining, 5 stars max at 4+ min)
       G3 = Government employee level
 
     Args:
@@ -53,7 +54,7 @@ def build_display_name(
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
         police_level: Police level (0 = not on duty)
         gov_level: Government employee level (0 = not a gov employee)
-        wanted_minutes: Minutes remaining on wanted timer, rounded up (0 = not wanted)
+        wanted_stars: Wanted W-level (0–5, 0 = not wanted)
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
@@ -64,13 +65,12 @@ def build_display_name(
     if police_level > 0:
         tag += f"P{police_level}"
 
+    if wanted_stars > 0:
+        tag += f"W{wanted_stars}"
+
     # C is suppressed when police is active
     if criminal_level > 0 and police_level == 0:
         tag += f"C{criminal_level}"
-
-    if wanted_minutes > 0:
-        stars = min(wanted_minutes + 1, 5)
-        tag += "\u2605" * stars
 
     if gov_level > 0:
         tag += f"G{gov_level}"
@@ -103,7 +103,7 @@ async def refresh_player_name(
         current_name = character.custom_name or character.name
         has_custom_parts = bool(
             re.search(r"\[MODS?\]", current_name, re.IGNORECASE)
-            or re.search(r"\[[CGW0-9₀-₉\u2605]*M[CGW0-9₀-₉\u2605]*\]", current_name)
+            or re.search(r"\[[CGPW0-9₀-₉]*M[CGPW0-9₀-₉]*\]", current_name)
         )
 
     # Determine GOV state
@@ -128,17 +128,18 @@ async def refresh_player_name(
 
         criminal_level = calculate_criminal_level(character.criminal_laundered_total)
 
-    # Determine WANTED state
+    # Determine WANTED state (W-level based on wanted_remaining heat)
     from amc.models import Wanted
+    from amc.criminals import _compute_stars
 
-    wanted_minutes = 0
+    wanted_stars = 0
     try:
         wanted = await Wanted.objects.filter(
             character=character,
             expired_at__isnull=True,
         ).afirst()
         if wanted and wanted.wanted_remaining > 0:
-            wanted_minutes = math.ceil(wanted.wanted_remaining / 60)
+            wanted_stars = _compute_stars(wanted.wanted_remaining)
     except Exception:
         pass
 
@@ -156,7 +157,7 @@ async def refresh_player_name(
         has_custom_parts=has_custom_parts,
         police_level=police_level,
         gov_level=gov_level,
-        wanted_minutes=wanted_minutes,
+        wanted_stars=wanted_stars,
     )
 
     # Save to DB if changed

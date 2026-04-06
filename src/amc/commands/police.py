@@ -1,4 +1,5 @@
 from amc.command_framework import registry, CommandContext
+from amc.models import Wanted
 from amc.mod_server import send_system_message
 from amc.police import (
     activate_police,
@@ -27,6 +28,18 @@ async def cmd_police(ctx: CommandContext):
         )
         await ctx.announce(f"{ctx.character.name} is now off police duty.")
     else:
+        # Wanted criminals may not become police
+        has_wanted = await Wanted.objects.filter(
+            character=ctx.character, expired_at__isnull=True
+        ).aexists()
+        if has_wanted:
+            await send_system_message(
+                ctx.http_client_mod,
+                _("You cannot go on police duty while you are wanted."),
+                character_guid=ctx.character.guid,
+            )
+            return
+
         await activate_police(ctx.character, ctx.http_client_mod)
         level = calculate_police_level(ctx.character.police_confiscated_total)
         await send_system_message(

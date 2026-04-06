@@ -21,11 +21,13 @@ from amc.models import (
     PoliceSession,
     ServerCargoArrivedLog,
     SubsidyRule,
+    Wanted,
 )
 from amc.special_cargo import (
     ILLICIT_CARGO_KEYS,
     create_or_refresh_wanted,
     link_delivery_to_wanted,
+    should_trigger_wanted,
 )
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.mod_server import (
@@ -233,14 +235,20 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         # Wanted status for all illicit cargo
         if cargo_key in ILLICIT_CARGO_KEYS and character:
-            wanted = await create_or_refresh_wanted(
-                character, ctx.http_client_mod
-            )
-            # Link delivery to the wanted record
-            if delivery_obj:
-                await link_delivery_to_wanted(
-                    character, wanted, cargo_key, timestamp
+            delivery_amount = payment * quantity
+            # Check if already wanted (always refresh) or roll probability
+            already_wanted = await Wanted.objects.filter(
+                character=character, expired_at__isnull=True
+            ).aexists()
+            if already_wanted or should_trigger_wanted(delivery_amount):
+                wanted = await create_or_refresh_wanted(
+                    character, ctx.http_client_mod, amount=delivery_amount
                 )
+                # Link delivery to the wanted record
+                if delivery_obj:
+                    await link_delivery_to_wanted(
+                        character, wanted, cargo_key, timestamp
+                    )
 
         # Discord notification
         if ctx.discord_client:

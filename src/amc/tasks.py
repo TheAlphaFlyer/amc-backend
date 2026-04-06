@@ -624,7 +624,7 @@ async def _confiscate_on_logout(character, http_client_mod):
         if not wanted:
             return
 
-        rate = wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS
+        rate = wanted.wanted_remaining / Wanted.INITIAL_WANTED_LEVEL
 
         recent_delivery = (
             await Delivery.objects.filter(

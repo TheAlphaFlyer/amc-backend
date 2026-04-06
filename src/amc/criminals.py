@@ -15,10 +15,6 @@ from amc.special_cargo import announce_money_secured
 logger = logging.getLogger("amc.criminals")
 
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
-PROXIMITY_REF_DISTANCE = (
-    20000  # 200m — at or beyond this distance, countdown runs at full speed
-)
-MIN_SLOWDOWN = 0.05  # 5% — minimum countdown speed (at very close range)
 
 # Tracks the last notified star level per character guid
 _last_star_notified: dict[str, int] = {}
@@ -34,18 +30,24 @@ STAR_MESSAGES = {
 
 
 def _compute_stars(wanted_remaining: float) -> int:
-    """Compute the star display count from remaining wanted seconds."""
+    """Compute the W-level (1–5) from remaining wanted heat."""
     if wanted_remaining <= 0:
         return 0
-    return min(math.ceil(wanted_remaining / 60) + 1, 5)
+    return min(math.ceil(wanted_remaining / Wanted.LEVEL_PER_STAR), 5)
 
 
 async def tick_wanted_countdown(http_client, http_client_mod) -> None:
-    """Single tick of the wanted countdown. Called from an arq cron."""
-    # Batch-load all active wanted records first — must always run
+    """Single tick of the wanted countdown. Called from an arq cron.
+
+    Wanted status is permanent — it never decays automatically.
+    Only police proximity causes wanted_remaining to decrease,
+    using the inverse-square law (1/r²).
+    """
+    # Batch-load all active wanted records
     wanted_list = [
         w
         async for w in Wanted.objects.filter(
+            expired_at__isnull=True,
             wanted_remaining__gt=0,
         ).select_related("character")
     ]
@@ -77,46 +79,9 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             _, cop_loc, _ = locations[cg]
             cop_locations.append(cop_loc)
 
-    # No police on duty — immediately expire all wanted records
-    if not cop_locations:
-        logger.info(
-            "wanted tick: no police on duty, expiring %d records", len(wanted_list)
-        )
-        # Notify online suspects before expiry
-        for wanted in wanted_list:
-            if wanted.character.guid in locations:
-                try:
-                    await send_system_message(
-                        http_client_mod,
-                        STAR_MESSAGES[0],
-                        character_guid=wanted.character.guid,
-                    )
-                except Exception:
-                    logger.warning(
-                        f"Failed to send wanted expired message to {wanted.character.name}"
-                    )
-        # Bulk expire all
-        await Wanted.objects.filter(id__in=[w.id for w in wanted_list]).aupdate(
-            wanted_remaining=0,
-            expired_at=timezone.now(),
-        )
-        # Refresh names and announce money secured
-        for char in (w.character for w in wanted_list):
-            _last_star_notified.pop(char.guid, None)
-            try:
-                await refresh_player_name(char, http_client_mod)
-            except Exception:
-                logger.warning(
-                    f"Failed to refresh name for {char.name} after wanted expired"
-                )
-            if char.guid:
-                try:
-                    await announce_money_secured(char.guid, http_client)
-                except Exception:
-                    logger.warning(f"Failed to announce money secured for {char.name}")
-        return
+    # No police on duty — nothing happens (wanted stays permanently)
+    # Also nothing happens for offline suspects or suspects with no cops nearby
 
-    # Cops are on duty — tick countdown per suspect
     expired_characters = []
     star_change_notifications = []  # (wanted, message) for deferred processing
 
@@ -124,28 +89,29 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
         sus_guid = wanted.character.guid
         old_stars = _compute_stars(wanted.wanted_remaining)
 
-        if sus_guid not in locations:
-            # Offline suspect — tick at full speed
-            if wanted.wanted_remaining > 0:
-                wanted.wanted_remaining = max(
-                    0, wanted.wanted_remaining - TICK_INTERVAL
-                )
-                if wanted.wanted_remaining <= 0:
-                    expired_characters.append(wanted.character)
+        # Offline suspect or no police at all → no decay
+        if sus_guid not in locations or not cop_locations:
             continue
 
+        # Online suspect with police on duty — apply 1/r² decay
         _, sus_loc, _ = locations[sus_guid]
         min_dist = min(_distance_3d(sus_loc, cop_loc) for cop_loc in cop_locations)
-        slowdown = max(MIN_SLOWDOWN, min(1.0, min_dist / PROXIMITY_REF_DISTANCE))
-        decrement = TICK_INTERVAL * slowdown
+
+        # 1/r² decay: closer police = faster reduction
+        clamped_dist = max(min_dist, Wanted.MIN_DISTANCE)
+        decay_rate = min(
+            Wanted.MAX_DECAY, (Wanted.REF_DISTANCE / clamped_dist) ** 2
+        )
+        decrement = TICK_INTERVAL * decay_rate
+
         if wanted.wanted_remaining > 0:
             wanted.wanted_remaining = max(0, wanted.wanted_remaining - decrement)
             if wanted.wanted_remaining <= 0:
                 expired_characters.append(wanted.character)
 
-        # Track star changes for deferred notification (online suspects only)
+        # Track star changes for deferred notification
         new_stars = _compute_stars(wanted.wanted_remaining)
-        if new_stars != old_stars and sus_guid in locations:
+        if new_stars != old_stars:
             last_notified = _last_star_notified.get(sus_guid)
             if last_notified is None or new_stars != last_notified:
                 _last_star_notified[sus_guid] = new_stars

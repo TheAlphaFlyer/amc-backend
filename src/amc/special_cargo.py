@@ -8,6 +8,7 @@ called from handle_cargo_arrived() in webhook.py.
 
 import asyncio
 import logging
+import random
 
 from django.db.models import F
 from collections import defaultdict
@@ -37,11 +38,27 @@ ILLICIT_CARGO_KEYS: set[str] = {
     "MoneyPallet",
 }
 
+# Wanted trigger probability constants
+WANTED_MIN_CHANCE = 0.05  # 5% floor for small deliveries
+WANTED_FULL_CHANCE_AMOUNT = 200_000  # $200k+ = 100% chance
+
 
 def calculate_criminal_level(laundered_total: int) -> int:
     """Calculate criminal level from cumulative laundered amount.
     Level scales infinitely: floor(total / step) + 1"""
     return (laundered_total // CRIMINAL_LEVEL_STEP) + 1
+
+
+def should_trigger_wanted(payment: int) -> bool:
+    """Determine whether an illicit delivery should trigger a Wanted level.
+
+    Probability scales linearly with payment:
+    - Under $10k: 5% chance (floor)
+    - $100k: 50% chance
+    - $200k+: 100% chance
+    """
+    chance = max(WANTED_MIN_CHANCE, min(1.0, payment / WANTED_FULL_CHANCE_AMOUNT))
+    return random.random() < chance
 
 
 # Handler signature: (logs, character, http_client, http_client_mod) -> None
@@ -82,7 +99,8 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
     await cache.adelete(cache_key)
 
     # Check if any confiscation happened during the wanted period
-    window_start = timezone.now() - timedelta(seconds=Wanted.MAX_WANTED_DURATION)
+    # Use a generous window since wanted is now permanent until cleared
+    window_start = timezone.now() - timedelta(days=7)
     was_confiscated = await Confiscation.objects.filter(
         character__guid=character_guid,
         created_at__gte=window_start,
@@ -122,11 +140,18 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def create_or_refresh_wanted(character, http_client_mod) -> Wanted:
+async def create_or_refresh_wanted(
+    character, http_client_mod, *, amount: int = 0
+) -> Wanted:
     """Create or refresh a Wanted record for the given character.
 
     Returns the active Wanted instance (created or updated).
     Called by cargo handlers for all illicit cargo types.
+
+    Args:
+        character: The Character model instance.
+        http_client_mod: Mod server HTTP client.
+        amount: The delivery payment amount to accumulate on the Wanted record.
     """
     from amc.mod_server import send_system_message
 
@@ -135,12 +160,15 @@ async def create_or_refresh_wanted(character, http_client_mod) -> Wanted:
         expired_at__isnull=True,
     ).afirst()
     if active_wanted:
-        active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_SECONDS
-        await active_wanted.asave(update_fields=["wanted_remaining"])
+        active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_LEVEL
+        active_wanted.amount = F("amount") + amount
+        await active_wanted.asave(update_fields=["wanted_remaining", "amount"])
+        await active_wanted.arefresh_from_db(fields=["amount"])
     else:
         active_wanted = await Wanted.objects.acreate(
             character=character,
-            wanted_remaining=Wanted.INITIAL_WANTED_SECONDS,
+            wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
+            amount=amount,
         )
 
     await refresh_player_name(character, http_client_mod)
@@ -243,10 +271,11 @@ async def handle_money_cargo(
             "total": secured_total,
             "name": character.name,
         }
+        # Use a long timeout since wanted is now permanent until cleared
         await cache.aset(
             secured_cache_key,
             secured_data,
-            timeout=Wanted.MAX_WANTED_DURATION + 120,
+            timeout=7 * 24 * 3600,  # 7 days
         )
 
 

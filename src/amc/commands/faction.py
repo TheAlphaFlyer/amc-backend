@@ -117,7 +117,10 @@ async def execute_arrest(
                 wanted = await Wanted.objects.aget(
                     character=suspect_char, expired_at__isnull=True
                 )
-                rate = max(0.0, wanted.wanted_remaining / Wanted.INITIAL_WANTED_SECONDS)
+                from amc.criminals import _compute_stars
+
+                stars = _compute_stars(wanted.wanted_remaining)
+                rate = min(1.0, stars / 5)
             except Wanted.DoesNotExist:
                 rate = 0.0
 
