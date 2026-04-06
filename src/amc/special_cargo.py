@@ -39,8 +39,8 @@ ILLICIT_CARGO_KEYS: set[str] = {
 }
 
 # Wanted trigger probability constants
-WANTED_MIN_CHANCE = 0.05  # 5% floor for small deliveries
-WANTED_FULL_CHANCE_AMOUNT = 200_000  # $200k+ = 100% chance
+WANTED_MIN_CHANCE = 0.10  # 10% floor for small deliveries
+WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
 
 
 def calculate_criminal_level(laundered_total: int) -> int:
@@ -53,9 +53,9 @@ def should_trigger_wanted(payment: int) -> bool:
     """Determine whether an illicit delivery should trigger a Wanted level.
 
     Probability scales linearly with payment:
-    - Under $10k: 5% chance (floor)
-    - $100k: 50% chance
-    - $200k+: 100% chance
+    - Any amount: 10% floor
+    - $50k: 50% chance
+    - $100k+: 100% chance
     """
     chance = max(WANTED_MIN_CHANCE, min(1.0, payment / WANTED_FULL_CHANCE_AMOUNT))
     return random.random() < chance
