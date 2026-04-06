@@ -24,9 +24,9 @@ ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 
 # Bounty growth — amount ($) added per second while police are nearby.
 # Uses the same 1/r² proximity factor as heat decay (higher factor = nearer).
-# At REF_DISTANCE (100m) growth = BOUNTY_GROWTH_PER_TICK * 1.0 = $200/s.
-# At point blank (10m) factor = MAX_DECAY (10) so growth = $2,000/s.
-BOUNTY_GROWTH_PER_TICK = 200  # $/s at reference distance (100m)
+# At REF_DISTANCE (100m) growth = BOUNTY_GROWTH_PER_TICK * 1.0 = $50/s.
+# At point blank (10m) factor = MAX_DECAY (10) so growth = $500/s.
+BOUNTY_GROWTH_PER_TICK = 50  # $/s at reference distance (100m)
 
 # Logout heat escalation — same 1/r² law as teleport, but capped lower since
 # logging out near police is less deliberate than teleporting.
