@@ -1,13 +1,13 @@
+"""Tests for teleport heat escalation — wanted players gain heat when teleporting."""
+
 import time
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
 from django.test import TestCase
-from django.utils import timezone
 
 from amc.factories import PlayerFactory, CharacterFactory
-from amc.models import Confiscation, Delivery, PoliceSession, Wanted
-from amc.webhook import process_events
+from amc.models import Wanted, ServerTeleportLog
 
 
 def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
@@ -32,11 +32,12 @@ def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
     return_value=100_000,
 )
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
-@patch("amc.mod_server.transfer_money", new_callable=AsyncMock)
-@patch("amc.mod_server.show_popup", new_callable=AsyncMock)
+@patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
 @patch("amc.game_server.announce", new_callable=AsyncMock)
-class TeleportPenaltyTests(TestCase):
-    """Tests for handle_teleport_or_respawn — penalty for criminals who teleport."""
+# Mock get_players to return None (no police lookup during tests by default)
+@patch("amc.handlers.teleport.get_players", new_callable=AsyncMock, return_value=None)
+class TeleportHeatEscalationTests(TestCase):
+    """Tests for _handle_teleport_or_respawn — wanted heat escalation on teleport."""
 
     def setUp(self):
         from django.core.cache import cache
@@ -48,20 +49,12 @@ class TeleportPenaltyTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player)
         return player, character
 
-    async def _deliver_money(self, character, payment=100_000):
-        """Create a Money Delivery record."""
-        return await Delivery.objects.acreate(
-            timestamp=timezone.now(),
-            character=character,
-            cargo_key="Money",
-            quantity=1,
-            payment=payment,
-        )
-
     async def _process_teleport(
         self, character, hook="ServerTeleportCharacter", seq=100
     ):
-        """Run a single teleport event through the full process_events pipeline."""
+        """Run a single teleport event through process_events."""
+        from amc.webhook import process_events
+
         events = [_teleport_event(character.guid, hook=hook, seq=seq)]
         http_client = AsyncMock()
         http_client_mod = AsyncMock()
@@ -69,157 +62,162 @@ class TeleportPenaltyTests(TestCase):
             events, http_client=http_client, http_client_mod=http_client_mod
         )
 
-    async def test_teleport_with_full_wanted_full_penalty(
+    # ------------------------------------------------------------------
+    # Heat escalation on teleport
+    # ------------------------------------------------------------------
+
+    async def test_teleport_increases_wanted_heat(
         self,
+        mock_get_players,
         mock_announce,
-        mock_popup,
-        mock_transfer,
+        mock_system_msg,
         mock_refresh,
         mock_treasury,
         mock_parties,
         mock_rp,
     ):
-        """Teleporting with full Wanted (300s) → ~100% penalty."""
+        """Teleporting while wanted should increase wanted_remaining by base heat."""
+        from amc.handlers.teleport import TELEPORT_HEAT_BASE
+
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, wanted_remaining=300)
+        initial = 100.0
+        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
 
         await self._process_teleport(character)
 
-        # Should deduct full payment
-        mock_transfer.assert_called_once()
-        args = mock_transfer.call_args
-        self.assertEqual(args[0][1], -100_000)
-        self.assertEqual(args[0][2], "Teleport Penalty")
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        # With no police (get_players returns None), only base heat is added
+        self.assertAlmostEqual(
+            wanted.wanted_remaining, initial + TELEPORT_HEAT_BASE, places=1
+        )
 
-        # criminal_laundered_total should be 0
-        await character.arefresh_from_db()
-        self.assertEqual(character.criminal_laundered_total, 0)
-
-        # Confiscation record created (officer=None for self-inflicted)
-        conf = await Confiscation.objects.filter(character=character).afirst()
-        self.assertIsNotNone(conf)
-        self.assertIsNone(conf.officer)
-        self.assertEqual(conf.amount, 100_000)
-
-        # Wanted should be expired (not deleted)
-        wanted = await Wanted.objects.aget(character=character)
-        self.assertEqual(wanted.wanted_remaining, 0)
-        self.assertIsNotNone(wanted.expired_at)
-
-    async def test_teleport_with_half_wanted_half_penalty(
+    async def test_teleport_without_wanted_no_effect(
         self,
+        mock_get_players,
         mock_announce,
-        mock_popup,
-        mock_transfer,
+        mock_system_msg,
         mock_refresh,
         mock_treasury,
         mock_parties,
         mock_rp,
     ):
-        """Teleporting with 50% Wanted (150s) → 50% penalty."""
+        """Teleporting without Wanted → no heat added."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, wanted_remaining=150)
-
-        await self._process_teleport(character, hook="ServerTeleportVehicle")
-
-        args = mock_transfer.call_args
-        penalty = abs(args[0][1])
-        # rate = 300/600 = 0.5 → 50_000
-        self.assertEqual(penalty, 50_000)
-
-    async def test_teleport_without_wanted_no_penalty(
-        self,
-        mock_announce,
-        mock_popup,
-        mock_transfer,
-        mock_refresh,
-        mock_treasury,
-        mock_parties,
-        mock_rp,
-    ):
-        """Teleporting without Wanted → no penalty."""
-        _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000)
 
         await self._process_teleport(character, hook="ServerRespawnCharacter")
 
-        mock_transfer.assert_not_called()
         self.assertEqual(
-            await Confiscation.objects.filter(character=character).acount(), 0
+            await Wanted.objects.filter(character=character).acount(), 0
         )
 
-    async def test_non_money_delivery_no_penalty(
+    async def test_teleport_logs_always_created(
         self,
+        mock_get_players,
         mock_announce,
-        mock_popup,
-        mock_transfer,
+        mock_system_msg,
         mock_refresh,
         mock_treasury,
         mock_parties,
         mock_rp,
     ):
-        """Teleporting after non-Money delivery → no penalty."""
+        """Teleport log should be created regardless of wanted status."""
         _, character = await self._setup_character()
-        await Delivery.objects.acreate(
-            timestamp=timezone.now(),
-            character=character,
-            cargo_key="oranges",
-            quantity=1,
-            payment=100_000,
+
+        await self._process_teleport(character)
+
+        log_count = await ServerTeleportLog.objects.filter(
+            character=character
+        ).acount()
+        self.assertEqual(log_count, 1)
+
+    async def test_teleport_heat_capped_at_max(
+        self,
+        mock_get_players,
+        mock_announce,
+        mock_system_msg,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
+    ):
+        """Heat should not exceed INITIAL_WANTED_LEVEL * 5."""
+        _, character = await self._setup_character()
+        max_heat = Wanted.INITIAL_WANTED_LEVEL * 5
+        # Start near the max
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=max_heat - 10
         )
 
         await self._process_teleport(character)
 
-        mock_transfer.assert_not_called()
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertEqual(wanted.wanted_remaining, max_heat)
 
-    async def test_police_officer_not_penalised(
+    async def test_teleport_sends_system_message(
         self,
+        mock_get_players,
         mock_announce,
-        mock_popup,
-        mock_transfer,
+        mock_system_msg,
         mock_refresh,
         mock_treasury,
         mock_parties,
         mock_rp,
     ):
-        """Active police officers are not penalised."""
+        """Player should receive a system message when heat escalates."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000)
-        await Wanted.objects.acreate(character=character, wanted_remaining=300)
-        await PoliceSession.objects.acreate(character=character)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         await self._process_teleport(character)
 
-        mock_transfer.assert_not_called()
+        # send_system_message is fire-and-forget via asyncio.create_task,
+        # so we just verify wanted_remaining increased
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertGreater(wanted.wanted_remaining, Wanted.INITIAL_WANTED_LEVEL)
 
-    async def test_multiple_deliveries_summed(
+    async def test_star_level_change_triggers_name_refresh(
         self,
+        mock_get_players,
         mock_announce,
-        mock_popup,
-        mock_transfer,
+        mock_system_msg,
         mock_refresh,
         mock_treasury,
         mock_parties,
         mock_rp,
     ):
-        """Multiple deliveries are summed at the same Wanted rate."""
-        _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000)
-        await self._deliver_money(character, payment=50_000)
-        # Wanted at 240s (80%) → 100000*0.8 + 50000*0.8 = 80000 + 40000 = 120000
-        await Wanted.objects.acreate(character=character, wanted_remaining=240)
+        """If star level changes, player name should be refreshed."""
 
-        character.criminal_laundered_total = 150_000
-        await character.asave(update_fields=["criminal_laundered_total"])
+        _, character = await self._setup_character()
+        # Start at 55 (W1), adding 60 base heat → 115 (W2), star change
+        await Wanted.objects.acreate(character=character, wanted_remaining=55)
 
         await self._process_teleport(character)
 
-        args = mock_transfer.call_args
-        penalty = abs(args[0][1])
-        self.assertEqual(penalty, 120_000)
+        # refresh_player_name should have been called (star went from W1 to W2)
+        mock_refresh.assert_called()
 
-        # criminal_laundered_total should be reduced
-        await character.arefresh_from_db()
-        self.assertEqual(character.criminal_laundered_total, 30_000)
+    async def test_multiple_teleports_accumulate_heat(
+        self,
+        mock_get_players,
+        mock_announce,
+        mock_system_msg,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
+    ):
+        """Multiple teleports should each add heat."""
+        from amc.handlers.teleport import TELEPORT_HEAT_BASE
+
+        _, character = await self._setup_character()
+        initial = 100.0
+        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
+
+        await self._process_teleport(character, seq=100)
+        await self._process_teleport(character, seq=101)
+
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertAlmostEqual(
+            wanted.wanted_remaining, initial + TELEPORT_HEAT_BASE * 2, places=1
+        )

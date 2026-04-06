@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-from datetime import timedelta
 
 from django.contrib.gis.geos import Point
 from django.utils import timezone
@@ -10,7 +9,6 @@ from django.conf import settings
 from amc.models import (
     Character,
     CharacterLocation,
-    Delivery,
     PoliceSession,
     ShortcutZone,
 )
@@ -156,12 +154,12 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
 
 
 async def _check_teleport_by_location(character, old_location, new_location, ctx):
-    """Detect teleportation via location delta and apply penalty.
+    """Detect teleportation via location delta and escalate wanted heat.
 
     Hotfix for when the mod server hooks (ServerTeleportCharacter etc.) are
-    unavailable. If a player who has recent Money deliveries moves more than
-    TELEPORT_DISTANCE_THRESHOLD between ticks, trigger the same penalty
-    as handle_teleport_or_respawn.
+    unavailable. If a wanted player moves more than
+    TELEPORT_DISTANCE_THRESHOLD between ticks, trigger the same heat
+    escalation as _handle_teleport_or_respawn.
     """
     if not LOCATION_TELEPORT_DETECTION_ENABLED:
         return
@@ -170,14 +168,13 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
     if distance <= TELEPORT_DISTANCE_THRESHOLD:
         return
 
-    # Quick check: any recent Money deliveries?
-    window_start = timezone.now() - timedelta(minutes=TELEPORT_DETECTION_WINDOW)
-    has_recent_money = await Delivery.objects.filter(
-        character=character,
-        cargo_key="Money",
-        timestamp__gte=window_start,
+    # Only relevant for actively wanted players
+    from amc.models import Wanted
+
+    is_wanted = await Wanted.objects.filter(
+        character=character, expired_at__isnull=True, wanted_remaining__gt=0
     ).aexists()
-    if not has_recent_money:
+    if not is_wanted:
         return
 
     # Skip police officers
@@ -193,20 +190,19 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
         distance,
     )
 
-    # Reuse the existing penalty handler from webhook.py
+    # Reuse the existing heat escalation handler
     import time
-    from amc.webhook import handle_teleport_or_respawn
+    from amc.handlers.teleport import _handle_teleport_or_respawn
     from amc.webhook_context import EventContext
 
     http_client_mod = ctx.get("http_client_mod")
     http_client = ctx.get("http_client")
-    # Synthesize a minimal event dict (the handler doesn't use event data)
     event = {"data": {}, "timestamp": time.time()}
     handler_ctx = EventContext(
         http_client=http_client,
         http_client_mod=http_client_mod,
     )
-    await handle_teleport_or_respawn(event, character, handler_ctx)
+    await _handle_teleport_or_respawn(event, character, handler_ctx)
 
 
 async def _check_pois_and_portals(character, old_location, new_location, ctx):

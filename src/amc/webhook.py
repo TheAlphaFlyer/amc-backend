@@ -55,8 +55,6 @@ from amc.pipeline.discord import post_discord_delivery_embed  # noqa: F401
 from amc.handlers.cargo import process_cargo_log  # noqa: F401
 from amc.handlers.police import handle_pickup_cargo  # noqa: F401
 from amc.handlers.teleport import (
-    TELEPORT_PENALTY_WINDOW,  # noqa: F401
-    TELEPORT_PENALTY_ANNOUNCE_DELAY,  # noqa: F401
     _handle_teleport_or_respawn as handle_teleport_or_respawn,  # noqa: F401
 )
 from amc.handlers.smuggling import (

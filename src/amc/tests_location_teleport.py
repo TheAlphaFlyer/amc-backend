@@ -1,15 +1,13 @@
 """Tests for location-based teleport detection in locations.py."""
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
 from django.contrib.gis.geos import Point
 from django.test import TestCase
-from django.utils import timezone
 
 from amc.factories import PlayerFactory, CharacterFactory
-from amc.models import Delivery, PoliceSession
+from amc.models import PoliceSession, Wanted
 
 
 def _make_ctx(http_client_mod=None, http_client=None):
@@ -20,7 +18,7 @@ def _make_ctx(http_client_mod=None, http_client=None):
     }
 
 
-@patch("amc.webhook.handle_teleport_or_respawn", new_callable=AsyncMock)
+@patch("amc.handlers.teleport._handle_teleport_or_respawn", new_callable=AsyncMock)
 class LocationTeleportDetectionTests(TestCase):
     """Tests for _check_teleport_by_location."""
 
@@ -34,20 +32,12 @@ class LocationTeleportDetectionTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player)
         return player, character
 
-    async def _deliver_money(self, character, payment=100_000, minutes_ago=0):
-        ts = timezone.now() - timedelta(minutes=minutes_ago)
-        return await Delivery.objects.acreate(
-            timestamp=ts,
-            character=character,
-            cargo_key="Money",
-            quantity=1,
-            payment=payment,
-        )
-
-    async def test_teleport_detected_with_recent_delivery(self, mock_handle):
-        """Player with recent Money delivery moves >100m → penalty triggered."""
+    async def test_teleport_detected_for_wanted_player(self, mock_handle):
+        """Wanted player moves >100m → heat escalation triggered."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=3)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         from amc.locations import _check_teleport_by_location
 
@@ -62,10 +52,12 @@ class LocationTeleportDetectionTests(TestCase):
         call_args = mock_handle.call_args
         self.assertEqual(call_args[0][1], character)
 
-    async def test_normal_driving_no_penalty(self, mock_handle):
-        """Player moves <100m between ticks → no penalty."""
+    async def test_normal_driving_no_trigger(self, mock_handle):
+        """Wanted player moves <100m between ticks → no trigger."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         from amc.locations import _check_teleport_by_location
 
@@ -77,11 +69,9 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
-    async def test_no_recent_delivery_no_penalty(self, mock_handle):
-        """Teleport detected but no Money deliveries in window → no penalty."""
+    async def test_not_wanted_no_trigger(self, mock_handle):
+        """Non-wanted player teleporting → no trigger."""
         _, character = await self._setup_character()
-        # Delivery from 15 minutes ago — outside the 10-minute window
-        await self._deliver_money(character, payment=100_000, minutes_ago=15)
 
         from amc.locations import _check_teleport_by_location
 
@@ -93,15 +83,15 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
-    async def test_non_money_delivery_no_penalty(self, mock_handle):
-        """Teleport with recent non-Money delivery → no penalty."""
+    async def test_expired_wanted_no_trigger(self, mock_handle):
+        """Player with expired wanted → no trigger."""
+        from django.utils import timezone
+
         _, character = await self._setup_character()
-        await Delivery.objects.acreate(
-            timestamp=timezone.now(),
+        await Wanted.objects.acreate(
             character=character,
-            cargo_key="oranges",
-            quantity=1,
-            payment=100_000,
+            wanted_remaining=0,
+            expired_at=timezone.now(),
         )
 
         from amc.locations import _check_teleport_by_location
@@ -114,10 +104,12 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
-    async def test_police_officer_not_penalised(self, mock_handle):
-        """Active police officers should not be penalised."""
+    async def test_police_officer_not_triggered(self, mock_handle):
+        """Active police officers should not have heat escalated."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
         await PoliceSession.objects.acreate(character=character)
 
         from amc.locations import _check_teleport_by_location
@@ -134,7 +126,9 @@ class LocationTeleportDetectionTests(TestCase):
     async def test_feature_flag_disabled(self, mock_handle):
         """When feature flag is off → no detection even with valid conditions."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         from amc.locations import _check_teleport_by_location
 
@@ -146,10 +140,12 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
-    async def test_exactly_at_threshold_no_penalty(self, mock_handle):
-        """Distance exactly at threshold → no penalty (uses > not >=)."""
+    async def test_exactly_at_threshold_no_trigger(self, mock_handle):
+        """Distance exactly at threshold → no trigger (uses > not >=)."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         from amc.locations import (
             _check_teleport_by_location,
@@ -165,9 +161,11 @@ class LocationTeleportDetectionTests(TestCase):
         mock_handle.assert_not_awaited()
 
     async def test_just_over_threshold_triggers(self, mock_handle):
-        """Distance just over threshold → penalty triggered."""
+        """Distance just over threshold + wanted → trigger."""
         _, character = await self._setup_character()
-        await self._deliver_money(character, payment=100_000, minutes_ago=0)
+        await Wanted.objects.acreate(
+            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
+        )
 
         from amc.locations import (
             _check_teleport_by_location,
