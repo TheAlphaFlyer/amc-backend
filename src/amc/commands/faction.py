@@ -24,6 +24,7 @@ from amc_finance.services import (
     send_fund_to_player_wallet,
 )
 from amc.police import is_police_vehicle, record_confiscation_for_level
+from amc.player_tags import refresh_player_name
 from django.utils.translation import gettext as gettext, gettext_lazy
 from django.utils import timezone
 
@@ -126,6 +127,11 @@ async def execute_arrest(
                 wanted.wanted_remaining = 0
                 wanted.expired_at = timezone.now()
                 await wanted.asave(update_fields=["wanted_remaining", "expired_at"])
+
+                # Strip the wanted star tag from the player's display name
+                asyncio.create_task(
+                    refresh_player_name(suspect_char, http_client_mod)
+                )
 
             # Create a Confiscation record for the arrest
             await Confiscation.objects.acreate(
