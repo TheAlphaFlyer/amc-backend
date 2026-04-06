@@ -9,7 +9,6 @@ from amc.models import (
     Character,
     PoliceSession,
     TeleportPoint,
-    Delivery,
     Confiscation,
     Wanted,
 )
@@ -104,11 +103,10 @@ async def execute_arrest(
     for guid, (crim_uid, crim_loc, has_vehicle) in targets.items():
         name = target_chars[guid].name if guid in target_chars else "Unknown"
 
-        # --- Phase 1: Confiscation & Wanted expiry (BEFORE teleport) ---
-        # We must expire the Wanted record and link deliveries to a Confiscation
-        # record before teleporting to jail. Otherwise the ServerTeleportCharacter
-        # event handler will see an active Wanted + un-confiscated deliveries and
-        # apply a second penalty.
+        # --- Phase 1: Expire Wanted & confiscate amount (BEFORE teleport) ---
+        # We must expire the Wanted record before teleporting to jail.
+        # Otherwise the ServerTeleportCharacter event handler will see an
+        # active Wanted and apply a second penalty.
         suspect_char = target_chars.get(guid)
         confiscated_amount = 0
         if suspect_char:
@@ -117,46 +115,25 @@ async def execute_arrest(
                 wanted = await Wanted.objects.aget(
                     character=suspect_char, expired_at__isnull=True
                 )
-                from amc.criminals import _compute_stars
-
-                stars = _compute_stars(wanted.wanted_remaining)
-                rate = min(1.0, stars / 5)
             except Wanted.DoesNotExist:
-                rate = 0.0
+                pass
 
-            # Find all un-confiscated deliveries linked to this Wanted record
-            wanted_deliveries = []
             if wanted:
-                wanted_deliveries = [
-                    d
-                    async for d in Delivery.objects.filter(
-                        wanted=wanted,
-                        confiscations__isnull=True,
-                    )
-                ]
+                # Confiscate the full Wanted.amount (cumulative illicit payment)
+                confiscated_amount = wanted.amount
 
-            total_delivery_payment = sum(d.payment for d in wanted_deliveries)
-            confiscated_amount = (
-                round(total_delivery_payment * rate) if wanted_deliveries else 0
-            )
+                # Expire Wanted status BEFORE teleport
+                wanted.wanted_remaining = 0
+                wanted.expired_at = timezone.now()
+                await wanted.asave(update_fields=["wanted_remaining", "expired_at"])
 
-            # Determine the cargo key for the confiscation record
-            cargo_keys_involved = {d.cargo_key for d in wanted_deliveries}
-            conf_cargo_key = (
-                cargo_keys_involved.pop()
-                if len(cargo_keys_involved) == 1
-                else "Illicit"
-            ) if cargo_keys_involved else "Illicit"
-
-            # Always create a Confiscation record for the arrest
-            conf = await Confiscation.objects.acreate(
+            # Create a Confiscation record for the arrest
+            await Confiscation.objects.acreate(
                 character=suspect_char,
                 officer=officer_character,
-                cargo_key=conf_cargo_key,
+                cargo_key="Illicit",
                 amount=confiscated_amount,
             )
-            if wanted_deliveries:
-                await conf.deliveries.aset([d.id for d in wanted_deliveries])
 
             if confiscated_amount > 0:
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
@@ -211,14 +188,6 @@ async def execute_arrest(
                 )
 
             total_confiscated += confiscated_amount
-
-            # Expire Wanted status BEFORE teleport
-            await Wanted.objects.filter(
-                character=suspect_char, expired_at__isnull=True
-            ).aupdate(
-                wanted_remaining=0,
-                expired_at=timezone.now(),
-            )
 
         # --- Phase 2: Physical arrest (teleport to jail) ---
         # Always attempt to exit vehicle — snapshot may be stale

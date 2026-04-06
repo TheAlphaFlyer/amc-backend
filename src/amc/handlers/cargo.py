@@ -241,9 +241,25 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 character=character, expired_at__isnull=True
             ).aexists()
             if already_wanted or should_trigger_wanted(delivery_amount):
-                wanted = await create_or_refresh_wanted(
+                wanted, newly_created = await create_or_refresh_wanted(
                     character, ctx.http_client_mod, amount=delivery_amount
                 )
+                # Announce only when a new Wanted record is created
+                if newly_created and ctx.http_client:
+                    from amc.special_cargo import _announce_laundered_after_delay
+                    from django.core.cache import cache
+
+                    cache_key = f"money_laundered:{character.guid}"
+                    await cache.aset(
+                        cache_key,
+                        {"total": delivery_amount, "name": character.name},
+                        timeout=60,
+                    )
+                    asyncio.create_task(
+                        _announce_laundered_after_delay(
+                            character.guid, ctx.http_client, delay=15
+                        )
+                    )
                 # Link delivery to the wanted record
                 if delivery_obj:
                     await link_delivery_to_wanted(

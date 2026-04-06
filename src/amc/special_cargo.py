@@ -142,10 +142,11 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
 
 async def create_or_refresh_wanted(
     character, http_client_mod, *, amount: int = 0
-) -> Wanted:
+) -> tuple[Wanted, bool]:
     """Create or refresh a Wanted record for the given character.
 
-    Returns the active Wanted instance (created or updated).
+    Returns a tuple of (active Wanted instance, created) where *created*
+    is True when a brand-new record was inserted.
     Called by cargo handlers for all illicit cargo types.
 
     Args:
@@ -155,6 +156,7 @@ async def create_or_refresh_wanted(
     """
     from amc.mod_server import send_system_message
 
+    created = False
     active_wanted = await Wanted.objects.filter(
         character=character,
         expired_at__isnull=True,
@@ -170,6 +172,7 @@ async def create_or_refresh_wanted(
             wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
             amount=amount,
         )
+        created = True
 
     await refresh_player_name(character, http_client_mod)
     asyncio.create_task(
@@ -179,7 +182,7 @@ async def create_or_refresh_wanted(
             character_guid=character.guid,
         )
     )
-    return active_wanted
+    return active_wanted, created
 
 
 async def link_delivery_to_wanted(character, wanted, cargo_key, timestamp) -> None:
@@ -235,25 +238,8 @@ async def handle_money_cargo(
             expires_at=timezone.now() + timedelta(days=7),
         )
 
-    # --- Debounced announcement + treasury cost ---
+    # --- Treasury cost ---
     if money_payment > 0:
-        if http_client:
-            cache_key = f"money_laundered:{character.guid}"
-            prev_data = await cache.aget(cache_key)
-            if not prev_data:
-                await cache.aset(
-                    cache_key,
-                    {"total": money_payment, "name": character.name},
-                    timeout=60,
-                )
-                asyncio.create_task(
-                    _announce_laundered_after_delay(
-                        character.guid, http_client, delay=15
-                    )
-                )
-            else:
-                prev_data["total"] = prev_data.get("total", 0) + money_payment
-                await cache.aset(cache_key, prev_data, timeout=60)
         laundering_cost = int(money_payment * 0.20)
         if laundering_cost > 0:
             await record_treasury_expense(laundering_cost, "Money Laundering Cost")

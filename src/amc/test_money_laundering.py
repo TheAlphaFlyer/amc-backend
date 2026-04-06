@@ -1,5 +1,4 @@
 import time
-import asyncio
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch, AsyncMock
@@ -106,16 +105,18 @@ class MoneyLaunderingTests(TestCase):
             record.expires_at.timestamp(), expected_expiry.timestamp(), delta=5
         )
 
-    @patch("amc.special_cargo.asyncio.sleep", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
     async def test_money_delivery_server_announcement(
         self,
-        mock_sleep,
+        mock_should_trigger,
         mock_sc_announce,
         mock_announce,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
-        """Money delivery should trigger a debounced server announcement."""
+        """Money delivery should populate the laundering cache when a new Wanted is created."""
+        from django.core.cache import cache
+
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
@@ -124,68 +125,45 @@ class MoneyLaunderingTests(TestCase):
         http_client = AsyncMock()
 
         await process_event(event, player, character, http_client=http_client)
-        # Let fire-and-forget create_task coroutines complete
-        for _ in range(10):
-            await asyncio.sleep(0)
 
-        mock_sc_announce.assert_called()
-        # Both laundered and secured tasks may fire; find the laundered announcement
-        announce_msgs = [call[0][0] for call in mock_sc_announce.call_args_list]
-        laundered_msg = next(m for m in announce_msgs if "laundered" in m)
-        self.assertIn("15,000", laundered_msg)
+        # The cache key is only set when a new Wanted record is created
+        cache_key = f"money_laundered:{character.guid}"
+        data = await cache.aget(cache_key)
+        self.assertIsNotNone(data, "Cache should be populated when new Wanted is created")
+        self.assertEqual(data["total"], 15_000)
+        self.assertEqual(data["name"], character.name)
 
-    async def test_money_delivery_debounces_announcements(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+    @patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
+    async def test_money_delivery_announces_only_on_new_wanted(
+        self, mock_should_trigger, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        """Multiple Money deliveries within the debounce window should accumulate, not spam."""
+        """Laundering cache is populated on first delivery (new Wanted) but not on refresh."""
+        from django.core.cache import cache
+
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
         player, character = await _setup_character("deb")
         http_client = AsyncMock()
-
-        # Patch create_task to capture but NOT actually schedule the coroutine
-        # This prevents the background task from running and calling real announce
-        created_tasks = []
-
-        def tracking_create_task(coro):
-            created_tasks.append(coro)
-            # Close the coroutine to avoid "was never awaited" warning
-            coro.close()
-            return AsyncMock()
-
-        with patch(
-            "amc.special_cargo.asyncio.create_task", side_effect=tracking_create_task
-        ):
-            # First delivery — should schedule laundering announcement + money_secured
-            event1 = _money_cargo_event(
-                character.guid, player.unique_id, payment=10_000
-            )
-            await process_event(event1, player, character, http_client=http_client)
-
-            # Second delivery — laundering announcement debounced, only money_secured task
-            event2 = _money_cargo_event(
-                character.guid, player.unique_id, payment=20_000
-            )
-            await process_event(event2, player, character, http_client=http_client)
-
-        # 3 total tasks: laundered(1st) + secured(1st) + secured(2nd)
-        # Laundering announcement is debounced (only 1 task), money_secured fires per-delivery
-        laundered_tasks = [
-            t for t in created_tasks if "_announce_laundered" in t.__qualname__
-        ]
-        self.assertEqual(
-            len(laundered_tasks),
-            1,
-            "Laundering announcement should be debounced to 1 task",
-        )
-
-        # Verify accumulated total in cache (dict format: {total: ..., name: ...})
-        from django.core.cache import cache
-
         cache_key = f"money_laundered:{character.guid}"
-        data = await cache.aget(cache_key, {})
-        self.assertEqual(data.get("total", 0), 30_000)
+
+        # First delivery — creates new Wanted → cache should be set
+        event1 = _money_cargo_event(character.guid, player.unique_id, payment=10_000)
+        await process_event(event1, player, character, http_client=http_client)
+
+        data1 = await cache.aget(cache_key)
+        self.assertIsNotNone(data1, "Cache should be set on first delivery (new Wanted)")
+        self.assertEqual(data1["total"], 10_000)
+
+        # Clear cache to detect whether second delivery would set it again
+        await cache.adelete(cache_key)
+
+        # Second delivery — refreshes existing Wanted → cache should NOT be set again
+        event2 = _money_cargo_event(character.guid, player.unique_id, payment=20_000)
+        await process_event(event2, player, character, http_client=http_client)
+
+        data2 = await cache.aget(cache_key)
+        self.assertIsNone(data2, "Cache should NOT be set on subsequent delivery (Wanted refresh)")
 
     async def test_money_delivery_treasury_cost(
         self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
