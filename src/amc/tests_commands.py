@@ -2215,6 +2215,7 @@ class ArrestCommandTestCase(TestCase):
                 str(self.criminal_player.unique_id),
                 {"X": 1000.0, "Y": 2000.0, "Z": 3000.0},
                 no_vehicles=True,
+                force=True,
             )
 
             # Popup shown to arrested player
@@ -2239,12 +2240,11 @@ class ArrestCommandTestCase(TestCase):
             mock_cache.set.assert_called()
 
     async def test_cmd_arrest_retroactive_confiscates_money(self):
-        """Criminal arrested — Wanted at 270s (90%) → 90% confiscation."""
+        """Criminal arrested — Wanted.amount=25000 → full 25000 confiscated."""
         from amc.models import (
             FactionMembership,
             FactionChoice,
             TeleportPoint,
-            Delivery,
             Confiscation,
             Wanted,
         )
@@ -2261,16 +2261,11 @@ class ArrestCommandTestCase(TestCase):
         self.criminal_character.criminal_laundered_total = 50_000
         await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
 
-        # Delivery + Wanted at 90% protection (540s remaining)
-        await Delivery.objects.acreate(
-            character=self.criminal_character,
-            cargo_key="Money",
-            payment=25_000,
-            quantity=1,
-            timestamp=timezone.now(),
-        )
+        # Wanted with accumulated amount — full amount is confiscated on arrest
         await Wanted.objects.acreate(
-            character=self.criminal_character, wanted_remaining=270
+            character=self.criminal_character,
+            wanted_remaining=270,
+            amount=25_000,
         )
 
         mock_players = self._make_player_list(
@@ -2311,35 +2306,35 @@ class ArrestCommandTestCase(TestCase):
             self.assertEqual(mock_transfer.call_count, 2)
             mock_transfer.assert_any_call(
                 self.ctx.http_client_mod,
-                -22500,
+                -25000,
                 "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
             mock_transfer.assert_any_call(
                 self.ctx.http_client_mod,
-                22500,
+                25000,
                 "Confiscation Reward",
                 str(self.player.unique_id),
             )
-            mock_treasury.assert_called_once_with(22500, "Police Confiscation")
+            mock_treasury.assert_called_once_with(25000, "Police Confiscation")
             mock_prog.assert_called_once_with(
                 self.character,
-                22500,
+                25000,
                 http_client=self.ctx.http_client,
                 session=self.ctx.http_client_mod,
             )
             mock_fund_wallet.assert_called_once_with(
-                22500, self.character, "Confiscation Reward"
+                25000, self.character, "Confiscation Reward"
             )
 
             await self.criminal_character.arefresh_from_db(
                 fields=["criminal_laundered_total"]
             )
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 27_500)
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 25_000)
 
             self.assertTrue(
                 await Confiscation.objects.filter(
-                    amount=22500,
+                    amount=25000,
                     officer=self.character,
                     character=self.criminal_character,
                 ).aexists()
@@ -2347,7 +2342,7 @@ class ArrestCommandTestCase(TestCase):
 
             msgs = [call[0][1] for call in mock_sys.call_args_list]
             self.assertTrue(
-                any("Confiscated $22,500" in m for m in msgs),
+                any("Confiscated $25,000" in m for m in msgs),
                 f"Expected confiscation alert in msgs: {msgs}",
             )
             self.assertTrue(
@@ -2360,13 +2355,12 @@ class ArrestCommandTestCase(TestCase):
             self.assertEqual(wanted.wanted_remaining, 0)
             self.assertIsNotNone(wanted.expired_at)
 
-    async def test_cmd_arrest_confiscation_5min_half(self):
-        """Wanted at 150s (50%) → 50% confiscation."""
+    async def test_cmd_arrest_confiscation_full_amount(self):
+        """Wanted.amount=20000 → full 20000 confiscated regardless of wanted_remaining."""
         from amc.models import (
             FactionMembership,
             FactionChoice,
             TeleportPoint,
-            Delivery,
             Wanted,
         )
         from django.contrib.gis.geos import Point
@@ -2379,15 +2373,10 @@ class ArrestCommandTestCase(TestCase):
             name="jail", location=Point(1000, 2000, 3000)
         )
 
-        await Delivery.objects.acreate(
-            character=self.criminal_character,
-            cargo_key="Money",
-            payment=20_000,
-            quantity=1,
-            timestamp=timezone.now(),
-        )
         await Wanted.objects.acreate(
-            character=self.criminal_character, wanted_remaining=150
+            character=self.criminal_character,
+            wanted_remaining=150,
+            amount=20_000,
         )
 
         mock_players = self._make_player_list(
@@ -2423,19 +2412,18 @@ class ArrestCommandTestCase(TestCase):
 
             mock_transfer.assert_any_call(
                 self.ctx.http_client_mod,
-                -10000,
+                -20000,
                 "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
-            mock_treasury.assert_called_once_with(10000, "Police Confiscation")
+            mock_treasury.assert_called_once_with(20000, "Police Confiscation")
 
-    async def test_cmd_arrest_confiscation_9min_minimal(self):
-        """Wanted at 30s (10%) → 10% confiscation."""
+    async def test_cmd_arrest_confiscation_low_remaining(self):
+        """Wanted.amount=50000 with low wanted_remaining → still confiscates full amount."""
         from amc.models import (
             FactionMembership,
             FactionChoice,
             TeleportPoint,
-            Delivery,
             Wanted,
         )
         from django.contrib.gis.geos import Point
@@ -2448,15 +2436,10 @@ class ArrestCommandTestCase(TestCase):
             name="jail", location=Point(1000, 2000, 3000)
         )
 
-        await Delivery.objects.acreate(
-            character=self.criminal_character,
-            cargo_key="Money",
-            payment=50_000,
-            quantity=1,
-            timestamp=timezone.now(),
-        )
         await Wanted.objects.acreate(
-            character=self.criminal_character, wanted_remaining=30
+            character=self.criminal_character,
+            wanted_remaining=30,
+            amount=50_000,
         )
 
         mock_players = self._make_player_list(
@@ -2492,11 +2475,11 @@ class ArrestCommandTestCase(TestCase):
 
             mock_transfer.assert_any_call(
                 self.ctx.http_client_mod,
-                -5000,
+                -50000,
                 "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
-            mock_treasury.assert_called_once_with(5000, "Police Confiscation")
+            mock_treasury.assert_called_once_with(50000, "Police Confiscation")
 
     async def test_cmd_arrest_confiscation_expired(self):
         """No Wanted record → $0 confiscated."""
@@ -2559,15 +2542,17 @@ class ArrestCommandTestCase(TestCase):
 
             mock_transfer.assert_not_called()
             mock_treasury.assert_not_called()
-            self.assertEqual(await Confiscation.objects.acount(), 0)
+            # A zero-amount Confiscation record is created for every arrest
+            self.assertEqual(await Confiscation.objects.acount(), 1)
+            conf = await Confiscation.objects.afirst()
+            self.assertEqual(conf.amount, 0)
 
-    async def test_cmd_arrest_confiscation_multi_delivery_scaling(self):
-        """Multiple deliveries — only the most recent is confiscated."""
+    async def test_cmd_arrest_confiscation_full_wanted_amount(self):
+        """Wanted.amount accumulates all deliveries — full amount confiscated on arrest."""
         from amc.models import (
             FactionMembership,
             FactionChoice,
             TeleportPoint,
-            Delivery,
             Confiscation,
             Wanted,
         )
@@ -2584,24 +2569,11 @@ class ArrestCommandTestCase(TestCase):
         self.criminal_character.criminal_laundered_total = 200_000
         await self.criminal_character.asave(update_fields=["criminal_laundered_total"])
 
-        # Two deliveries — only the most recent (30_000) should be confiscated
-        await Delivery.objects.acreate(
-            character=self.criminal_character,
-            cargo_key="Money",
-            payment=50_000,
-            quantity=1,
-            timestamp=timezone.now(),
-        )
-        await Delivery.objects.acreate(
-            character=self.criminal_character,
-            cargo_key="Money",
-            payment=30_000,
-            quantity=1,
-            timestamp=timezone.now(),
-        )
-        # Wanted at 240s (80%) → int(30000*0.8) = 24000 (only most recent delivery)
+        # Wanted.amount accumulates total of both deliveries (50k + 30k = 80k)
         await Wanted.objects.acreate(
-            character=self.criminal_character, wanted_remaining=240
+            character=self.criminal_character,
+            wanted_remaining=240,
+            amount=80_000,
         )
 
         mock_players = self._make_player_list(
@@ -2637,18 +2609,18 @@ class ArrestCommandTestCase(TestCase):
 
             mock_transfer.assert_any_call(
                 self.ctx.http_client_mod,
-                -24000,
+                -80000,
                 "Money Confiscated",
                 str(self.criminal_player.unique_id),
             )
-            mock_treasury.assert_called_once_with(24000, "Police Confiscation")
+            mock_treasury.assert_called_once_with(80000, "Police Confiscation")
 
             await self.criminal_character.arefresh_from_db(
                 fields=["criminal_laundered_total"]
             )
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 176_000)
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 120_000)
 
-            self.assertTrue(await Confiscation.objects.filter(amount=24000).aexists())
+            self.assertTrue(await Confiscation.objects.filter(amount=80000).aexists())
 
     async def test_cmd_arrest_no_jail(self):
         """Jail TeleportPoint doesn't exist → error message."""
