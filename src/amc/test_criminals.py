@@ -38,9 +38,9 @@ def _make_players_list(player_datas):
 # ---------------------------------------------------------------------------
 # CLOSE: cop 10m from suspect (within ESCAPE_DISTANCE, max decay)
 _SUSPECT_LOC = (5000, 5000, 0)
-_COP_CLOSE    = (5000 + 1000, 5000, 0)   # 1000 units = 10m (MIN_DISTANCE)
-_COP_MED      = (5000 + 5000, 5000, 0)   # 5000 units = 50m (REF_DISTANCE, decay=1.0)
-_COP_ESCAPED  = (5000 + ESCAPE_DISTANCE + 1000, 5000, 0)  # > 200m away
+_COP_CLOSE    = (5000 + 1000, 5000, 0)    # 1000 units = 10m (MIN_DISTANCE)
+_COP_MED      = (5000 + 10_000, 5000, 0)  # 10_000 units = 100m (REF_DISTANCE, decay=1.0)
+_COP_ESCAPED  = (5000 + ESCAPE_DISTANCE + 1000, 5000, 0)  # > 500m away
 _COP_FAR      = (5000 + 100_000, 5000, 0)  # 1000m — well beyond escape distance
 
 
@@ -258,7 +258,7 @@ class WantedCountdownTickTests(TestCase):
         mock_sys_msg,
         mock_refresh,
     ):
-        """Cop at REF_DISTANCE (50m) gives decay_rate ~1.0/tick."""
+        """Cop at REF_DISTANCE (100m) gives decay_rate ~1.0/tick."""
         criminal = await self._setup_criminal(wanted_remaining=300)
         officer = await self._setup_police()
 
@@ -276,7 +276,7 @@ class WantedCountdownTickTests(TestCase):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         wanted = await Wanted.objects.aget(character=criminal)
-        # At 50m (REF_DISTANCE), decay_rate = 1.0 → 10 ticks → ~290
+        # At 100m (REF_DISTANCE), decay_rate = 1.0 → 10 ticks → ~290
         self.assertAlmostEqual(wanted.wanted_remaining, 290.0, delta=1.0)
 
     # -----------------------------------------------------------------------
@@ -348,7 +348,7 @@ class WantedCountdownTickTests(TestCase):
         officer = await self._setup_police()
 
         sx, sy, sz = _SUSPECT_LOC
-        cx, cy, cz = _COP_MED  # 50m — within escape zone
+        cx, cy, cz = _COP_MED  # 100m — within escape zone
 
         # Phase 1: suspect near police, decays to floor
         near_players = _make_players_list([
@@ -452,7 +452,7 @@ class WantedCountdownTickTests(TestCase):
         officer = await self._setup_police()
 
         sx, sy, sz = _SUSPECT_LOC
-        cx, cy, cz = _COP_MED  # 50m — within ESCAPE_DISTANCE, slow decay
+        cx, cy, cz = _COP_MED  # 100m — within ESCAPE_DISTANCE, slow decay
         players = _make_players_list([
             _make_player_data(officer.player.unique_id, officer.guid, cx, cy, cz),
             _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),

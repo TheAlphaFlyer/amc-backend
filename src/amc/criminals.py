@@ -18,15 +18,15 @@ logger = logging.getLogger("amc.criminals")
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
 
 # Escape gate constants
-ESCAPE_DISTANCE = 20_000  # 200m (game units) — suspect must be beyond all cops to clear
+ESCAPE_DISTANCE = 50_000  # 500m (game units) — suspect must be beyond all cops to clear
 ESCAPE_FLOOR = 0.1        # minimum wanted_remaining while near police (cannot expire)
 ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 
 # Bounty growth — amount ($) added per second while police are nearby.
 # Uses the same 1/r² proximity factor as heat decay (higher factor = nearer).
-# At REF_DISTANCE (50m) growth = BOUNTY_GROWTH_PER_TICK * 1.0 = $200/s.
+# At REF_DISTANCE (100m) growth = BOUNTY_GROWTH_PER_TICK * 1.0 = $200/s.
 # At point blank (10m) factor = MAX_DECAY (10) so growth = $2,000/s.
-BOUNTY_GROWTH_PER_TICK = 200  # $/s at reference distance (50m)
+BOUNTY_GROWTH_PER_TICK = 200  # $/s at reference distance (100m)
 
 # Logout heat escalation — same 1/r² law as teleport, but capped lower since
 # logging out near police is less deliberate than teleporting.

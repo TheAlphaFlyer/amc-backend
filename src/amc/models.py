@@ -404,8 +404,9 @@ class Wanted(models.Model):
 
     Police proximity decay uses the inverse-square law (1/r²):
     - Close police → fast decay (point-blank clears in ~30s)
-    - 50m → ~5 minutes to clear
-    - 200m+ → negligible effect
+    - 100m → ~5 minutes to clear
+    - 200m → ~20 minutes
+    - 400m+ → negligible effect
 
     The ``amount`` field tracks the cumulative illicit delivery payment
     associated with this wanted record (used for confiscation calculations).
@@ -414,9 +415,9 @@ class Wanted(models.Model):
     INITIAL_WANTED_LEVEL = 300  # all wanted levels start at the same value
 
     # 1/r² decay constants (game units; 100 units = 1 metre)
-    REF_DISTANCE = 5000  # 50m — distance where decay_rate = 1.0/tick
-    MIN_DISTANCE = 1000  # 10m — clamp to avoid infinity
-    MAX_DECAY = 10.0  # cap at very close range
+    REF_DISTANCE = 10_000  # 100m — distance where decay_rate = 1.0/tick
+    MIN_DISTANCE = 1000   # 10m — clamp to avoid infinity
+    MAX_DECAY = 10.0      # cap at very close range
 
     LEVEL_PER_STAR = 60  # wanted_remaining bands for W1–W5 display
 
