@@ -150,35 +150,35 @@ def test_build_display_name_police_level_10():
 def test_build_display_name_wanted_only():
     assert (
         build_display_name("PlayerOne", wanted_stars=5)
-        == "[W5] PlayerOne"
+        == "[*****] PlayerOne"
     )
 
 
 def test_build_display_name_wanted_w1():
     assert (
         build_display_name("PlayerOne", wanted_stars=1)
-        == "[W1] PlayerOne"
+        == "[*] PlayerOne"
     )
 
 
 def test_build_display_name_wanted_w3():
     assert (
         build_display_name("PlayerOne", wanted_stars=3)
-        == "[W3] PlayerOne"
+        == "[***] PlayerOne"
     )
 
 
 def test_build_display_name_wanted_and_crim():
     assert (
         build_display_name("PlayerOne", criminal_level=3, wanted_stars=4)
-        == "[W4C3] PlayerOne"
+        == "[****C3] PlayerOne"
     )
 
 
 def test_build_display_name_wanted_and_mods():
     assert (
         build_display_name("PlayerOne", has_custom_parts=True, wanted_stars=2)
-        == "[MW2] PlayerOne"
+        == "[M**] PlayerOne"
     )
 
 
@@ -186,7 +186,7 @@ def test_build_display_name_wanted_with_police():
     """Wanted tag shows even when police is active."""
     assert (
         build_display_name("PlayerOne", police_level=1, wanted_stars=5)
-        == "[P1W5] PlayerOne"
+        == "[P1*****] PlayerOne"
     )
 
 
@@ -194,7 +194,7 @@ def test_build_display_name_wanted_with_gov():
     """Wanted tag shows even when gov is active."""
     assert (
         build_display_name("PlayerOne", gov_level=3, wanted_stars=5)
-        == "[W5G3] PlayerOne"
+        == "[*****G3] PlayerOne"
     )
 
 
@@ -202,7 +202,7 @@ def test_build_display_name_wanted_with_police_and_gov():
     """Wanted tag shows even when both police and gov are active."""
     assert (
         build_display_name("PlayerOne", police_level=1, gov_level=3, wanted_stars=5)
-        == "[P1W5G3] PlayerOne"
+        == "[P1*****G3] PlayerOne"
     )
 
 
@@ -212,7 +212,7 @@ def test_build_display_name_wanted_with_crim_police_gov():
         build_display_name(
             "PlayerOne", criminal_level=3, police_level=1, gov_level=3, wanted_stars=5
         )
-        == "[P1W5G3] PlayerOne"
+        == "[P1*****G3] PlayerOne"
     )
 
 
@@ -221,7 +221,7 @@ def test_build_display_name_wanted_with_crim_mods():
         build_display_name(
             "PlayerOne", criminal_level=1, has_custom_parts=True, wanted_stars=3
         )
-        == "[MW3C1] PlayerOne"
+        == "[M***C1] PlayerOne"
     )
 
 
@@ -244,10 +244,11 @@ def test_strip_new_format():
     assert strip_all_tags("[C12] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MC2] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MC1G3] PlayerOne") == "PlayerOne"
-    assert strip_all_tags("[W5] PlayerOne") == "PlayerOne"
-    assert strip_all_tags("[W12] PlayerOne") == "PlayerOne"
-    assert strip_all_tags("[C3W5] PlayerOne") == "PlayerOne"
-    assert strip_all_tags("[MC1W3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[*****] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[W5] PlayerOne") == "PlayerOne"  # legacy W-prefix
+    assert strip_all_tags("[W12] PlayerOne") == "PlayerOne"  # legacy W-prefix
+    assert strip_all_tags("[C3*****] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[MC1***] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[\u2605\u2605\u2605\u2605\u2605] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MC1\u2605\u2605\u2605\u2605] PlayerOne") == "PlayerOne"
     assert (
@@ -331,7 +332,7 @@ async def test_refresh_player_name_preserves_mod_state_legacy(mock_set_name):
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
 async def test_refresh_player_name_wanted(mock_set_name):
-    """Wanted record → W5 (300 remaining, ceil(300/60) = 5, capped at 5)."""
+    """Wanted record → ***** (300 remaining, ceil(300/60) = 5, capped at 5)."""
     from amc.factories import CharacterFactory, PlayerFactory
     from amc.models import Wanted
     from asgiref.sync import sync_to_async
@@ -349,9 +350,9 @@ async def test_refresh_player_name_wanted(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[W5] TestPlayer"
+    assert character.custom_name == "[*****] TestPlayer"
     mock_set_name.assert_awaited_once_with(
-        session, "test-guid-wanted-1", "[W5] TestPlayer"
+        session, "test-guid-wanted-1", "[*****] TestPlayer"
     )
 
 
@@ -377,7 +378,7 @@ async def test_refresh_player_name_wanted_rounds_up(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[W5] TestPlayer"
+    assert character.custom_name == "[*****] TestPlayer"
 
 
 @pytest.mark.asyncio
@@ -402,7 +403,7 @@ async def test_refresh_player_name_wanted_61s(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[W2] TestPlayer"
+    assert character.custom_name == "[**] TestPlayer"
 
 
 @pytest.mark.asyncio
@@ -459,7 +460,7 @@ async def test_refresh_player_name_wanted_with_crim(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[W5C1] TestPlayer"
+    assert character.custom_name == "[*****C1] TestPlayer"
 
 
 @pytest.mark.asyncio
@@ -485,7 +486,7 @@ async def test_refresh_player_name_wanted_with_police(mock_set_name):
     await refresh_player_name(character, session)
 
     await character.arefresh_from_db()
-    assert character.custom_name == "[P1W5] TestPlayer"
+    assert character.custom_name == "[P1*****] TestPlayer"
 
 
 @pytest.mark.asyncio

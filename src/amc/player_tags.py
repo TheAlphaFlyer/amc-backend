@@ -6,10 +6,10 @@ logger = logging.getLogger(__name__)
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G/P/W, optionally followed by more letters/digits
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [W5], [CW3], [MP], [MPG3], [MC1W5G3]
-    re.compile(r"\[(?=[CMGPW])[CMGPW\d]+\]\s*"),
-    # Legacy formats with Unicode stars (for players who logged in before W-level refactor)
+    # New compact format: must start with C/M/G/P or *, optionally followed by more letters/digits/stars
+    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [*****], [C***], [MP], [MPG3], [MC1***G3]
+    re.compile(r"\[(?=[CMGP*])[CMGP\d*]+\]\s*"),
+    # Legacy formats with W-prefix or Unicode stars (for players who logged in before star refactor)
     re.compile(r"\[(?=[CMGPW\u2605])[CMGPW\d\u2605]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
     re.compile(r"\[(?=[CMGP])[CMGP₀₁₂₃₄₅₆₇₈₉]+\]\s*"),
@@ -41,10 +41,10 @@ def build_display_name(
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MP1W5C1G3] BaseName  (order: M, P, W, C, G)
+    Tag format: [MP1*****C1G3] BaseName  (order: M, P, stars, C, G)
       M = Modded vehicle parts
       P1 = Police level (active session)
-      W5 = Wanted level (1–5, based on wanted_remaining heat)
+      ***** = Wanted level (1–5 stars, based on wanted_remaining heat)
       C1 = Criminal level (suppressed when police is active)
       G3 = Government employee level
 
@@ -54,7 +54,7 @@ def build_display_name(
         has_custom_parts: Whether the player's current vehicle has custom/modded parts
         police_level: Police level (0 = not on duty)
         gov_level: Government employee level (0 = not a gov employee)
-        wanted_stars: Wanted W-level (0–5, 0 = not wanted)
+        wanted_stars: Wanted level (0–5, 0 = not wanted)
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
@@ -66,7 +66,7 @@ def build_display_name(
         tag += f"P{police_level}"
 
     if wanted_stars > 0:
-        tag += f"W{wanted_stars}"
+        tag += "*" * wanted_stars
 
     # C is suppressed when police is active
     if criminal_level > 0 and police_level == 0:
