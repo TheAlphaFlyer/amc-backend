@@ -1,5 +1,6 @@
 import logging
 import math
+import time
 
 from datetime import timedelta
 
@@ -16,17 +17,27 @@ logger = logging.getLogger("amc.criminals")
 
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
 
+# Escape gate constants
+ESCAPE_DISTANCE = 20_000  # 200m (game units) — suspect must be beyond all cops to clear
+ESCAPE_FLOOR = 0.1        # minimum wanted_remaining while near police (cannot expire)
+ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
+
 # Tracks the last notified star level per character guid
 _last_star_notified: dict[str, int] = {}
+
+# Tracks when the last escape popup was sent per character guid (monotonic clock)
+_last_escape_msg_sent: dict[str, float] = {}
 
 STAR_MESSAGES = {
     5: "You are wanted. Police are closing in!",
     4: "Your wanted status is decreasing. 4 stars remaining.",
     3: "Your wanted status is decreasing. 3 stars remaining.",
     2: "Your wanted status is decreasing. 2 stars remaining.",
-    1: "Your wanted status is almost over. 1 star remaining.",
+    1: "Your wanted status is almost over. Escape the police to clear it!",
     0: "Your wanted status has expired.",
 }
+
+ESCAPE_MESSAGE = "Escape the police to clear your wanted status!"
 
 
 def _compute_stars(wanted_remaining: float) -> int:
@@ -39,9 +50,12 @@ def _compute_stars(wanted_remaining: float) -> int:
 async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     """Single tick of the wanted countdown. Called from an arq cron.
 
-    Wanted status is permanent — it never decays automatically.
-    Only police proximity causes wanted_remaining to decrease,
-    using the inverse-square law (1/r²).
+    Wanted status only decays when police are physically nearby (1/r² law).
+    No cops online or suspect offline → no decay, wanted persists.
+
+    Escape gate: wanted_remaining decays near police but is clamped at
+    ESCAPE_FLOOR. The suspect must flee beyond ESCAPE_DISTANCE from all cops
+    for the final clearing to occur.
     """
     # Batch-load all active wanted records
     wanted_list = [
@@ -79,35 +93,48 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             _, cop_loc, _ = locations[cg]
             cop_locations.append(cop_loc)
 
-    # No police on duty — nothing happens (wanted stays permanently)
-    # Also nothing happens for offline suspects or suspects with no cops nearby
-
     expired_characters = []
     star_change_notifications = []  # (wanted, message) for deferred processing
+    escape_popups = []              # guids to send escape popup to
 
     for wanted in wanted_list:
         sus_guid = wanted.character.guid
         old_stars = _compute_stars(wanted.wanted_remaining)
 
-        # Offline suspect or no police at all → no decay
+        # Offline suspect or no cops online → no decay, wanted persists
         if sus_guid not in locations or not cop_locations:
             continue
 
-        # Online suspect with police on duty — apply 1/r² decay
         _, sus_loc, _ = locations[sus_guid]
         min_dist = min(_distance_3d(sus_loc, cop_loc) for cop_loc in cop_locations)
 
-        # 1/r² decay: closer police = faster reduction
-        clamped_dist = max(min_dist, Wanted.MIN_DISTANCE)
-        decay_rate = min(
-            Wanted.MAX_DECAY, (Wanted.REF_DISTANCE / clamped_dist) ** 2
-        )
-        decrement = TICK_INTERVAL * decay_rate
-
-        if wanted.wanted_remaining > 0:
-            wanted.wanted_remaining = max(0, wanted.wanted_remaining - decrement)
-            if wanted.wanted_remaining <= 0:
+        if min_dist >= ESCAPE_DISTANCE:
+            # --- Suspect has escaped police proximity ---
+            # Only clear if wanted has been brought to the floor (by prior proximity decay)
+            if wanted.wanted_remaining <= ESCAPE_FLOOR:
+                wanted.wanted_remaining = 0
                 expired_characters.append(wanted.character)
+            # If still above the floor, no decay happens — suspect must return
+            # near police first, let it decay to the floor, then escape.
+        else:
+            # --- Suspect is near police (< ESCAPE_DISTANCE) ---
+            # Apply 1/r² decay, but clamp at ESCAPE_FLOOR — cannot expire here.
+            clamped_dist = max(min_dist, Wanted.MIN_DISTANCE)
+            decay_rate = min(
+                Wanted.MAX_DECAY, (Wanted.REF_DISTANCE / clamped_dist) ** 2
+            )
+            decrement = TICK_INTERVAL * decay_rate
+
+            if wanted.wanted_remaining > ESCAPE_FLOOR:
+                wanted.wanted_remaining = max(ESCAPE_FLOOR, wanted.wanted_remaining - decrement)
+
+            # At floor near police → queue throttled escape popup
+            if wanted.wanted_remaining <= ESCAPE_FLOOR:
+                now = time.monotonic()
+                last_sent = _last_escape_msg_sent.get(sus_guid, 0.0)
+                if now - last_sent >= ESCAPE_MSG_COOLDOWN:
+                    _last_escape_msg_sent[sus_guid] = now
+                    escape_popups.append(sus_guid)
 
         # Track star changes for deferred notification
         new_stars = _compute_stars(wanted.wanted_remaining)
@@ -133,6 +160,17 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             wanted_remaining=0,
             expired_at=timezone.now(),
         )
+
+    # Send escape popups (throttled)
+    for sus_guid in escape_popups:
+        try:
+            await send_system_message(
+                http_client_mod,
+                ESCAPE_MESSAGE,
+                character_guid=sus_guid,
+            )
+        except Exception:
+            logger.warning("Failed to send escape popup to %s", sus_guid)
 
     # Send star-change messages and refresh names (DB is now up-to-date)
     refreshed_guids = set()
@@ -160,6 +198,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     # Refresh names and announce money secured for characters whose wanted just expired
     for char in expired_characters:
         _last_star_notified.pop(char.guid, None)
+        _last_escape_msg_sent.pop(char.guid, None)
         if char.guid not in refreshed_guids:
             try:
                 await refresh_player_name(char, http_client_mod)
