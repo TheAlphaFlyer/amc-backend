@@ -127,10 +127,7 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
-    # --- 5. Special cargo side effects (e.g. Money -> criminal record) ---
-    await run_special_cargo_handlers(
-        logs, character, ctx.http_client, ctx.http_client_mod
-    )
+    # --- 5. Special cargo side effects are handled per-key inside the loop below
 
     # --- 6. Per-cargo-group: subsidy, delivery, job, supply chain ---
     total_subsidy = 0
@@ -161,10 +158,18 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         cargo_name = group_list[0].get_cargo_key_display()
 
-        # Modded vehicle penalty for illicit cargo
+        # Modded vehicle detection + money penalty for illicit cargo
+        is_modded = False
         if cargo_key in ILLICIT_CARGO_KEYS and ctx.http_client_mod:
-            await _apply_modded_vehicle_penalty(
+            is_modded = await _apply_modded_vehicle_penalty(
                 character, payment, quantity, ctx.http_client_mod
+            )
+
+        # Special cargo side effects (criminal level, criminal record)
+        # Skipped when modded parts detected — criminal gets no progression
+        if not is_modded:
+            await run_special_cargo_handlers(
+                group_list, character, ctx.http_client, ctx.http_client_mod
             )
 
         # Find matching delivery job
@@ -233,8 +238,8 @@ async def handle_cargo_arrived(event, player, character, ctx):
                     message="Risk Premium",
                 )
 
-        # Wanted status for all illicit cargo
-        if cargo_key in ILLICIT_CARGO_KEYS and character:
+        # Wanted status for all illicit cargo (skipped for modded criminals)
+        if cargo_key in ILLICIT_CARGO_KEYS and character and not is_modded:
             delivery_amount = payment * quantity
             # Check if already wanted (always refresh) or roll probability
             already_wanted = await Wanted.objects.filter(
@@ -307,14 +312,20 @@ def _parse_cargos(event):
     return valid_cargos, clawback
 
 
-async def _apply_modded_vehicle_penalty(character, payment, quantity, http_client_mod):
-    """Check for modded parts on Money delivery; confiscate profits if found."""
+async def _apply_modded_vehicle_penalty(
+    character, payment, quantity, http_client_mod
+) -> bool:
+    """Check for modded parts on illicit cargo delivery; confiscate profits if found.
+
+    Returns True if modded parts were detected (and money was clawed back),
+    False otherwise.
+    """
     try:
         vehicles = await list_player_vehicles(
             http_client_mod, str(character.player.unique_id), active=True, complete=True
         )
         if not vehicles:
-            return
+            return False
         main_vehicle = next(
             (
                 v
@@ -324,7 +335,7 @@ async def _apply_modded_vehicle_penalty(character, payment, quantity, http_clien
             None,
         )
         if not main_vehicle:
-            return
+            return False
 
         whitelist = None
         is_on_duty = await PoliceSession.objects.filter(
@@ -351,8 +362,11 @@ async def _apply_modded_vehicle_penalty(character, payment, quantity, http_clien
                     player_id=str(character.player.unique_id),
                 )
             )
+            return True
+        return False
     except Exception as e:
         logger.warning(f"Failed to check custom parts for money delivery penalty: {e}")
+        return False
 
 
 def _build_delivery_data(
