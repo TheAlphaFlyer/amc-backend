@@ -25,9 +25,9 @@ from amc.commands.faction import _build_player_locations, _distance_3d
 
 logger = logging.getLogger("amc.webhook.handlers.teleport")
 
-# Teleport heat escalation: base increase + proximity bonus
-TELEPORT_HEAT_BASE = 60  # flat wanted_remaining added per teleport
-TELEPORT_HEAT_MAX_BONUS = 240  # max additional heat from police proximity
+# Teleport heat escalation: proximity-only (no base)
+TELEPORT_HEAT_MAX = 300  # max heat added when police are point-blank
+TELEPORT_PROXIMITY_RANGE = 200_000  # 2km in game units — no effect beyond this
 
 
 # ---------------------------------------------------------------------------
@@ -69,21 +69,21 @@ async def _handle_respawn_character(event, player, character, ctx):
     return await _handle_teleport_or_respawn(event, character, ctx)
 
 
-def _calculate_proximity_bonus(min_police_distance: float) -> float:
-    """Calculate bonus heat from police proximity using inverse-square law.
+def _calculate_proximity_heat(min_police_distance: float) -> float:
+    """Calculate heat from police proximity using inverse-square law.
 
-    Closer police → higher bonus, disincentivising teleport to escape arrest.
-    - Point blank (10m):  ~240 bonus (MAX)
-    - 50m:                ~9.6 bonus
-    - 100m+:              ~2.4 bonus
-    - No police:          0 bonus
+    Only called when police are within TELEPORT_PROXIMITY_RANGE (2km).
+    Closer police → more heat, disincentivising teleport to escape arrest.
+    - Point blank (10m):  ~300 heat (MAX)
+    - 50m:                ~12 heat
+    - 100m+:              ~3 heat
+    - >2km:               not called (0)
     """
     clamped_dist = max(min_police_distance, Wanted.MIN_DISTANCE)
     proximity_factor = min(
         Wanted.MAX_DECAY, (Wanted.REF_DISTANCE / clamped_dist) ** 2
     )
-    # Scale so MAX_DECAY maps to TELEPORT_HEAT_MAX_BONUS
-    return (proximity_factor / Wanted.MAX_DECAY) * TELEPORT_HEAT_MAX_BONUS
+    return (proximity_factor / Wanted.MAX_DECAY) * TELEPORT_HEAT_MAX
 
 
 async def _get_nearest_police_distance(
@@ -126,12 +126,11 @@ async def _get_nearest_police_distance(
 
 
 async def _handle_teleport_or_respawn(event, character, ctx):
-    """Escalate wanted level when a wanted player teleports.
+    """Escalate wanted level when a wanted player teleports near police.
 
-    Instead of confiscating money, teleporting increases wanted_remaining.
-    The increase scales with police proximity (1/r²):
-    - Base: +60 heat (always)
-    - Bonus: up to +240 when police are very close
+    Teleporting increases wanted_remaining based on police proximity (1/r²).
+    Only applies if there is a police officer within 2km.
+    No effect if no police are nearby.
 
     This disincentivises players from teleporting to escape an imminent arrest.
     """
@@ -155,22 +154,20 @@ async def _handle_teleport_or_respawn(event, character, ctx):
     except Wanted.DoesNotExist:
         return 0, 0, 0, 0
 
-    # Calculate heat increase
-    heat_increase = TELEPORT_HEAT_BASE
-
+    # Only escalate if police are within 2km
     min_distance = await _get_nearest_police_distance(
         character.guid, ctx.http_client
     )
-    if min_distance is not None:
-        bonus = _calculate_proximity_bonus(min_distance)
-        heat_increase += bonus
-        logger.info(
-            "teleport heat: %s — dist=%.0f bonus=%.1f total=%.1f",
-            character.name,
-            min_distance,
-            bonus,
-            heat_increase,
-        )
+    if min_distance is None or min_distance > TELEPORT_PROXIMITY_RANGE:
+        return 0, 0, 0, 0
+
+    heat_increase = _calculate_proximity_heat(min_distance)
+    logger.info(
+        "teleport heat: %s — dist=%.0f heat=%.1f",
+        character.name,
+        min_distance,
+        heat_increase,
+    )
 
     # Apply heat increase (cap at INITIAL_WANTED_LEVEL * 5 to bound growth)
     old_remaining = wanted.wanted_remaining
@@ -190,13 +187,10 @@ async def _handle_teleport_or_respawn(event, character, ctx):
 
     # Notify the player
     if ctx.http_client_mod:
-        if min_distance is not None and min_distance < Wanted.REF_DISTANCE:
-            msg = (
-                f"Teleporting near police increased your wanted level! "
-                f"W{old_stars}→W{new_stars}"
-            )
-        else:
-            msg = f"Teleporting while wanted increased your heat. W{old_stars}→W{new_stars}"
+        msg = (
+            f"Teleporting near police increased your wanted level! "
+            f"W{old_stars}→W{new_stars}"
+        )
         asyncio.create_task(
             send_system_message(
                 ctx.http_client_mod,

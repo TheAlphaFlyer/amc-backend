@@ -1,4 +1,4 @@
-"""Tests for teleport heat escalation — wanted players gain heat when teleporting."""
+"""Tests for teleport heat escalation — wanted players gain heat when teleporting near police."""
 
 import time
 from unittest.mock import AsyncMock, patch
@@ -24,6 +24,12 @@ def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
     }
 
 
+def _mock_nearby_police(distance_units):
+    """Return a mock for _get_nearest_police_distance that returns a fixed distance."""
+    mock = AsyncMock(return_value=distance_units)
+    return mock
+
+
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock, return_value=False)
 @patch("amc.webhook.get_parties", new_callable=AsyncMock, return_value=[])
 @patch(
@@ -34,10 +40,10 @@ def _teleport_event(character_guid, hook="ServerTeleportCharacter", seq=100):
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
 @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
 @patch("amc.game_server.announce", new_callable=AsyncMock)
-# Mock get_players to return None (no police lookup during tests by default)
+# Default: no police nearby (get_players returns None)
 @patch("amc.handlers.teleport.get_players", new_callable=AsyncMock, return_value=None)
 class TeleportHeatEscalationTests(TestCase):
-    """Tests for _handle_teleport_or_respawn — wanted heat escalation on teleport."""
+    """Tests for _handle_teleport_or_respawn — proximity-based heat escalation."""
 
     def setUp(self):
         from django.core.cache import cache
@@ -63,10 +69,10 @@ class TeleportHeatEscalationTests(TestCase):
         )
 
     # ------------------------------------------------------------------
-    # Heat escalation on teleport
+    # No police → no heat
     # ------------------------------------------------------------------
 
-    async def test_teleport_increases_wanted_heat(
+    async def test_teleport_no_police_no_heat(
         self,
         mock_get_players,
         mock_announce,
@@ -76,9 +82,7 @@ class TeleportHeatEscalationTests(TestCase):
         mock_parties,
         mock_rp,
     ):
-        """Teleporting while wanted should increase wanted_remaining by base heat."""
-        from amc.handlers.teleport import TELEPORT_HEAT_BASE
-
+        """Teleporting while wanted but no police nearby → no heat change."""
         _, character = await self._setup_character()
         initial = 100.0
         await Wanted.objects.acreate(character=character, wanted_remaining=initial)
@@ -86,10 +90,7 @@ class TeleportHeatEscalationTests(TestCase):
         await self._process_teleport(character)
 
         wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
-        # With no police (get_players returns None), only base heat is added
-        self.assertAlmostEqual(
-            wanted.wanted_remaining, initial + TELEPORT_HEAT_BASE, places=1
-        )
+        self.assertEqual(wanted.wanted_remaining, initial)
 
     async def test_teleport_without_wanted_no_effect(
         self,
@@ -130,8 +131,90 @@ class TeleportHeatEscalationTests(TestCase):
         ).acount()
         self.assertEqual(log_count, 1)
 
+    # ------------------------------------------------------------------
+    # Police within 2km → heat applied
+    # ------------------------------------------------------------------
+
+    @patch("amc.handlers.teleport._get_nearest_police_distance")
+    async def test_teleport_near_police_adds_heat(
+        self,
+        mock_distance,
+        mock_get_players,
+        mock_announce,
+        mock_system_msg,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
+    ):
+        """Teleporting with police within 2km should increase wanted_remaining."""
+        mock_distance.return_value = 50_000  # 500m — within 2km range
+
+        _, character = await self._setup_character()
+        initial = 100.0
+        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
+
+        await self._process_teleport(character)
+
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertGreater(wanted.wanted_remaining, initial)
+
+    @patch("amc.handlers.teleport._get_nearest_police_distance")
+    async def test_teleport_police_beyond_2km_no_heat(
+        self,
+        mock_distance,
+        mock_get_players,
+        mock_announce,
+        mock_system_msg,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
+    ):
+        """Teleporting with police beyond 2km → no heat change."""
+        mock_distance.return_value = 250_000  # 2.5km — outside range
+
+        _, character = await self._setup_character()
+        initial = 100.0
+        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
+
+        await self._process_teleport(character)
+
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertEqual(wanted.wanted_remaining, initial)
+
+    @patch("amc.handlers.teleport._get_nearest_police_distance")
+    async def test_teleport_point_blank_max_heat(
+        self,
+        mock_distance,
+        mock_get_players,
+        mock_announce,
+        mock_system_msg,
+        mock_refresh,
+        mock_treasury,
+        mock_parties,
+        mock_rp,
+    ):
+        """Teleporting at point-blank range → max heat (TELEPORT_HEAT_MAX)."""
+        from amc.handlers.teleport import TELEPORT_HEAT_MAX
+
+        mock_distance.return_value = 500  # 5m — clamped to MIN_DISTANCE
+
+        _, character = await self._setup_character()
+        initial = 100.0
+        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
+
+        await self._process_teleport(character)
+
+        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
+        self.assertAlmostEqual(
+            wanted.wanted_remaining, initial + TELEPORT_HEAT_MAX, places=1
+        )
+
+    @patch("amc.handlers.teleport._get_nearest_police_distance")
     async def test_teleport_heat_capped_at_max(
         self,
+        mock_distance,
         mock_get_players,
         mock_announce,
         mock_system_msg,
@@ -141,9 +224,10 @@ class TeleportHeatEscalationTests(TestCase):
         mock_rp,
     ):
         """Heat should not exceed INITIAL_WANTED_LEVEL * 5."""
+        mock_distance.return_value = 500  # point-blank
+
         _, character = await self._setup_character()
         max_heat = Wanted.INITIAL_WANTED_LEVEL * 5
-        # Start near the max
         await Wanted.objects.acreate(
             character=character, wanted_remaining=max_heat - 10
         )
@@ -153,31 +237,10 @@ class TeleportHeatEscalationTests(TestCase):
         wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
         self.assertEqual(wanted.wanted_remaining, max_heat)
 
-    async def test_teleport_sends_system_message(
-        self,
-        mock_get_players,
-        mock_announce,
-        mock_system_msg,
-        mock_refresh,
-        mock_treasury,
-        mock_parties,
-        mock_rp,
-    ):
-        """Player should receive a system message when heat escalates."""
-        _, character = await self._setup_character()
-        await Wanted.objects.acreate(
-            character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
-        )
-
-        await self._process_teleport(character)
-
-        # send_system_message is fire-and-forget via asyncio.create_task,
-        # so we just verify wanted_remaining increased
-        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
-        self.assertGreater(wanted.wanted_remaining, Wanted.INITIAL_WANTED_LEVEL)
-
+    @patch("amc.handlers.teleport._get_nearest_police_distance")
     async def test_star_level_change_triggers_name_refresh(
         self,
+        mock_distance,
         mock_get_players,
         mock_announce,
         mock_system_msg,
@@ -186,38 +249,13 @@ class TeleportHeatEscalationTests(TestCase):
         mock_parties,
         mock_rp,
     ):
-        """If star level changes, player name should be refreshed."""
+        """If star level changes due to heat, player name should be refreshed."""
+        mock_distance.return_value = 500  # point-blank → max heat (300)
 
         _, character = await self._setup_character()
-        # Start at 55 (W1), adding 60 base heat → 115 (W2), star change
+        # Start at 55 (W1), adding ~300 heat → 355 (W5+), star change
         await Wanted.objects.acreate(character=character, wanted_remaining=55)
 
         await self._process_teleport(character)
 
-        # refresh_player_name should have been called (star went from W1 to W2)
         mock_refresh.assert_called()
-
-    async def test_multiple_teleports_accumulate_heat(
-        self,
-        mock_get_players,
-        mock_announce,
-        mock_system_msg,
-        mock_refresh,
-        mock_treasury,
-        mock_parties,
-        mock_rp,
-    ):
-        """Multiple teleports should each add heat."""
-        from amc.handlers.teleport import TELEPORT_HEAT_BASE
-
-        _, character = await self._setup_character()
-        initial = 100.0
-        await Wanted.objects.acreate(character=character, wanted_remaining=initial)
-
-        await self._process_teleport(character, seq=100)
-        await self._process_teleport(character, seq=101)
-
-        wanted = await Wanted.objects.aget(character=character, expired_at__isnull=True)
-        self.assertAlmostEqual(
-            wanted.wanted_remaining, initial + TELEPORT_HEAT_BASE * 2, places=1
-        )
