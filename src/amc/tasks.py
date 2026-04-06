@@ -33,8 +33,6 @@ from amc.models import (
     PlayerVehicleLog,
     PlayerRestockDepotLog,
     Company,
-    Confiscation,
-    Delivery,
     VehicleDealership,
     DeliveryPoint,
     CharacterVehicle,
@@ -45,7 +43,6 @@ from amc.models import (
     CriminalRecord,
     FactionMembership,
     PoliceSession,
-    Wanted,
 )
 from amc.game_server import announce, get_players
 from amc.police import is_police_vehicle
@@ -58,7 +55,6 @@ from amc.mod_server import (
     set_world_vehicle_decal,
     spawn_assets,
     spawn_garage,
-    transfer_money,
 )
 from amc.mailbox import send_player_messages
 from amc.utils import (
@@ -66,7 +62,6 @@ from amc.utils import (
 )
 from amc_finance.services import (
     player_donation,
-    record_treasury_confiscation_income,
 )
 from amc_finance.loans import (
     get_player_loan_balance,
@@ -608,78 +603,7 @@ async def process_logout_event(character_id, timestamp):
     await async_execute_raw_sql(raw_sql, params)
 
 
-async def _confiscate_on_logout(character, http_client_mod):
-    """Anti-cheat: confiscate money if a player logs out while Wanted.
 
-    Applies the same confiscation formula as arrest — proportional to
-    remaining wanted time — so disconnecting to avoid arrest is strictly
-    worse than staying online and trying to flee.
-    """
-    try:
-        wanted = await Wanted.objects.filter(
-            character=character,
-            wanted_remaining__gt=0,
-            expired_at__isnull=True,
-        ).afirst()
-        if not wanted:
-            return
-
-        rate = wanted.wanted_remaining / Wanted.INITIAL_WANTED_LEVEL
-
-        recent_delivery = (
-            await Delivery.objects.filter(
-                character=character,
-                cargo_key="Money",
-                confiscations__isnull=True,
-            )
-            .order_by("-timestamp")
-            .afirst()
-        )
-
-        confiscated_amount = (
-            round(recent_delivery.payment * rate) if recent_delivery else 0
-        )
-
-        conf = await Confiscation.objects.acreate(
-            character=character,
-            officer=None,
-            cargo_key="Money",
-            amount=confiscated_amount,
-        )
-        if recent_delivery:
-            await conf.deliveries.aset([recent_delivery.id])
-
-        if confiscated_amount > 0:
-            await character.arefresh_from_db(fields=["criminal_laundered_total"])
-            character.criminal_laundered_total = max(
-                0, character.criminal_laundered_total - confiscated_amount
-            )
-            await character.asave(update_fields=["criminal_laundered_total"])
-
-            await transfer_money(
-                http_client_mod,
-                int(-confiscated_amount),
-                "Money Confiscated (Disconnect)",
-                str(character.player_id),
-            )
-            await record_treasury_confiscation_income(
-                confiscated_amount, "Disconnect Confiscation"
-            )
-
-        # Expire the wanted status
-        await Wanted.objects.filter(pk=wanted.pk).aupdate(
-            wanted_remaining=0,
-            expired_at=timezone.now(),
-        )
-
-        logger.info(
-            "Logout confiscation: player=%s amount=%d rate=%.2f",
-            character.name,
-            confiscated_amount,
-            rate,
-        )
-    except Exception:
-        logger.exception("Logout confiscation failed for %s", character.name)
 
 
 async def process_log_event(
@@ -902,10 +826,11 @@ async def process_log_event(
                 await process_logout_event(character.id, timestamp)
                 # End any active police session
                 from amc.police import deactivate_police
+                from amc.criminals import escalate_heat_on_logout
 
                 await deactivate_police(character, None)
-                # Anti-cheat: confiscate money if logging out while wanted
-                await _confiscate_on_logout(character, http_client_mod)
+                # Heat penalty for logging out near police while wanted
+                await escalate_heat_on_logout(character, http_client)
             if (
                 discord_client
                 and ctx.get("startup_time")
@@ -928,10 +853,11 @@ async def process_log_event(
             await process_logout_event(character.id, timestamp)
             # End any active police session
             from amc.police import deactivate_police
+            from amc.criminals import escalate_heat_on_logout
 
             await deactivate_police(character, None)
-            # Anti-cheat: confiscate money if logging out while wanted
-            await _confiscate_on_logout(character, http_client_mod)
+            # Heat penalty for logging out near police while wanted
+            await escalate_heat_on_logout(character, http_client)
 
         case CompanyAddedLogEvent(
             timestamp, company_name, is_corp, owner_name, owner_id
