@@ -230,7 +230,20 @@ def get_welcome_message(player_name, is_new, last_online=None):
     return None, False
 
 
-async def aget_or_create_character(player_name, player_id, http_client_mod=None):
+async def _resolve_guid_from_game_server(http_client, player_id):
+    """Single attempt to resolve GUID from the game server player list (authoritative, cached)."""
+    players = await get_players(http_client)
+    if not players:
+        return None
+    for uid, pdata in players:
+        if str(uid) == str(player_id):
+            guid = pdata.get("character_guid")
+            if guid and guid != Character.INVALID_GUID:
+                return guid
+    return None
+
+
+async def aget_or_create_character(player_name, player_id, http_client_mod=None, http_client=None):
     character_guid = None
     player_info = None
     if http_client_mod:
@@ -245,6 +258,13 @@ async def aget_or_create_character(player_name, player_id, http_client_mod=None)
         except Exception as e:
             logger.debug(f"Player info fetch failed (non-blocking): {e}")
 
+    # Fallback: game server player list (authoritative, cached)
+    if not character_guid and http_client:
+        try:
+            character_guid = await _resolve_guid_from_game_server(http_client, player_id)
+        except Exception as e:
+            logger.debug(f"Game server GUID fallback failed (non-blocking): {e}")
+
     (
         character,
         player,
@@ -256,8 +276,18 @@ async def aget_or_create_character(player_name, player_id, http_client_mod=None)
     return (character, player, character_created, player_info)
 
 
-async def _resolve_guid(http_client_mod, player_id, player_name, max_attempts=20):
-    """Retry GUID resolution from the mod server. Returns (character_guid, player_info) or (None, None)."""
+async def _resolve_guid(http_client_mod, player_id, player_name, http_client=None, max_attempts=20):
+    """Retry GUID resolution. Try game server first (authoritative), then mod server."""
+    # Quick attempt: game server (cached, cheap)
+    if http_client:
+        try:
+            guid = await _resolve_guid_from_game_server(http_client, player_id)
+            if guid:
+                return guid, None  # no player_info from this path
+        except Exception:
+            logger.debug(f"Game server GUID lookup failed for {player_name}, falling back to mod server")
+
+    # Retry loop: mod server
     for i in range(max_attempts):
         try:
             player_info = await get_player(http_client_mod, player_id)
@@ -289,7 +319,7 @@ async def _login_guid_dependent_actions(
     """Fire-and-forget: GUID-dependent login side-effects that must not block the arq worker."""
     try:
         character_guid, player_info = await _resolve_guid(
-            http_client_mod, player_id, player_name
+            http_client_mod, player_id, player_name, http_client=http_client
         )
         if not character_guid:
             logger.warning(
@@ -622,7 +652,7 @@ async def process_log_event(
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(player_name, player_id, http_client_mod)
+            ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
             await PlayerChatLog.objects.acreate(
                 timestamp=timestamp,
                 character=character,
@@ -695,7 +725,7 @@ async def process_log_event(
         ):
             action = PlayerVehicleLog.action_for_event(event)
             character, player, *_ = await aget_or_create_character(
-                player_name, player_id, http_client_mod
+                player_name, player_id, http_client_mod, http_client
             )
             await PlayerVehicleLog.objects.acreate(
                 timestamp=timestamp,
@@ -747,7 +777,7 @@ async def process_log_event(
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(player_name, player_id, http_client_mod)
+            ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
             is_current_event = ctx.get("startup_time") and timestamp > ctx.get(
                 "startup_time"
             )
@@ -865,7 +895,7 @@ async def process_log_event(
             timestamp, company_name, is_corp, owner_name, owner_id
         ):
             character, *_ = await aget_or_create_character(
-                owner_name, owner_id, http_client_mod
+                owner_name, owner_id, http_client_mod, http_client
             )
             company, company_created = await Company.objects.aget_or_create(
                 name=company_name,

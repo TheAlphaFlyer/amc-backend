@@ -64,3 +64,6 @@ api.add_router("/bot_events/", "amc.api.bot_events.router")
 
 # Dashboard auth (Discord Activity + Steam Login)
 api.add_router("/auth/", "amc.api.auth_routes.auth_router")
+
+# Anti-cheat physics integrity reporting (PoC — observe-only)
+api.add_router("/ac/", "amc.api.anticheat_routes.router")

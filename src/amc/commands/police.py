@@ -59,6 +59,17 @@ async def cmd_police(ctx: CommandContext):
     category="Faction",
 )
 async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from amc.models import Delivery
+    from amc.special_cargo import (
+        ILLICIT_CARGO_KEYS,
+        ILLICIT_DELIVERY_WINDOW,
+        WRONGFUL_WANTED_BOUNTY,
+    )
+
     # Only on-duty police can use this command
     if not await is_police(ctx.character):
         await ctx.reply(_("You must be on police duty to use this command."))
@@ -97,12 +108,47 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
         await ctx.reply(_("Character not found in database."))
         return
 
+    # Guard: target must not already be wanted
+    already_wanted = await Wanted.objects.filter(
+        character=target_character, expired_at__isnull=True
+    ).aexists()
+    if already_wanted:
+        await ctx.reply(
+            _("<Title>Already Wanted</>\n\n{name} is already wanted.").format(
+                name=target_character.name
+            )
+        )
+        return
+
+    # Innocence check: look for illicit deliveries in the past 10 minutes
+    # that are NOT already linked to a prior Wanted record.
+    # Deliveries linked to an existing Wanted have already been "accounted for"
+    # and must not count again toward justifying a new wanted status.
+    cutoff = timezone.now() - timedelta(seconds=ILLICIT_DELIVERY_WINDOW)
+    has_recent_illicit = await Delivery.objects.filter(
+        character=target_character,
+        cargo_key__in=ILLICIT_CARGO_KEYS,
+        timestamp__gte=cutoff,
+        wanted__isnull=True,  # exclude deliveries already linked to a Wanted
+    ).aexists()
+
+    if has_recent_illicit:
+        # Legitimate wanted — standard minimum bounty applied inside create_or_refresh_wanted
+        bounty_amount = 0
+        warning_note = ""
+    else:
+        # Innocent civilian — apply wrongful wanted penalty bounty
+        bounty_amount = WRONGFUL_WANTED_BOUNTY
+        warning_note = " WARNING: No recent illicit activity detected. Wrongful detention penalty applies on arrest."
+
     # Create or refresh the wanted record
-    await create_or_refresh_wanted(target_character, ctx.http_client_mod)
+    await create_or_refresh_wanted(
+        target_character, ctx.http_client_mod, amount=bounty_amount
+    )
 
     await ctx.reply(
-        _("<Title>Wanted Set</>\n\n{name} is now wanted!").format(
-            name=target_character.name
+        _("<Title>Wanted Set</>\n\n{name} is now wanted!{note}").format(
+            name=target_character.name, note=warning_note
         )
     )
     await ctx.announce(

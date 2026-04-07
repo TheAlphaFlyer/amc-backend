@@ -376,7 +376,12 @@ class Confiscation(models.Model):
         blank=True,
     )
     cargo_key = models.CharField(max_length=100)
-    amount = models.PositiveIntegerField()
+    amount = models.IntegerField(
+        help_text=(
+            "Confiscated amount in dollars. "
+            "Negative values indicate wrongful arrest compensation paid to the suspect."
+        )
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     deliveries = models.ManyToManyField(
         "Delivery",
@@ -425,7 +430,13 @@ class Wanted(models.Model):
         Character, on_delete=models.CASCADE, related_name="wanted_records"
     )
     wanted_remaining = models.FloatField()  # seconds (float for fractional decrements)
-    amount = models.PositiveBigIntegerField(default=0)  # cumulative illicit delivery payment
+    amount = models.BigIntegerField(
+        default=0,
+        help_text=(
+            "Cumulative illicit delivery payment for this wanted record. "
+            "Negative values indicate a wrongful wanted (innocent civilian)."
+        ),
+    )  # cumulative illicit delivery payment; negative = wrongful wanted
     created_at = models.DateTimeField(auto_now_add=True)
     expired_at = models.DateTimeField(null=True, blank=True)
 

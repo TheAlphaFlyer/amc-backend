@@ -41,6 +41,16 @@ ILLICIT_CARGO_KEYS: set[str] = {
 # Wanted trigger probability constants
 WANTED_MIN_CHANCE = 0.10  # 10% floor for small deliveries
 WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
+# Minimum bounty placed on a Wanted record (creation or per-delivery increment)
+WANTED_MIN_BOUNTY = 100_000
+# Bounty applied when police set a wrongful wanted on an innocent civilian.
+# Negative: on arrest the suspect is compensated and the officer is penalised.
+WRONGFUL_WANTED_BOUNTY = -100_000
+# How long (seconds) to accumulate illicit deliveries before resetting the window
+ILLICIT_DELIVERY_DEBOUNCE = 30
+# How long (seconds) into the past to look for recent illicit deliveries when
+# evaluating whether a /setwanted target is an innocent civilian.
+ILLICIT_DELIVERY_WINDOW = 600  # 10 minutes
 
 
 def calculate_criminal_level(laundered_total: int) -> int:
@@ -49,16 +59,34 @@ def calculate_criminal_level(laundered_total: int) -> int:
     return (laundered_total // CRIMINAL_LEVEL_STEP) + 1
 
 
-def should_trigger_wanted(payment: int) -> bool:
-    """Determine whether an illicit delivery should trigger a Wanted level.
+def should_trigger_wanted(accumulated_amount: int) -> bool:
+    """Determine whether illicit deliveries should trigger a Wanted level.
 
-    Probability scales linearly with payment:
+    Uses the *accumulated* delivery total within the current debounce window
+    so that splitting deliveries (e.g. one cargo at a time) is equivalent to
+    a single large delivery.
+
+    Probability scales linearly with accumulated_amount:
     - Any amount: 10% floor
     - $50k: 50% chance
     - $100k+: 100% chance
     """
-    chance = max(WANTED_MIN_CHANCE, min(1.0, payment / WANTED_FULL_CHANCE_AMOUNT))
+    chance = max(WANTED_MIN_CHANCE, min(1.0, accumulated_amount / WANTED_FULL_CHANCE_AMOUNT))
     return random.random() < chance
+
+
+async def accumulate_illicit_delivery(character_guid: str, amount: int) -> int:
+    """Add *amount* to the rolling debounce window total and return the new total.
+
+    The window resets after ILLICIT_DELIVERY_DEBOUNCE seconds of inactivity,
+    preventing micro-deliveries (e.g. one cargo per ~5 s) from being evaluated
+    individually rather than as an aggregate.
+    """
+    cache_key = f"illicit_delivery_total:{character_guid}"
+    prev = await cache.aget(cache_key, 0)
+    new_total = (prev or 0) + amount
+    await cache.aset(cache_key, new_total, timeout=ILLICIT_DELIVERY_DEBOUNCE)
+    return new_total
 
 
 # Handler signature: (logs, character, http_client, http_client_mod) -> None
@@ -153,8 +181,19 @@ async def create_or_refresh_wanted(
         character: The Character model instance.
         http_client_mod: Mod server HTTP client.
         amount: The delivery payment amount to accumulate on the Wanted record.
+            Positive values are floored at WANTED_MIN_BOUNTY (100k) to ensure a
+            meaningful minimum bounty.  Negative values (WRONGFUL_WANTED_BOUNTY)
+            are stored as-is — they represent a wrongful wanted placed by police
+            on an innocent civilian; the officer will be penalised on arrest.
     """
     from amc.mod_server import send_system_message
+
+    # Enforce minimum bounty per event — but only for legitimate (≥0) amounts.
+    # A negative amount means a wrongful wanted; preserve it as-is.
+    if amount >= 0:
+        effective_amount = max(amount, WANTED_MIN_BOUNTY)
+    else:
+        effective_amount = amount  # wrongful wanted: -100k
 
     created = False
     active_wanted = await Wanted.objects.filter(
@@ -163,14 +202,14 @@ async def create_or_refresh_wanted(
     ).afirst()
     if active_wanted:
         active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_LEVEL
-        active_wanted.amount = F("amount") + amount
+        active_wanted.amount = F("amount") + effective_amount
         await active_wanted.asave(update_fields=["wanted_remaining", "amount"])
         await active_wanted.arefresh_from_db(fields=["amount"])
     else:
         active_wanted = await Wanted.objects.acreate(
             character=character,
             wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
-            amount=amount,
+            amount=effective_amount,
         )
         created = True
 

@@ -25,6 +25,7 @@ from amc.models import (
 )
 from amc.special_cargo import (
     ILLICIT_CARGO_KEYS,
+    accumulate_illicit_delivery,
     create_or_refresh_wanted,
     link_delivery_to_wanted,
     should_trigger_wanted,
@@ -241,11 +242,16 @@ async def handle_cargo_arrived(event, player, character, ctx):
         # Wanted status for all illicit cargo (skipped for modded criminals)
         if cargo_key in ILLICIT_CARGO_KEYS and character and not is_modded:
             delivery_amount = payment * quantity
+            # Accumulate within the debounce window so splitting across multiple
+            # small deliveries (~5 s apart) is treated the same as one big one.
+            accumulated_amount = await accumulate_illicit_delivery(
+                character.guid, delivery_amount
+            )
             # Check if already wanted (always refresh) or roll probability
             already_wanted = await Wanted.objects.filter(
                 character=character, expired_at__isnull=True
             ).aexists()
-            if already_wanted or should_trigger_wanted(delivery_amount):
+            if already_wanted or should_trigger_wanted(accumulated_amount):
                 wanted, newly_created = await create_or_refresh_wanted(
                     character, ctx.http_client_mod, amount=delivery_amount
                 )

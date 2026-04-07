@@ -1,7 +1,16 @@
 from datetime import timedelta
-from django.test import SimpleTestCase
+from unittest.mock import AsyncMock, patch
+
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
-from amc.tasks import get_welcome_message
+
+from amc.models import Character
+from amc.tasks import (
+    _resolve_guid,
+    _resolve_guid_from_game_server,
+    aget_or_create_character,
+    get_welcome_message,
+)
 
 
 class GetWelcomeMessageTests(SimpleTestCase):
@@ -75,3 +84,195 @@ class GetWelcomeMessageTests(SimpleTestCase):
         )
         self.assertEqual(message, "Welcome back TestPlayer!")
         self.assertFalse(is_new)
+
+
+# ---------------------------------------------------------------------------
+# GUID resolution tests
+# ---------------------------------------------------------------------------
+
+
+VALID_GUID = "AAAA1111BBBB2222CCCC3333DDDD4444"
+PLAYER_ID = 999_000_001
+
+
+def _make_game_players(player_id, guid):
+    """Build the list-of-tuples format returned by game_server.get_players()."""
+    return [
+        (player_id, {"unique_id": player_id, "character_guid": guid, "name": "Test"}),
+    ]
+
+
+class ResolveGuidFromGameServerTests(SimpleTestCase):
+    """Unit tests for _resolve_guid_from_game_server — no DB needed."""
+
+    async def test_returns_guid_when_player_found(self):
+        """Returns the GUID when the player is in the game server list."""
+        mock_http = AsyncMock()
+        players = _make_game_players(PLAYER_ID, VALID_GUID)
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)):
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+        self.assertEqual(result, VALID_GUID)
+
+    async def test_returns_none_when_player_not_found(self):
+        """Returns None when the player_id is not in the list."""
+        mock_http = AsyncMock()
+        players = _make_game_players(12345, VALID_GUID)   # different player_id
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)):
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+        self.assertIsNone(result)
+
+    async def test_filters_invalid_guid(self):
+        """All-zeros INVALID_GUID is treated as absent."""
+        mock_http = AsyncMock()
+        players = _make_game_players(PLAYER_ID, Character.INVALID_GUID)
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)):
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+        self.assertIsNone(result)
+
+    async def test_returns_none_when_player_list_empty(self):
+        """Returns None when the game server returns an empty list."""
+        mock_http = AsyncMock()
+        with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+        self.assertIsNone(result)
+
+    async def test_matches_by_string_comparison(self):
+        """player_id comparison is string-safe (int vs str)."""
+        mock_http = AsyncMock()
+        players = [(str(PLAYER_ID), {"unique_id": str(PLAYER_ID), "character_guid": VALID_GUID, "name": "Test"})]
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)):
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+        self.assertEqual(result, VALID_GUID)
+
+
+class AgetOrCreateCharacterFallbackTests(TestCase):
+    """Integration tests for aget_or_create_character with game server fallback."""
+
+    async def test_mod_server_guid_used_when_available(self):
+        """When mod server returns a good GUID, game server is NOT consulted."""
+        mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "Test"}
+        game_players = _make_game_players(PLAYER_ID, "DIFFERENT_GUID_SHOULD_NOT_BE_USED")
+
+        with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+            with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)) as mock_game:
+                character, player, created, player_info = await aget_or_create_character(
+                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                )
+
+        # get_players should NOT have been called since mod server succeeded
+        mock_game.assert_not_called()
+        self.assertEqual(character.guid, VALID_GUID)
+
+    async def test_falls_back_to_game_server_when_mod_returns_invalid_guid(self):
+        """Falls back to game server when mod server returns INVALID_GUID."""
+        mod_player_info = {"CharacterGuid": Character.INVALID_GUID, "PlayerName": "Test"}
+        game_players = _make_game_players(PLAYER_ID, VALID_GUID)
+
+        with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+            with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
+                character, player, created, player_info = await aget_or_create_character(
+                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                )
+
+        self.assertEqual(character.guid, VALID_GUID)
+
+    async def test_falls_back_to_game_server_when_mod_fails(self):
+        """Falls back to game server when mod server raises an exception."""
+        game_players = _make_game_players(PLAYER_ID, VALID_GUID)
+
+        with patch("amc.tasks.get_player", AsyncMock(side_effect=Exception("timeout"))):
+            with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
+                character, player, created, player_info = await aget_or_create_character(
+                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                )
+
+        self.assertEqual(character.guid, VALID_GUID)
+
+    async def test_creates_character_without_guid_when_both_fail(self):
+        """Creates a character with no GUID when both APIs fail to return one."""
+        with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
+            with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
+                character, player, created, player_info = await aget_or_create_character(
+                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                )
+
+        self.assertIsNone(character.guid)
+        self.assertTrue(created)
+
+    async def test_no_http_client_still_works(self):
+        """aget_or_create_character works with no http clients at all."""
+        character, player, created, player_info = await aget_or_create_character(
+            "TestPlayer", PLAYER_ID
+        )
+        self.assertIsNone(character.guid)
+        self.assertIsNone(player_info)
+
+
+class ResolveGuidRetryTests(SimpleTestCase):
+    """Unit tests for _resolve_guid — game server tried first, then mod retry loop."""
+
+    async def test_game_server_wins_before_mod_retry(self):
+        """When game server has the GUID, mod server retry loop is never entered."""
+        game_players = _make_game_players(PLAYER_ID, VALID_GUID)
+
+        with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
+            with patch("amc.tasks.get_player", AsyncMock()) as mock_mod:
+                guid, player_info = await _resolve_guid(
+                    http_client_mod=AsyncMock(),
+                    player_id=PLAYER_ID,
+                    player_name="Test",
+                    http_client=AsyncMock(),
+                )
+
+        self.assertEqual(guid, VALID_GUID)
+        self.assertIsNone(player_info)   # game server path returns (guid, None)
+        mock_mod.assert_not_called()
+
+    async def test_falls_back_to_mod_when_game_server_empty(self):
+        """Falls through to mod server retry loop when game server returns nothing."""
+        mod_player_info = {"CharacterGuid": VALID_GUID}
+
+        with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
+            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                guid, player_info = await _resolve_guid(
+                    http_client_mod=AsyncMock(),
+                    player_id=PLAYER_ID,
+                    player_name="Test",
+                    http_client=AsyncMock(),
+                    max_attempts=1,
+                )
+
+        self.assertEqual(guid, VALID_GUID)
+        self.assertIsNotNone(player_info)
+
+    async def test_returns_none_when_all_fail(self):
+        """Returns (None, None) after exhausting all attempts."""
+        with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
+            with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
+                guid, player_info = await _resolve_guid(
+                    http_client_mod=AsyncMock(),
+                    player_id=PLAYER_ID,
+                    player_name="Test",
+                    http_client=AsyncMock(),
+                    max_attempts=1,
+                )
+
+        self.assertIsNone(guid)
+        self.assertIsNone(player_info)
+
+    async def test_no_http_client_goes_straight_to_mod(self):
+        """When http_client is None, skips game server and goes to mod retry loop."""
+        mod_player_info = {"CharacterGuid": VALID_GUID}
+
+        with patch("amc.tasks.get_players", AsyncMock()) as mock_game:
+            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                guid, _ = await _resolve_guid(
+                    http_client_mod=AsyncMock(),
+                    player_id=PLAYER_ID,
+                    player_name="Test",
+                    http_client=None,
+                    max_attempts=1,
+                )
+
+        mock_game.assert_not_called()
+        self.assertEqual(guid, VALID_GUID)

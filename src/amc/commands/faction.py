@@ -1,7 +1,12 @@
 import asyncio
+import logging
 import math
 import re
+
 from django.core.cache import cache
+from django.utils import timezone
+from django.utils.translation import gettext as gettext, gettext_lazy
+
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import (
@@ -25,8 +30,8 @@ from amc_finance.services import (
 )
 from amc.police import is_police_vehicle, record_confiscation_for_level
 from amc.player_tags import refresh_player_name
-from django.utils.translation import gettext as gettext, gettext_lazy
-from django.utils import timezone
+
+logger = logging.getLogger("amc.commands.faction")
 
 # 100 game units = 1 metre
 ARREST_RADIUS_ON_FOOT = 3000  # 30m — cop on foot (consistent with auto-arrest)
@@ -120,7 +125,8 @@ async def execute_arrest(
                 pass
 
             if wanted:
-                # Confiscate the full Wanted.amount (cumulative illicit payment)
+                # Confiscate the full Wanted.amount (cumulative illicit payment).
+                # May be negative if this was a wrongful wanted (innocent civilian).
                 confiscated_amount = wanted.amount
 
                 # Expire Wanted status BEFORE teleport
@@ -133,7 +139,7 @@ async def execute_arrest(
                     refresh_player_name(suspect_char, http_client_mod)
                 )
 
-            # Create a Confiscation record for the arrest
+            # Create a Confiscation record for the arrest (negative = wrongful arrest)
             await Confiscation.objects.acreate(
                 character=suspect_char,
                 officer=officer_character,
@@ -142,6 +148,7 @@ async def execute_arrest(
             )
 
             if confiscated_amount > 0:
+                # --- Legitimate arrest: confiscate earnings ---
                 await suspect_char.arefresh_from_db(fields=["criminal_laundered_total"])
                 new_criminal_total = max(
                     0, suspect_char.criminal_laundered_total - confiscated_amount
@@ -193,7 +200,60 @@ async def execute_arrest(
                     character_guid=suspect_char.guid,
                 )
 
-            total_confiscated += confiscated_amount
+            elif confiscated_amount < 0:
+                # --- Wrongful arrest: innocent civilian ---
+                # Penalty amount is the absolute value of the negative bounty.
+                penalty = abs(confiscated_amount)
+
+                # Compensate the suspect
+                await transfer_money(
+                    http_client_mod,
+                    int(penalty),
+                    "Wrongful Detention Compensation",
+                    str(suspect_char.player_id),
+                )
+
+                # Penalise the officer
+                await transfer_money(
+                    http_client_mod,
+                    int(-penalty),
+                    "Wrongful Detention Penalty",
+                    str(officer_character.player_id),
+                )
+                await send_fund_to_player_wallet(
+                    -penalty, officer_character, "Wrongful Detention Penalty"
+                )
+
+                # The treasury bears the net cost (officer deducted, suspect credited)
+                await record_treasury_confiscation_income(
+                    -penalty, "Wrongful Detention"
+                )
+
+                await send_system_message(
+                    http_client_mod,
+                    gettext(
+                        "WRONGFUL ARREST: {name} had no recent illicit activity. "
+                        "${penalty:,} has been deducted from your account as a penalty."
+                    ).format(penalty=penalty, name=name),
+                    character_guid=officer_character.guid,
+                )
+                await send_system_message(
+                    http_client_mod,
+                    gettext(
+                        "You were wrongfully arrested. "
+                        "${penalty:,} has been deposited into your account as compensation."
+                    ).format(penalty=penalty),
+                    character_guid=suspect_char.guid,
+                )
+
+                logger.warning(
+                    "Wrongful arrest: officer=%s suspect=%s penalty=%d",
+                    officer_character.name,
+                    name,
+                    penalty,
+                )
+
+        total_confiscated += confiscated_amount
 
         # --- Phase 2: Physical arrest (teleport to jail) ---
         # Always attempt to exit vehicle — snapshot may be stale
@@ -235,6 +295,7 @@ async def execute_arrest(
         arrested_names.append(name)
 
     return arrested_names, total_confiscated
+
 
 
 @registry.register(
