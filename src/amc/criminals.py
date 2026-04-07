@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from amc.commands.faction import _build_player_locations, _distance_3d
 from amc.game_server import get_players
-from amc.models import PoliceSession, Wanted
+from amc.models import CriminalRecord, PoliceSession, Wanted
 from amc.mod_server import send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured
@@ -315,3 +315,47 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 await announce_money_secured(char.guid, http_client)
             except Exception:
                 logger.warning(f"Failed to announce money secured for {char.name}")
+
+
+# ---------------------------------------------------------------------------
+# Criminal Record decay
+# ---------------------------------------------------------------------------
+
+CRIMINAL_RECORD_HALF_LIFE_MINUTES = 240  # 4 hours of online time
+CRIMINAL_RECORD_DECAY_FACTOR = 0.5 ** (1 / CRIMINAL_RECORD_HALF_LIFE_MINUTES)
+CRIMINAL_RECORD_DECAY_FLOOR = 100  # confiscatable amounts below this are zeroed out
+ONLINE_THRESHOLD_SECONDS = 60  # character considered online if last_online < 60s ago
+
+
+async def tick_criminal_record_decay() -> None:
+    """Decay confiscatable_amount for ONLINE characters only.
+
+    Called every minute via arq cron. Applies exponential decay with a
+    4-hour half-life of *online time*. Offline criminals preserve their
+    confiscatable amount so they cannot escape punishment by logging off.
+
+    The `amount` field is NEVER decayed — it is a permanent audit trail.
+    """
+    online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+    records = [
+        r
+        async for r in CriminalRecord.objects.filter(
+            cleared_at__isnull=True,
+            confiscatable_amount__gt=0,
+            character__last_online__gte=online_cutoff,
+        )
+    ]
+    if not records:
+        return
+
+    for record in records:
+        record.confiscatable_amount = int(
+            record.confiscatable_amount * CRIMINAL_RECORD_DECAY_FACTOR
+        )
+        if record.confiscatable_amount < CRIMINAL_RECORD_DECAY_FLOOR:
+            record.confiscatable_amount = 0
+
+    await CriminalRecord.objects.abulk_update(records, ["confiscatable_amount"])
+    logger.debug(
+        "tick_criminal_record_decay: decayed %d active record(s)", len(records)
+    )

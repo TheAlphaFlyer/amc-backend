@@ -613,10 +613,10 @@ class PoliceShiftLogAdmin(admin.ModelAdmin):
 
 @admin.register(CriminalRecord)
 class CriminalRecordAdmin(admin.ModelAdmin):
-    list_display = ["id", "character", "reason", "created_at", "expires_at"]
+    list_display = ["id", "character", "reason", "amount", "confiscatable_amount", "cleared_at", "created_at"]
     list_select_related = ["character", "character__player"]
     search_fields = ["character__name", "character__player__unique_id", "reason"]
-    list_filter = ["reason"]
+    list_filter = ["reason", ("cleared_at", admin.EmptyFieldListFilter)]
     readonly_fields = ["character"]
     ordering = ["-created_at"]
 

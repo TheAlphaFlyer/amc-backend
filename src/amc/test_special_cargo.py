@@ -1,11 +1,9 @@
 import time
-from datetime import timedelta
 from unittest.mock import patch, AsyncMock
 
 from asgiref.sync import sync_to_async
 from django.contrib.gis.geos import Point
 from django.test import TestCase
-from django.utils import timezone
 
 from amc.factories import PlayerFactory, CharacterFactory
 from amc.models import (
@@ -71,16 +69,14 @@ class MoneyCargoHandlerTests(TestCase):
         record = await CriminalRecord.objects.filter(character=character).afirst()
         self.assertIsNotNone(record)
         self.assertEqual(record.reason, "Money delivery")
-        # Expires ~7 days from now
-        self.assertAlmostEqual(
-            record.expires_at.timestamp(),
-            (timezone.now() + timedelta(days=7)).timestamp(),
-            delta=5,
-        )
+        # Active record has cleared_at = None
+        self.assertIsNone(record.cleared_at)
+        self.assertEqual(record.amount, 5_000)
+        self.assertEqual(record.confiscatable_amount, 5_000)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_criminal_record_reset_on_repeat_delivery(
+    async def test_criminal_record_accumulates_on_repeat_delivery(
         self,
         mock_treasury_expense,
         mock_refresh,
@@ -91,43 +87,49 @@ class MoneyCargoHandlerTests(TestCase):
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        # Pre-existing record expiring in 3 days
-        original_expiry = timezone.now() + timedelta(days=3)
+        # Pre-existing active record
         await CriminalRecord.objects.acreate(
             character=character,
             reason="Money delivery",
-            expires_at=original_expiry,
+            cleared_at=None,
+            amount=30_000,
+            confiscatable_amount=30_000,
         )
 
-        event = self._money_event(character)
+        event = self._money_event(character, payment=5_000)
         await process_event(event, player, character)
 
-        records = [r async for r in CriminalRecord.objects.filter(character=character)]
+        records = [r async for r in CriminalRecord.objects.filter(character=character, cleared_at__isnull=True)]
         self.assertEqual(len(records), 1, "Should not create a second record")
-        # Should be reset to 7 days from now (not extended from original expiry)
-        self.assertAlmostEqual(
-            records[0].expires_at.timestamp(),
-            (timezone.now() + timedelta(days=7)).timestamp(),
-            delta=5,
-        )
+        # Amount should accumulate
+        self.assertEqual(records[0].amount, 35_000)
+        self.assertEqual(records[0].confiscatable_amount, 35_000)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_player_tag_refreshed(
+    async def test_player_tag_not_refreshed_without_wanted(
         self,
         mock_treasury_expense,
         mock_refresh,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
+        """Money delivery below wanted threshold → no tag refresh.
+
+        refresh_player_name is now only triggered when a Wanted record is created
+        (via the illicit cargo wanted-trigger flow). The cargo handler itself no longer
+        calls refresh_player_name directly.
+        """
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        event = self._money_event(character)
+        # 5k payment — well below the 100k wanted threshold
+        event = self._money_event(character, payment=5_000)
         await process_event(event, player, character)
 
-        mock_refresh.assert_called_once_with(character, None)
+        # No Wanted created → no name refresh from cargo handler
+        mock_refresh.assert_not_called()
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)

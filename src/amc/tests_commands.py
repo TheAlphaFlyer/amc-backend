@@ -2330,7 +2330,10 @@ class ArrestCommandTestCase(TestCase):
             await self.criminal_character.arefresh_from_db(
                 fields=["criminal_laundered_total"]
             )
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 25_000)
+            # Only delivery_confiscation reduces laundered_total.
+            # Here there's no active CriminalRecord so delivery_confiscation=0,
+            # laundered_total stays at 50_000.
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 50_000)
 
             self.assertTrue(
                 await Confiscation.objects.filter(
@@ -2618,7 +2621,10 @@ class ArrestCommandTestCase(TestCase):
             await self.criminal_character.arefresh_from_db(
                 fields=["criminal_laundered_total"]
             )
-            self.assertEqual(self.criminal_character.criminal_laundered_total, 120_000)
+            # Only delivery_confiscation (confiscatable_amount from CriminalRecord) reduces
+            # criminal_laundered_total. Here no active CriminalRecord exists so
+            # delivery_confiscation=0, laundered_total stays at 200_000.
+            self.assertEqual(self.criminal_character.criminal_laundered_total, 200_000)
 
             self.assertTrue(await Confiscation.objects.filter(amount=80000).aexists())
 
@@ -2808,7 +2814,7 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_wanted_with_records(self):
         """Active records shown grouped online-first, sorted by criminal level desc."""
-        now = timezone.now()
+        timezone.now()
 
         # Create characters with different criminal levels (IDs avoid setUp collision)
         player_a = await Player.objects.acreate(unique_id="76561198000000101")
@@ -2837,17 +2843,20 @@ class ArrestCommandTestCase(TestCase):
         await CriminalRecord.objects.acreate(
             character=char_online,
             reason="Money delivery",
-            expires_at=now + timedelta(days=3),
+            cleared_at=None,  # active
+            amount=250_000,
         )
         await CriminalRecord.objects.acreate(
             character=char_offline,
             reason="Money delivery",
-            expires_at=now + timedelta(days=5),
+            cleared_at=None,  # active
+            amount=500_000,
         )
         await CriminalRecord.objects.acreate(
             character=char_online2,
             reason="Money delivery",
-            expires_at=now + timedelta(days=1),
+            cleared_at=None,  # active
+            amount=100_000,
         )
 
         # Mock online players: only guid-online and guid-online2 are online
@@ -2894,7 +2903,7 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_wanted_expired_excluded(self):
         """Expired records are not shown."""
-        now = timezone.now()
+        timezone.now()
         player_x = await Player.objects.acreate(unique_id="76561198000000104")
         char = await Character.objects.acreate(
             name="ExpiredCriminal",
@@ -2905,7 +2914,7 @@ class ArrestCommandTestCase(TestCase):
         await CriminalRecord.objects.acreate(
             character=char,
             reason="Money delivery",
-            expires_at=now - timedelta(days=1),  # expired yesterday
+            cleared_at=timezone.now(),  # cleared = no longer active
         )
 
         with patch(
@@ -2918,7 +2927,7 @@ class ArrestCommandTestCase(TestCase):
 
     async def test_cmd_wanted_excludes_active_police(self):
         """Characters with active police sessions are excluded from wanted list."""
-        now = timezone.now()
+        timezone.now()
 
         # Criminal with active police session — should be excluded
         player_cop = await Player.objects.acreate(unique_id="76561198000000201")
@@ -2931,7 +2940,7 @@ class ArrestCommandTestCase(TestCase):
         await CriminalRecord.objects.acreate(
             character=char_cop,
             reason="Money delivery",
-            expires_at=now + timedelta(days=3),
+            cleared_at=None,  # active
         )
         await PoliceSession.objects.acreate(character=char_cop)  # active session
 
@@ -2946,7 +2955,7 @@ class ArrestCommandTestCase(TestCase):
         await CriminalRecord.objects.acreate(
             character=char_crim,
             reason="Money delivery",
-            expires_at=now + timedelta(days=5),
+            cleared_at=None,  # active
         )
 
         with patch(

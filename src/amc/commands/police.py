@@ -59,15 +59,7 @@ async def cmd_police(ctx: CommandContext):
     category="Faction",
 )
 async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from amc.models import Delivery
-    from amc.special_cargo import (
-        ILLICIT_CARGO_KEYS,
-        ILLICIT_DELIVERY_WINDOW,
-    )
+    from amc.models import CriminalRecord
 
     # Only on-duty police can use this command
     if not await is_police(ctx.character):
@@ -119,19 +111,13 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
         )
         return
 
-    # Innocence check: look for illicit deliveries in the past 10 minutes
-    # that are NOT already linked to a prior Wanted record.
-    # Deliveries linked to an existing Wanted have already been "accounted for"
-    # and must not count again toward justifying a new wanted status.
-    cutoff = timezone.now() - timedelta(seconds=ILLICIT_DELIVERY_WINDOW)
-    has_recent_illicit = await Delivery.objects.filter(
-        character=target_character,
-        cargo_key__in=ILLICIT_CARGO_KEYS,
-        timestamp__gte=cutoff,
-        wanted__isnull=True,  # exclude deliveries already linked to a Wanted
+    # Innocence check: CriminalRecord is the single source of truth.
+    # A NULL cleared_at means the character has an active criminal record.
+    has_criminal_record = await CriminalRecord.objects.filter(
+        character=target_character, cleared_at__isnull=True
     ).aexists()
 
-    if has_recent_illicit:
+    if has_criminal_record:
         # Legitimate wanted — standard minimum bounty applied inside create_or_refresh_wanted
         bounty_amount = 0
         warning_note = ""

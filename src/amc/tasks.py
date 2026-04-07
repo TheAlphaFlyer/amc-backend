@@ -140,9 +140,8 @@ Use <Highlight>/faction</Highlight> on Discord to join the Police faction and ga
         # Get online players from mod server API
         from amc.mod_server import get_players as get_players_mod
 
-        now = timezone.now()
         active_records = CriminalRecord.objects.filter(
-            expires_at__gt=now
+            cleared_at__isnull=True
         ).select_related("character")
 
         # Filter to online characters only
@@ -157,9 +156,9 @@ Use <Highlight>/faction</Highlight> on Discord to join the Police faction and ga
 
         wanted_lines = []
         async for record in active_records:
-            days_left = (record.expires_at - now).days
+            amount_str = f"${record.amount:,}" if record.amount > 0 else "no deliveries"
             wanted_lines.append(
-                f"- {record.character.name} ({record.reason}) — expires in {days_left}d"
+                f"- {record.character.name} ({record.reason}) — {amount_str}"
             )
 
         if wanted_lines:

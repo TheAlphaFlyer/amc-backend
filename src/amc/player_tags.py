@@ -114,11 +114,10 @@ async def refresh_player_name(
         gov_level = calculate_gov_level(character.gov_employee_contributions)
 
     # Determine CRIM state
-    from django.utils import timezone
     from amc.models import CriminalRecord
 
     has_criminal_record = await CriminalRecord.objects.filter(
-        character=character, expires_at__gt=timezone.now()
+        character=character, cleared_at__isnull=True
     ).aexists()
 
     # Compute criminal level from cumulative laundered total

@@ -1,5 +1,4 @@
 import time
-from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch, AsyncMock
 from django.test import TestCase
@@ -12,7 +11,6 @@ from amc.models import (
     CharacterLocation,
     CriminalRecord,
 )
-from django.utils import timezone
 from amc_finance.services import get_treasury_fund_balance
 
 
@@ -62,7 +60,7 @@ class MoneyLaunderingTests(TestCase):
     async def test_money_delivery_creates_criminal_record(
         self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        """Money delivery should create a CriminalRecord for the character."""
+        """Money delivery should create an active CriminalRecord (cleared_at=None)."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
@@ -74,36 +72,41 @@ class MoneyLaunderingTests(TestCase):
         record = await CriminalRecord.objects.filter(character=character).afirst()
         self.assertIsNotNone(record)
         self.assertEqual(record.reason, "Money delivery")
-        self.assertGreater(record.expires_at, timezone.now())
+        # Active record has cleared_at = None
+        self.assertIsNone(record.cleared_at)
+        # Amount should be accumulated
+        self.assertEqual(record.amount, 10_000)
+        self.assertEqual(record.confiscatable_amount, 10_000)
 
-    async def test_money_delivery_resets_existing_criminal_record(
+    async def test_money_delivery_reuses_existing_criminal_record(
         self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
     ):
-        """Subsequent Money deliveries should reset the criminal record to 7 days from now."""
+        """Subsequent Money deliveries should accumulate on the same active CriminalRecord."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 1_000_000
 
         player, character = await _setup_character("cr2")
 
-        # Create existing record
-        original_expiry = timezone.now() + timedelta(days=3)
+        # Create existing active record
         await CriminalRecord.objects.acreate(
             character=character,
             reason="Money delivery",
-            expires_at=original_expiry,
+            cleared_at=None,  # active
+            amount=50_000,
+            confiscatable_amount=50_000,
         )
 
         event = _money_cargo_event(character.guid, player.unique_id, payment=5_000)
         await process_event(event, player, character)
 
+        # Still only one active record
         self.assertEqual(
-            await CriminalRecord.objects.filter(character=character).acount(), 1
+            await CriminalRecord.objects.filter(character=character, cleared_at__isnull=True).acount(), 1
         )
-        record = await CriminalRecord.objects.aget(character=character)
-        expected_expiry = timezone.now() + timedelta(days=7)
-        self.assertAlmostEqual(
-            record.expires_at.timestamp(), expected_expiry.timestamp(), delta=5
-        )
+        record = await CriminalRecord.objects.aget(character=character, cleared_at__isnull=True)
+        # Amount should be the original + new delivery
+        self.assertEqual(record.amount, 55_000)
+        self.assertEqual(record.confiscatable_amount, 55_000)
 
     @patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
     async def test_money_delivery_server_announcement(

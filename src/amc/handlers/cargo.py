@@ -27,7 +27,7 @@ from amc.special_cargo import (
     ILLICIT_CARGO_KEYS,
     accumulate_illicit_delivery,
     create_or_refresh_wanted,
-    link_delivery_to_wanted,
+    link_delivery_to_criminal_record,
     should_trigger_wanted,
 )
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
@@ -271,10 +271,10 @@ async def handle_cargo_arrived(event, player, character, ctx):
                             character.guid, ctx.http_client, delay=15
                         )
                     )
-                # Link delivery to the wanted record
+                # Link delivery to the criminal record
                 if delivery_obj:
-                    await link_delivery_to_wanted(
-                        character, wanted, cargo_key, timestamp
+                    await link_delivery_to_criminal_record(
+                        character, cargo_key, timestamp
                     )
 
         # Discord notification — suppressed for illicit cargo to avoid revealing

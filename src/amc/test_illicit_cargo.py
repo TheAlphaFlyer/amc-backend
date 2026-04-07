@@ -1,13 +1,11 @@
 """Tests for illicit cargo: Wanted trigger, Delivery↔Wanted link, contraband handler."""
 
 import time
-from datetime import timedelta
 from unittest.mock import patch, AsyncMock
 
 from asgiref.sync import sync_to_async
 from django.contrib.gis.geos import Point
 from django.test import TestCase
-from django.utils import timezone
 
 from amc.factories import PlayerFactory, CharacterFactory
 from amc.models import (
@@ -189,7 +187,7 @@ class IllicitCargoWantedTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_delivery_linked_to_wanted_for_ganja(
+    async def test_delivery_linked_to_criminal_record_for_ganja(
         self, mock_treasury, mock_refresh, mock_accumulate, mock_get_treasury, mock_get_rp_mode, mock_random
     ):
         mock_get_rp_mode.return_value = False
@@ -203,14 +201,14 @@ class IllicitCargoWantedTests(TestCase):
             character=character, cargo_key="Ganja"
         ).afirst()
         self.assertIsNotNone(delivery)
-        self.assertIsNotNone(delivery.wanted_id)
+        self.assertIsNotNone(delivery.criminal_record_id)
 
-        wanted = await Wanted.objects.aget(pk=delivery.wanted_id)
-        self.assertEqual(wanted.character_id, character.id)
+        record = await CriminalRecord.objects.aget(pk=delivery.criminal_record_id)
+        self.assertEqual(record.character_id, character.id)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_delivery_linked_to_wanted_for_money(
+    async def test_delivery_linked_to_criminal_record_for_money(
         self, mock_treasury, mock_refresh, mock_accumulate, mock_get_treasury, mock_get_rp_mode, mock_random
     ):
         mock_get_rp_mode.return_value = False
@@ -224,7 +222,7 @@ class IllicitCargoWantedTests(TestCase):
             character=character, cargo_key="Money"
         ).afirst()
         self.assertIsNotNone(delivery)
-        self.assertIsNotNone(delivery.wanted_id)
+        self.assertIsNotNone(delivery.criminal_record_id)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
@@ -246,7 +244,7 @@ class IllicitCargoWantedTests(TestCase):
             character=character, cargo_key="Coal"
         ).afirst()
         if delivery:
-            self.assertIsNone(delivery.wanted_id)
+            self.assertIsNone(delivery.criminal_record_id)
 
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
@@ -300,11 +298,7 @@ class ContrabandCriminalRecordTests(TestCase):
         record = await CriminalRecord.objects.filter(character=character).afirst()
         self.assertIsNotNone(record)
         self.assertEqual(record.reason, "Ganja delivery")
-        self.assertAlmostEqual(
-            record.expires_at.timestamp(),
-            (timezone.now() + timedelta(days=7)).timestamp(),
-            delta=5,
-        )
+        self.assertIsNone(record.cleared_at)  # active record
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
@@ -324,32 +318,31 @@ class ContrabandCriminalRecordTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_contraband_resets_existing_criminal_record(
+    async def test_contraband_accumulates_on_existing_criminal_record(
         self, mock_treasury, mock_refresh, mock_get_treasury, mock_get_rp_mode
     ):
-        """Repeat contraband delivery should reset the expiry, not create a duplicate."""
+        """Repeat contraband delivery should reuse the active CriminalRecord and accumulate amounts."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        # Pre-existing record expiring in 3 days
+        # Pre-existing record
         await CriminalRecord.objects.acreate(
             character=character,
             reason="Ganja delivery",
-            expires_at=timezone.now() + timedelta(days=3),
+            cleared_at=None,  # active
+            amount=20_000,
+            confiscatable_amount=20_000,
         )
 
-        event = self._cargo_event(character, "Cocaine")
+        event = self._cargo_event(character, "Cocaine", payment=5_000)
         await process_event(event, player, character)
 
-        records = [r async for r in CriminalRecord.objects.filter(character=character)]
+        records = [r async for r in CriminalRecord.objects.filter(character=character, cleared_at__isnull=True)]
         self.assertEqual(len(records), 1, "Should not create a second record")
-        # Expiry reset to 7 days from now
-        self.assertAlmostEqual(
-            records[0].expires_at.timestamp(),
-            (timezone.now() + timedelta(days=7)).timestamp(),
-            delta=5,
-        )
+        # Amount accumulates
+        self.assertEqual(records[0].amount, 25_000)
+        self.assertEqual(records[0].confiscatable_amount, 25_000)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)

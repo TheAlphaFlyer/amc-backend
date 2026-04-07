@@ -45,9 +45,6 @@ WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
 WANTED_MIN_BOUNTY = 100_000
 # How long (seconds) to accumulate illicit deliveries before resetting the window
 ILLICIT_DELIVERY_DEBOUNCE = 30
-# How long (seconds) into the past to look for recent illicit deliveries when
-# evaluating whether a /setwanted target is an innocent civilian.
-ILLICIT_DELIVERY_WINDOW = 600  # 10 minutes
 
 
 def calculate_criminal_level(laundered_total: int) -> int:
@@ -215,16 +212,54 @@ async def create_or_refresh_wanted(
     return active_wanted, created
 
 
-async def link_delivery_to_wanted(character, wanted, cargo_key, timestamp) -> None:
-    """Associate the Delivery record created for this cargo with the Wanted record."""
+async def ensure_criminal_record(character, reason: str) -> CriminalRecord:
+    """Ensure an active CriminalRecord exists for the character.
+
+    Active = cleared_at IS NULL. UniqueConstraint ensures at most one.
+    Returns the existing active record or creates a new one.
+    Called on both cargo load and cargo delivery.
+    """
+    active_record = await CriminalRecord.objects.filter(
+        character=character, cleared_at__isnull=True
+    ).afirst()
+    if active_record:
+        return active_record
+    return await CriminalRecord.objects.acreate(
+        character=character,
+        reason=reason,
+        cleared_at=None,  # NULL = active
+    )
+
+
+async def accumulate_criminal_record_amount(character, payment: int) -> None:
+    """Add delivery payment to BOTH amount and confiscatable_amount.
+
+    amount = permanent audit total (never decays).
+    confiscatable_amount = decaying total (cron reduces when online).
+    """
+    await CriminalRecord.objects.filter(
+        character=character, cleared_at__isnull=True
+    ).aupdate(
+        amount=F("amount") + payment,
+        confiscatable_amount=F("confiscatable_amount") + payment,
+    )
+
+
+async def link_delivery_to_criminal_record(character, cargo_key, timestamp) -> None:
+    """Associate the Delivery record created for this cargo with the active CriminalRecord."""
     from amc.models import Delivery
 
+    active_record = await CriminalRecord.objects.filter(
+        character=character, cleared_at__isnull=True
+    ).afirst()
+    if not active_record:
+        return
     delivery = await Delivery.objects.filter(
         character=character, cargo_key=cargo_key, timestamp=timestamp
     ).afirst()
-    if delivery and not delivery.wanted_id:
-        delivery.wanted = wanted
-        await delivery.asave(update_fields=["wanted"])
+    if delivery and not delivery.criminal_record_id:
+        delivery.criminal_record = active_record
+        await delivery.asave(update_fields=["criminal_record"])
 
 
 # ---------------------------------------------------------------------------
@@ -255,18 +290,9 @@ async def handle_money_cargo(
         await character.arefresh_from_db(fields=["criminal_laundered_total"])
 
     # --- Criminal record ---
-    active_record = await CriminalRecord.objects.filter(
-        character=character, expires_at__gt=timezone.now()
-    ).afirst()
-    if active_record:
-        active_record.expires_at = timezone.now() + timedelta(days=7)
-        await active_record.asave(update_fields=["expires_at"])
-    else:
-        await CriminalRecord.objects.acreate(
-            character=character,
-            reason="Money delivery",
-            expires_at=timezone.now() + timedelta(days=7),
-        )
+    await ensure_criminal_record(character, reason="Money delivery")
+    if money_payment > 0:
+        await accumulate_criminal_record_amount(character, money_payment)
 
     # --- Treasury cost ---
     if money_payment > 0:
@@ -303,23 +329,16 @@ async def handle_contraband_cargo(
 ) -> None:
     """Side effects for contraband deliveries (Ganja, Cocaine, etc.).
 
-    - Create or reset criminal record (7 days from now)
+    - Create or ensure active criminal record
+    - Accumulate confiscatable amount
     - Refresh player name tag ([C])
     """
     # --- Criminal record ---
-    active_record = await CriminalRecord.objects.filter(
-        character=character, expires_at__gt=timezone.now()
-    ).afirst()
-    if active_record:
-        active_record.expires_at = timezone.now() + timedelta(days=7)
-        await active_record.asave(update_fields=["expires_at"])
-    else:
-        cargo_key = logs[0].cargo_key if logs else "Contraband"
-        await CriminalRecord.objects.acreate(
-            character=character,
-            reason=f"{cargo_key} delivery",
-            expires_at=timezone.now() + timedelta(days=7),
-        )
+    cargo_key = logs[0].cargo_key if logs else "Contraband"
+    await ensure_criminal_record(character, reason=f"{cargo_key} delivery")
+    delivery_payment = sum(log.payment for log in logs)
+    if delivery_payment > 0:
+        await accumulate_criminal_record_amount(character, delivery_payment)
 
 
 # ---------------------------------------------------------------------------

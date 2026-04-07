@@ -439,8 +439,6 @@ async def test_refresh_player_name_wanted_with_crim(mock_set_name):
     from amc.factories import CharacterFactory, PlayerFactory
     from amc.models import CriminalRecord, Wanted
     from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from datetime import timedelta
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
@@ -452,7 +450,7 @@ async def test_refresh_player_name_wanted_with_crim(mock_set_name):
     await CriminalRecord.objects.acreate(
         character=character,
         reason="Money delivery",
-        expires_at=timezone.now() + timedelta(days=7),
+        cleared_at=None,  # active record
     )
     await Wanted.objects.acreate(character=character, wanted_remaining=300)
 
@@ -525,8 +523,6 @@ async def test_refresh_player_name_police_suppresses_crim(mock_set_name):
     from amc.factories import CharacterFactory, PlayerFactory
     from amc.models import CriminalRecord, PoliceSession
     from asgiref.sync import sync_to_async
-    from django.utils import timezone
-    from datetime import timedelta
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
@@ -539,7 +535,7 @@ async def test_refresh_player_name_police_suppresses_crim(mock_set_name):
     await CriminalRecord.objects.acreate(
         character=character,
         reason="Money delivery",
-        expires_at=timezone.now() + timedelta(days=7),
+        cleared_at=None,  # active record
     )
 
     session = MagicMock()

@@ -7,20 +7,6 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy
 
 
-def _format_duration(td):
-    """Format a timedelta as a compact human-readable string, e.g. '3d 12h', '23h 45m'."""
-    total_seconds = int(td.total_seconds())
-    if total_seconds <= 0:
-        return "0m"
-    days = total_seconds // 86400
-    hours = (total_seconds % 86400) // 3600
-    minutes = (total_seconds % 3600) // 60
-    if days > 0:
-        return f"{days}d {hours}h"
-    if hours > 0:
-        return f"{hours}h {minutes}m"
-    return f"{minutes}m"
-
 
 def _stars(n: int) -> str:
     """Return n filled stars + (5-n) empty stars."""
@@ -33,7 +19,7 @@ def _stars(n: int) -> str:
     category="Faction",
 )
 async def cmd_wanted(ctx: CommandContext):
-    now = timezone.now()
+    timezone.now()
 
     # --- Online player GUIDs ---
     online_guids: set[str] = set()
@@ -79,7 +65,8 @@ async def cmd_wanted(ctx: CommandContext):
 
     other_records = [
         r
-        async for r in CriminalRecord.objects.filter(expires_at__gt=now)
+        async for r in CriminalRecord.objects.filter(cleared_at__isnull=True)
+        .order_by("-amount")
         .exclude(character_id__in=active_character_ids)
         .exclude(character_id__in=active_cop_ids)
         .select_related("character")
@@ -94,7 +81,6 @@ async def cmd_wanted(ctx: CommandContext):
     for record in other_records:
         laundered = record.character.criminal_laundered_total
         level = calculate_criminal_level(laundered)
-        on_record = now - record.created_at
         guid = record.character.guid
         other_entries.append(
             {
@@ -102,18 +88,18 @@ async def cmd_wanted(ctx: CommandContext):
                 "guid": guid,
                 "level": level,
                 "laundered": laundered,
-                "on_record": on_record,
+                "amount": record.amount,
                 "online": guid in online_guids,
             }
         )
     other_online = sorted(
         [e for e in other_entries if e["online"]],
-        key=lambda e: (e["level"], e["on_record"]),
+        key=lambda e: e["amount"],
         reverse=True,
     )
     other_offline = sorted(
         [e for e in other_entries if not e["online"]],
-        key=lambda e: (e["level"], e["on_record"]),
+        key=lambda e: e["amount"],
         reverse=True,
     )
 
@@ -135,9 +121,10 @@ async def cmd_wanted(ctx: CommandContext):
         msg += "<Title>Criminal Record</>\n<Secondary></>\n"
         for e in other_online + other_offline:
             status = "🟢" if e["online"] else "🔴"
+            amount_str = f" ${e['amount']:,}" if e['amount'] > 0 else ""
             msg += (
-                f"<Highlight>C{e['level']}</> {status} {e['name']}"
-                f" <Secondary>${e['laundered']:,}</> ({_format_duration(e['on_record'])})\n"
+                f"<Highlight>C{e['level']}</Highlight> {status} {e['name']}"
+                f" <Secondary>${e['laundered']:,}{amount_str}</Secondary>\n"
             )
 
     await ctx.reply(msg.rstrip())
