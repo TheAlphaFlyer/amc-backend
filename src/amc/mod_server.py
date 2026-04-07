@@ -325,6 +325,21 @@ async def despawn_player_cargo(session, character_guid):
         return await resp.json()
 
 
+async def get_vehicle_cargos(session, character_guid):
+    """Fetch cargos loaded on the player's current vehicle (and trailer chain).
+    Returns a list of vehicle dicts, each with a list of cargoSpaces containing
+    cargos. Returns None if the player has no vehicle or the request fails."""
+    async with session.get(
+        f"/players/{character_guid}/vehicle_cargos", timeout=FAST_TIMEOUT
+    ) as resp:
+        if resp.status == 404:
+            return None
+        if resp.status != 200:
+            raise Exception(f"Failed to get vehicle cargos (status={resp.status})")
+        data = await resp.json()
+        return data.get("data")
+
+
 async def set_world_vehicle_decal(
     session,
     vehicle_class,

@@ -13,6 +13,7 @@ from amc.mod_server import (
     get_players as get_players_mod,
     teleport_player,
     transfer_money,
+    get_vehicle_cargos,
 )
 from amc.game_server import get_players
 from amc.vehicles import spawn_registered_vehicle
@@ -387,3 +388,100 @@ async def cmd_bill(ctx: CommandContext, target_player_name: str):
     await ctx.announce(
         f"{target_character.name} has been billed {amount:,} for public service."
     )
+
+
+@registry.register(
+    "/cargo",
+    description=gettext_lazy("Check cargo in a player's current vehicle (Admin)"),
+    category="Admin",
+)
+async def cmd_cargo(ctx: CommandContext, target_player_name: Optional[str] = None):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    # Resolve target character GUID
+    if target_player_name:
+        players = await get_players_mod(ctx.http_client_mod)
+        if players is None:
+            await ctx.reply(_("Could not fetch player list."))
+            return
+        target = next(
+            (
+                p
+                for p in players
+                if p.get("PlayerName") == target_player_name
+                or strip_all_tags(p.get("PlayerName", "")) == target_player_name
+            ),
+            None,
+        )
+        if not target:
+            await ctx.reply(
+                _("Player '{name}' not found.").format(name=target_player_name)
+            )
+            return
+        character_guid = target.get("CharacterGuid")
+        display_name = target.get("PlayerName", target_player_name)
+    else:
+        character_guid = str(ctx.character.guid)
+        display_name = ctx.character.name
+
+    if not character_guid:
+        await ctx.reply(_("Could not resolve character GUID."))
+        return
+
+    vehicles = await get_vehicle_cargos(ctx.http_client_mod, character_guid)
+
+    if vehicles is None:
+        await ctx.reply(
+            _("<Title>No Vehicle</>\n\n{name} is not in a vehicle.").format(
+                name=display_name
+            )
+        )
+        return
+
+    # Build a readable summary
+    lines = [_("<Title>Vehicle Cargo — {name}</>").format(name=display_name)]
+    total_items = 0
+
+    for v_idx, vehicle in enumerate(vehicles):
+        vehicle_name = vehicle.get("fullName", f"Vehicle {v_idx + 1}").split(" ")[0].replace("_C", "")
+        cargo_spaces = vehicle.get("cargoSpaces", [])
+
+        cargo_lines = []
+        for space in cargo_spaces:
+            cargos = space.get("cargos", [])
+            for c in cargos:
+                total_items += 1
+                key = c.get("Net_CargoKey", "Unknown")
+                weight = c.get("Net_Weight", 0)
+                delivery_id = c.get("Net_DeliveryId", 0)
+                damage = c.get("Net_Damage", 0)
+                payment = c.get("Net_Payment") or {}
+                pay_amount = payment.get("ShadowedValue") or payment.get("BaseValue", 0)
+                is_empty = c.get("Net_bIsEmptyContainer", False)
+
+                parts = [f"{key}"]
+                if weight:
+                    parts.append(f"{weight:.0f}kg")
+                if delivery_id:
+                    parts.append(_("Delivery #{id}").format(id=delivery_id))
+                if pay_amount:
+                    parts.append(f"${pay_amount:,}")
+                if damage > 0:
+                    parts.append(_("dmg:{d:.0f}%").format(d=damage * 100))
+                if is_empty:
+                    parts.append(_("(empty container)"))
+
+                cargo_lines.append("  • " + " | ".join(parts))
+
+        if cargo_lines:
+            lines.append(f"\n[{vehicle_name}]")
+            lines.extend(cargo_lines)
+        else:
+            lines.append(f"\n[{vehicle_name}] — " + _("empty"))
+
+    if total_items == 0:
+        lines.append(_("\nNo cargo loaded."))
+
+    await ctx.reply("\n".join(lines))
