@@ -107,29 +107,28 @@ class MoneyCargoHandlerTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_player_tag_not_refreshed_without_wanted(
+    async def test_player_tag_refreshed_on_first_money_delivery(
         self,
         mock_treasury_expense,
         mock_refresh,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
-        """Money delivery below wanted threshold → no tag refresh.
+        """First Money delivery → tag refreshed when CriminalRecord is newly created.
 
-        refresh_player_name is now only triggered when a Wanted record is created
-        (via the illicit cargo wanted-trigger flow). The cargo handler itself no longer
-        calls refresh_player_name directly.
+        refresh_player_name fires inside ensure_criminal_record when a new
+        CriminalRecord is created, regardless of whether a Wanted is triggered.
         """
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        # 5k payment — well below the 100k wanted threshold
+        # 5k payment — well below the 100k wanted threshold, but still creates a record
         event = self._money_event(character, payment=5_000)
         await process_event(event, player, character)
 
-        # No Wanted created → no name refresh from cargo handler
-        mock_refresh.assert_not_called()
+        # New CriminalRecord created → tag refreshed to show [C]
+        mock_refresh.assert_called()
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)

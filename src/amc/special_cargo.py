@@ -212,11 +212,14 @@ async def create_or_refresh_wanted(
     return active_wanted, created
 
 
-async def ensure_criminal_record(character, reason: str) -> CriminalRecord:
+async def ensure_criminal_record(
+    character, reason: str, http_client_mod=None
+) -> CriminalRecord:
     """Ensure an active CriminalRecord exists for the character.
 
     Active = cleared_at IS NULL. UniqueConstraint ensures at most one.
     Returns the existing active record or creates a new one.
+    Triggers a player tag refresh when a NEW record is created (adds [C] tag).
     Called on both cargo load and cargo delivery.
     """
     active_record = await CriminalRecord.objects.filter(
@@ -224,11 +227,14 @@ async def ensure_criminal_record(character, reason: str) -> CriminalRecord:
     ).afirst()
     if active_record:
         return active_record
-    return await CriminalRecord.objects.acreate(
+    record = await CriminalRecord.objects.acreate(
         character=character,
         reason=reason,
         cleared_at=None,  # NULL = active
     )
+    # New record created — refresh tag to show [C] indicator
+    asyncio.create_task(refresh_player_name(character, http_client_mod))
+    return record
 
 
 async def accumulate_criminal_record_amount(character, payment: int) -> None:
@@ -275,8 +281,7 @@ async def handle_money_cargo(
 ) -> None:
     """Side effects for Money deliveries.
 
-    - Create or reset criminal record (7 days from now)
-    - Refresh player name tag ([C])
+    - Create or ensure active criminal record (refreshes [C] tag on first delivery)
     - Debounced laundering announcement (15s window)
     - Record 20% treasury cost
     """
@@ -289,8 +294,8 @@ async def handle_money_cargo(
         await character.asave(update_fields=["criminal_laundered_total"])
         await character.arefresh_from_db(fields=["criminal_laundered_total"])
 
-    # --- Criminal record ---
-    await ensure_criminal_record(character, reason="Money delivery")
+    # --- Criminal record (refresh tag if newly created) ---
+    await ensure_criminal_record(character, reason="Money delivery", http_client_mod=http_client_mod)
     if money_payment > 0:
         await accumulate_criminal_record_amount(character, money_payment)
 
@@ -329,13 +334,14 @@ async def handle_contraband_cargo(
 ) -> None:
     """Side effects for contraband deliveries (Ganja, Cocaine, etc.).
 
-    - Create or ensure active criminal record
+    - Create or ensure active criminal record (refreshes [C] tag on first delivery)
     - Accumulate confiscatable amount
-    - Refresh player name tag ([C])
     """
-    # --- Criminal record ---
+    # --- Criminal record (refresh tag if newly created) ---
     cargo_key = logs[0].cargo_key if logs else "Contraband"
-    await ensure_criminal_record(character, reason=f"{cargo_key} delivery")
+    await ensure_criminal_record(
+        character, reason=f"{cargo_key} delivery", http_client_mod=http_client_mod
+    )
     delivery_payment = sum(log.payment for log in logs)
     if delivery_payment > 0:
         await accumulate_criminal_record_amount(character, delivery_payment)

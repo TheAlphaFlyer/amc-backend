@@ -156,11 +156,16 @@ async def execute_arrest(
                 amount=confiscated_amount,
             )
 
-            # Clear the CriminalRecord
+            # Clear the CriminalRecord and refresh tag (removes [C] indicator)
             if active_record:
                 active_record.cleared_at = timezone.now()
                 active_record.cleared_by_arrest = confiscation
                 await active_record.asave(update_fields=["cleared_at", "cleared_by_arrest"])
+                # Refresh tag to remove [C] (Wanted refresh above only fires if wanted existed)
+                if not wanted:
+                    asyncio.create_task(
+                        refresh_player_name(suspect_char, http_client_mod)
+                    )
 
             if confiscated_amount > 0:
                 # --- Legitimate arrest: confiscate delivery earnings from laundered total ---
