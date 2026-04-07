@@ -1,5 +1,65 @@
 from django.test import TestCase
 from amc.cargo import get_cargo_bonus
+from amc.handlers.cargo import _parse_cargos
+
+
+def _make_event(*cargos):
+    """Helper: wrap a list of cargo dicts in a minimal ServerCargoArrived event."""
+    return {"data": {"Cargos": list(cargos)}}
+
+
+def _cargo(key="Wood", payment=1000, delivery_id=None):
+    """Build a minimal cargo dict."""
+    c = {"Net_CargoKey": key, "Net_Payment": payment, "Net_Damage": 0.0}
+    if delivery_id is not None:
+        c["Net_DeliveryId"] = delivery_id
+    return c
+
+
+class ParseCargosTests(TestCase):
+    def test_normal_cargo_included(self):
+        """Cargos with a real DeliveryId pass through unchanged."""
+        event = _make_event(_cargo("Wood", 1000, delivery_id=42))
+        result = _parse_cargos(event)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["Net_CargoKey"], "Wood")
+
+    def test_zero_delivery_id_skipped(self):
+        """Cargos with DeliveryId == 0 are silently dropped — no bank, no gov levels."""
+        event = _make_event(_cargo("Wood", 5000, delivery_id=0))
+        result = _parse_cargos(event)
+        self.assertEqual(result, [], "Expected non-delivery cargo to be excluded")
+
+    def test_mixed_cargos_only_valid_returned(self):
+        """Only the cargo with a real DeliveryId is kept when mixed."""
+        event = _make_event(
+            _cargo("Coal", 2000, delivery_id=0),
+            _cargo("Iron", 3000, delivery_id=99),
+        )
+        result = _parse_cargos(event)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["Net_CargoKey"], "Iron")
+
+    def test_cargo_without_delivery_id_field_included(self):
+        """Cargos that have no Net_DeliveryId key at all are treated as normal."""
+        event = _make_event(_cargo("Stone", 800))  # no delivery_id kwarg → key absent
+        result = _parse_cargos(event)
+        self.assertEqual(len(result), 1)
+
+    def test_negative_payment_raises(self):
+        """Negative payment is always a hard error regardless of DeliveryId."""
+        event = _make_event(_cargo("Hack", -500, delivery_id=1))
+        with self.assertRaises(ValueError):
+            _parse_cargos(event)
+
+    def test_multiple_zero_delivery_ids_all_skipped(self):
+        """Multiple non-delivery cargos are all dropped."""
+        event = _make_event(
+            _cargo("A", 100, delivery_id=0),
+            _cargo("B", 200, delivery_id=0),
+        )
+        result = _parse_cargos(event)
+        self.assertEqual(result, [])
 
 
 class GetCargoBonusTests(TestCase):

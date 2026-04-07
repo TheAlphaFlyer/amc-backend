@@ -91,8 +91,8 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
     timestamp = _parse_timestamp(event)
 
-    # --- 1. Parse cargos, detect clawback for zero-delivery ---
-    valid_cargos, clawback = _parse_cargos(event)
+    # --- 1. Parse cargos, skip non-delivery (DeliveryId == 0) items ---
+    valid_cargos = _parse_cargos(event)
 
     # --- 2. Build logs (parallel) ---
     logs = await asyncio.gather(
@@ -298,7 +298,7 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         total_subsidy += delivery_subsidy
 
-    return total_payment, total_subsidy, 0, clawback
+    return total_payment, total_subsidy, 0, 0
 
 
 # ---------------------------------------------------------------------------
@@ -307,16 +307,23 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
 
 def _parse_cargos(event):
-    """Extract valid cargos and compute clawback for zero-delivery items."""
+    """Extract valid cargos, skipping non-delivery (DeliveryId == 0) items.
+
+    Non-delivery cargos are silently ignored — they should not be paid out
+    to the bank or count towards government levels.
+    """
     valid_cargos = []
-    clawback = 0
     for cargo in event["data"]["Cargos"]:
         if cargo["Net_Payment"] < 0:
             raise ValueError(f"Negative payment for cargo: {cargo}")
         if "Net_DeliveryId" in cargo and cargo["Net_DeliveryId"] == 0:
-            clawback += cargo["Net_Payment"]
+            logger.debug(
+                "Skipping non-delivery cargo (DeliveryId=0): %s",
+                cargo.get("Net_CargoKey"),
+            )
+            continue
         valid_cargos.append(cargo)
-    return valid_cargos, clawback
+    return valid_cargos
 
 
 async def _apply_modded_vehicle_penalty(
