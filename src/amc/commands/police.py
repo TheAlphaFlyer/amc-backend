@@ -67,7 +67,6 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
     from amc.special_cargo import (
         ILLICIT_CARGO_KEYS,
         ILLICIT_DELIVERY_WINDOW,
-        WRONGFUL_WANTED_BOUNTY,
     )
 
     # Only on-duty police can use this command
@@ -137,9 +136,9 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
         bounty_amount = 0
         warning_note = ""
     else:
-        # Innocent civilian — apply wrongful wanted penalty bounty
-        bounty_amount = WRONGFUL_WANTED_BOUNTY
-        warning_note = " WARNING: No recent illicit activity detected. Wrongful detention penalty applies on arrest."
+        # Innocent civilian — no financial penalty, just a warning note
+        bounty_amount = 0
+        warning_note = " WARNING: No recent illicit activity detected."
 
     # Create or refresh the wanted record
     await create_or_refresh_wanted(

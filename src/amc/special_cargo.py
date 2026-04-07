@@ -43,9 +43,6 @@ WANTED_MIN_CHANCE = 0.10  # 10% floor for small deliveries
 WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
 # Minimum bounty placed on a Wanted record (creation or per-delivery increment)
 WANTED_MIN_BOUNTY = 100_000
-# Bounty applied when police set a wrongful wanted on an innocent civilian.
-# Negative: on arrest the suspect is compensated and the officer is penalised.
-WRONGFUL_WANTED_BOUNTY = -100_000
 # How long (seconds) to accumulate illicit deliveries before resetting the window
 ILLICIT_DELIVERY_DEBOUNCE = 30
 # How long (seconds) into the past to look for recent illicit deliveries when
@@ -181,19 +178,13 @@ async def create_or_refresh_wanted(
         character: The Character model instance.
         http_client_mod: Mod server HTTP client.
         amount: The delivery payment amount to accumulate on the Wanted record.
-            Positive values are floored at WANTED_MIN_BOUNTY (100k) to ensure a
-            meaningful minimum bounty.  Negative values (WRONGFUL_WANTED_BOUNTY)
-            are stored as-is — they represent a wrongful wanted placed by police
-            on an innocent civilian; the officer will be penalised on arrest.
+            Values are floored at WANTED_MIN_BOUNTY (100k) to ensure a
+            meaningful minimum bounty.
     """
     from amc.mod_server import send_system_message
 
-    # Enforce minimum bounty per event — but only for legitimate (≥0) amounts.
-    # A negative amount means a wrongful wanted; preserve it as-is.
-    if amount >= 0:
-        effective_amount = max(amount, WANTED_MIN_BOUNTY)
-    else:
-        effective_amount = amount  # wrongful wanted: -100k
+    # Enforce minimum bounty per event.
+    effective_amount = max(amount, WANTED_MIN_BOUNTY)
 
     created = False
     active_wanted = await Wanted.objects.filter(

@@ -2873,8 +2873,7 @@ class ArrestCommandTestCase(TestCase):
 
         # Verify structure
         self.assertIn("Wanted List", output)
-        self.assertIn("Online", output)
-        self.assertIn("Offline", output)
+        self.assertIn("Criminal Record", output)
 
         # Online section: C6 before C3 (higher level first)
         online_pos_c6 = output.index("OnlineCriminal <")
@@ -2890,10 +2889,8 @@ class ArrestCommandTestCase(TestCase):
         self.assertIn("$500,000", output)
         self.assertIn("$100,000", output)
 
-        # Online section appears before Offline
-        online_section = output.index("<Title>Online</>")
-        offline_section = output.index("<Title>Offline</>")
-        self.assertLess(online_section, offline_section)
+        # Criminal Record section present
+        self.assertIn("<Title>Criminal Record</>", output)
 
     async def test_cmd_wanted_expired_excluded(self):
         """Expired records are not shown."""

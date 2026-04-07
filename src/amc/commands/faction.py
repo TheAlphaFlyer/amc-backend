@@ -200,58 +200,7 @@ async def execute_arrest(
                     character_guid=suspect_char.guid,
                 )
 
-            elif confiscated_amount < 0:
-                # --- Wrongful arrest: innocent civilian ---
-                # Penalty amount is the absolute value of the negative bounty.
-                penalty = abs(confiscated_amount)
-
-                # Compensate the suspect
-                await transfer_money(
-                    http_client_mod,
-                    int(penalty),
-                    "Wrongful Detention Compensation",
-                    str(suspect_char.player_id),
-                )
-
-                # Penalise the officer
-                await transfer_money(
-                    http_client_mod,
-                    int(-penalty),
-                    "Wrongful Detention Penalty",
-                    str(officer_character.player_id),
-                )
-                await send_fund_to_player_wallet(
-                    -penalty, officer_character, "Wrongful Detention Penalty"
-                )
-
-                # The treasury bears the net cost (officer deducted, suspect credited)
-                await record_treasury_confiscation_income(
-                    -penalty, "Wrongful Detention"
-                )
-
-                await send_system_message(
-                    http_client_mod,
-                    gettext(
-                        "WRONGFUL ARREST: {name} had no recent illicit activity. "
-                        "${penalty:,} has been deducted from your account as a penalty."
-                    ).format(penalty=penalty, name=name),
-                    character_guid=officer_character.guid,
-                )
-                await send_system_message(
-                    http_client_mod,
-                    gettext(
-                        "You were wrongfully arrested. "
-                        "${penalty:,} has been deposited into your account as compensation."
-                    ).format(penalty=penalty),
-                    character_guid=suspect_char.guid,
-                )
-
-                logger.warning(
-                    "Wrongful arrest: officer=%s suspect=%s penalty=%d",
-                    officer_character.name,
-                    name,
-                    penalty,
-                )
+            # (no financial action for zero-amount arrests)
 
         total_confiscated += confiscated_amount
 
