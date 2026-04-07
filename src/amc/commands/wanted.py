@@ -124,8 +124,8 @@ async def cmd_wanted(ctx: CommandContext):
             confiscatable = e["confiscatable_amount"]
             amount_str = f" ${confiscatable:,}" if confiscatable > 0 else ""
             msg += (
-                f"<Highlight>C{e['level']}</Highlight> {status} {e['name']}"
-                f" <Secondary>${e['laundered']:,}{amount_str}</Secondary>\n"
+                f"<Highlight>C{e['level']}</> {status} {e['name']}"
+                f" <Secondary>${e['laundered']:,}{amount_str}</>\n"
             )
 
     await ctx.reply(msg.rstrip())
