@@ -345,7 +345,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
 # Criminal Record decay
 # ---------------------------------------------------------------------------
 
-CRIMINAL_RECORD_HALF_LIFE_MINUTES = 240  # 4 hours of online time
+CRIMINAL_RECORD_HALF_LIFE_MINUTES = 120  # 2 hours of online time
 CRIMINAL_RECORD_DECAY_FACTOR = 0.5 ** (1 / CRIMINAL_RECORD_HALF_LIFE_MINUTES)
 CRIMINAL_RECORD_DECAY_FLOOR = 100  # confiscatable amounts below this are zeroed out
 ONLINE_THRESHOLD_SECONDS = 60  # character considered online if last_online < 60s ago
@@ -355,7 +355,7 @@ async def tick_criminal_record_decay() -> None:
     """Decay confiscatable_amount for ONLINE characters only.
 
     Called every minute via arq cron. Applies exponential decay with a
-    4-hour half-life of *online time*. Offline criminals preserve their
+    2-hour half-life of *online time*. Offline criminals preserve their
     confiscatable amount so they cannot escape punishment by logging off.
 
     The `amount` field is NEVER decayed — it is a permanent audit trail.

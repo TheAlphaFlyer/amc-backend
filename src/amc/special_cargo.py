@@ -42,7 +42,7 @@ ILLICIT_CARGO_KEYS: set[str] = {
 WANTED_MIN_CHANCE = 0.10  # 10% floor for small deliveries
 WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
 # Minimum bounty placed on a Wanted record (creation or per-delivery increment)
-WANTED_MIN_BOUNTY = 100_000
+WANTED_MIN_BOUNTY = 50_000
 # How long (seconds) to accumulate illicit deliveries before resetting the window
 ILLICIT_DELIVERY_DEBOUNCE = 30
 
