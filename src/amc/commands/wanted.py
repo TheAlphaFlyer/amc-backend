@@ -66,7 +66,7 @@ async def cmd_wanted(ctx: CommandContext):
     other_records = [
         r
         async for r in CriminalRecord.objects.filter(cleared_at__isnull=True)
-        .order_by("-amount")
+        .order_by("-confiscatable_amount")
         .exclude(character_id__in=active_character_ids)
         .exclude(character_id__in=active_cop_ids)
         .select_related("character")
@@ -88,18 +88,18 @@ async def cmd_wanted(ctx: CommandContext):
                 "guid": guid,
                 "level": level,
                 "laundered": laundered,
-                "amount": record.amount,
+                "confiscatable_amount": record.confiscatable_amount,
                 "online": guid in online_guids,
             }
         )
     other_online = sorted(
         [e for e in other_entries if e["online"]],
-        key=lambda e: e["amount"],
+        key=lambda e: e["confiscatable_amount"],
         reverse=True,
     )
     other_offline = sorted(
         [e for e in other_entries if not e["online"]],
-        key=lambda e: e["amount"],
+        key=lambda e: e["confiscatable_amount"],
         reverse=True,
     )
 
@@ -121,7 +121,8 @@ async def cmd_wanted(ctx: CommandContext):
         msg += "<Title>Criminal Record</>\n<Secondary></>\n"
         for e in other_online + other_offline:
             status = "🟢" if e["online"] else "🔴"
-            amount_str = f" ${e['amount']:,}" if e['amount'] > 0 else ""
+            confiscatable = e["confiscatable_amount"]
+            amount_str = f" ${confiscatable:,}" if confiscatable > 0 else ""
             msg += (
                 f"<Highlight>C{e['level']}</Highlight> {status} {e['name']}"
                 f" <Secondary>${e['laundered']:,}{amount_str}</Secondary>\n"

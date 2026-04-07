@@ -2839,24 +2839,27 @@ class ArrestCommandTestCase(TestCase):
             criminal_laundered_total=100_000,  # level 3
         )
 
-        # Create active records
+        # Create active records with confiscatable_amount driving sort order
         await CriminalRecord.objects.acreate(
             character=char_online,
             reason="Money delivery",
             cleared_at=None,  # active
             amount=250_000,
+            confiscatable_amount=250_000,
         )
         await CriminalRecord.objects.acreate(
             character=char_offline,
             reason="Money delivery",
             cleared_at=None,  # active
             amount=500_000,
+            confiscatable_amount=500_000,
         )
         await CriminalRecord.objects.acreate(
             character=char_online2,
             reason="Money delivery",
             cleared_at=None,  # active
             amount=100_000,
+            confiscatable_amount=100_000,
         )
 
         # Mock online players: only guid-online and guid-online2 are online
@@ -2884,7 +2887,7 @@ class ArrestCommandTestCase(TestCase):
         self.assertIn("Wanted List", output)
         self.assertIn("Criminal Record", output)
 
-        # Online section: C6 before C3 (higher level first)
+        # Online section: online-C6 (confiscatable=250k) before online-C3 (confiscatable=100k)
         online_pos_c6 = output.index("OnlineCriminal <")
         online_pos_c3 = output.index("OnlineCriminal2")
         self.assertLess(online_pos_c6, online_pos_c3)
@@ -2893,10 +2896,10 @@ class ArrestCommandTestCase(TestCase):
         self.assertIn("OfflineCriminal", output)
         self.assertIn("C11", output)
 
-        # Smuggled amounts shown
-        self.assertIn("$250,000", output)
-        self.assertIn("$500,000", output)
-        self.assertIn("$100,000", output)
+        # confiscatable_amount shown as secondary (alongside laundered total)
+        self.assertIn("$250,000", output)  # OnlineCriminal laundered + confiscatable
+        self.assertIn("$500,000", output)  # OfflineCriminal laundered + confiscatable
+        self.assertIn("$100,000", output)  # OnlineCriminal2 laundered + confiscatable
 
         # Criminal Record section present
         self.assertIn("<Title>Criminal Record</>", output)
