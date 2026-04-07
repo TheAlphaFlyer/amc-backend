@@ -36,7 +36,7 @@ async def cmd_wanted(ctx: CommandContext):
         active_cop_ids.add(session.character_id)
 
     # --- Section 1: Active Wanted records (have a live bounty) ---
-    active_bounties = []
+    active_bounties: list[dict] = []
     async for wanted in (
         Wanted.objects.filter(expired_at__isnull=True, wanted_remaining__gt=0)
         .select_related("character")
@@ -106,26 +106,41 @@ async def cmd_wanted(ctx: CommandContext):
     # --- Build message ---
     msg = "<Title>Wanted List</>\n\n"
 
+    def _row_bounty(e: dict) -> str:
+        bounty_str = f"${e['amount']:,}" if e["amount"] > 0 else "no bounty"
+        return f"{_stars(e['stars'])} {e['name']} <Secondary>{bounty_str}</>\n"
+
+    def _row_record(e: dict) -> str:
+        confiscatable = e["confiscatable_amount"]
+        amount_str = f" ${confiscatable:,}" if confiscatable > 0 else ""
+        return (
+            f"<Highlight>C{e['level']}</> {e['name']}"
+            f" <Secondary>${e['laundered']:,}{amount_str}</>\n"
+        )
+
     if active_bounties:
-        msg += "<Title>⚠ Active Bounties</>\n<Secondary></>\n"
-        for e in active_bounties:
-            status = "🟢" if e["online"] else "🔴"
-            bounty_str = f"${e['amount']:,}" if e["amount"] > 0 else "no bounty"
-            msg += (
-                f"{_stars(e['stars'])} {status} {e['name']}"
-                f" <Secondary>{bounty_str}</>\n"
-            )
+        bounties_online = [e for e in active_bounties if e["online"]]
+        bounties_offline = [e for e in active_bounties if not e["online"]]
+        msg += "<Title>⚠ Active Bounties</>\n"
+        if bounties_online:
+            msg += "<Secondary>🟢 Online</>\n"
+            for e in bounties_online:
+                msg += _row_bounty(e)
+        if bounties_offline:
+            msg += "<Secondary>🔴 Offline</>\n"
+            for e in bounties_offline:
+                msg += _row_bounty(e)
         msg += "\n"
 
     if other_online or other_offline:
-        msg += "<Title>Criminal Record</>\n<Secondary></>\n"
-        for e in other_online + other_offline:
-            status = "🟢" if e["online"] else "🔴"
-            confiscatable = e["confiscatable_amount"]
-            amount_str = f" ${confiscatable:,}" if confiscatable > 0 else ""
-            msg += (
-                f"<Highlight>C{e['level']}</> {status} {e['name']}"
-                f" <Secondary>${e['laundered']:,}{amount_str}</>\n"
-            )
+        msg += "<Title>Criminal Record</>\n"
+        if other_online:
+            msg += "<Secondary>🟢 Online</>\n"
+            for e in other_online:
+                msg += _row_record(e)
+        if other_offline:
+            msg += "<Secondary>🔴 Offline</>\n"
+            for e in other_offline:
+                msg += _row_record(e)
 
     await ctx.reply(msg.rstrip())
