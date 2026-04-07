@@ -277,8 +277,9 @@ async def handle_cargo_arrived(event, player, character, ctx):
                         character, wanted, cargo_key, timestamp
                     )
 
-        # Discord notification
-        if ctx.discord_client:
+        # Discord notification — suppressed for illicit cargo to avoid revealing
+        # criminal activity in a public channel.
+        if ctx.discord_client and cargo_key not in ILLICIT_CARGO_KEYS:
             asyncio.create_task(
                 post_discord_delivery_embed(
                     ctx.discord_client,
