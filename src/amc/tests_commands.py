@@ -2813,10 +2813,10 @@ class ArrestCommandTestCase(TestCase):
         self.ctx.reply.assert_called_with("No wanted criminals")
 
     async def test_cmd_wanted_with_records(self):
-        """Active records shown grouped online-first, sorted by criminal level desc."""
+        """Active records shown online-first, sorted by confiscatable_amount desc."""
         timezone.now()
 
-        # Create characters with different criminal levels (IDs avoid setUp collision)
+        # Create characters (IDs avoid setUp collision)
         player_a = await Player.objects.acreate(unique_id="76561198000000101")
         char_online = await Character.objects.acreate(
             name="OnlineCriminal",
@@ -2887,22 +2887,98 @@ class ArrestCommandTestCase(TestCase):
         self.assertIn("Wanted List", output)
         self.assertIn("Criminal Record", output)
 
-        # Online section: online-C6 (confiscatable=250k) before online-C3 (confiscatable=100k)
-        online_pos_c6 = output.index("OnlineCriminal <")
-        online_pos_c3 = output.index("OnlineCriminal2")
-        self.assertLess(online_pos_c6, online_pos_c3)
+        # Online section: OnlineCriminal ($250k) must appear before OnlineCriminal2 ($100k)
+        online_pos = output.index("OnlineCriminal <")
+        online2_pos = output.index("OnlineCriminal2")
+        self.assertLess(online_pos, online2_pos)
 
-        # Offline section: C11
+        # Offline section contains OfflineCriminal with its criminal level
         self.assertIn("OfflineCriminal", output)
         self.assertIn("C11", output)
 
-        # confiscatable_amount shown as secondary (alongside laundered total)
-        self.assertIn("$250,000", output)  # OnlineCriminal laundered + confiscatable
-        self.assertIn("$500,000", output)  # OfflineCriminal laundered + confiscatable
-        self.assertIn("$100,000", output)  # OnlineCriminal2 laundered + confiscatable
+        # Only confiscatable_amount shown (not laundered total)
+        self.assertIn("$250,000", output)  # OnlineCriminal confiscatable
+        self.assertIn("$500,000", output)  # OfflineCriminal confiscatable
+        self.assertIn("$100,000", output)  # OnlineCriminal2 confiscatable
 
-        # Criminal Record section present
+        # Criminal Record section header present
         self.assertIn("<Title>Criminal Record</>", output)
+
+    async def test_cmd_wanted_active_bounty_shows_confiscatable(self):
+        """Active Wanted records show confiscatable_amount from CriminalRecord, not Wanted.amount."""
+        from amc.models import Wanted
+
+        player_a = await Player.objects.acreate(unique_id="76561198000000301")
+        char_a = await Character.objects.acreate(
+            name="BountyOnline",
+            player=player_a,
+            guid="guid-bounty-online",
+            criminal_laundered_total=100_000,
+        )
+        player_b = await Player.objects.acreate(unique_id="76561198000000302")
+        char_b = await Character.objects.acreate(
+            name="BountyOffline",
+            player=player_b,
+            guid="guid-bounty-offline",
+            criminal_laundered_total=50_000,
+        )
+
+        # Active Wanted records (Wanted.amount may differ from confiscatable_amount)
+        await Wanted.objects.acreate(
+            character=char_a,
+            wanted_remaining=180,
+            amount=9_999,  # intentionally low — should NOT be shown
+        )
+        await Wanted.objects.acreate(
+            character=char_b,
+            wanted_remaining=60,
+            amount=9_999,
+        )
+
+        # CriminalRecord with the real confiscatable values
+        await CriminalRecord.objects.acreate(
+            character=char_a,
+            reason="Money delivery",
+            cleared_at=None,
+            amount=300_000,
+            confiscatable_amount=300_000,
+        )
+        await CriminalRecord.objects.acreate(
+            character=char_b,
+            reason="Money delivery",
+            cleared_at=None,
+            amount=150_000,
+            confiscatable_amount=150_000,
+        )
+
+        # Only char_a is online
+        mock_players = [
+            (
+                "76561198000000301",
+                {"character_guid": "guid-bounty-online", "name": "BountyOnline"},
+            ),
+        ]
+
+        with patch(
+            "amc.commands.wanted.get_players",
+            new=AsyncMock(return_value=mock_players),
+        ):
+            await cmd_wanted(self.ctx)
+
+        output = self.ctx.reply.call_args[0][0]
+
+        # Active Bounties section shown
+        self.assertIn("Active Bounties", output)
+
+        # Confiscatable amounts shown, not Wanted.amount (9999)
+        self.assertIn("$300,000", output)
+        self.assertIn("$150,000", output)
+        self.assertNotIn("$9,999", output)
+
+        # Online player appears before offline
+        online_pos = output.index("BountyOnline")
+        offline_pos = output.index("BountyOffline")
+        self.assertLess(online_pos, offline_pos)
 
     async def test_cmd_wanted_expired_excluded(self):
         """Expired records are not shown."""

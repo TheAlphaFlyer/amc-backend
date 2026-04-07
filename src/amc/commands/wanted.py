@@ -5,6 +5,7 @@ from amc.special_cargo import calculate_criminal_level
 from amc.criminals import _compute_stars
 from django.utils import timezone
 from django.utils.translation import gettext_lazy
+from django.db.models import OuterRef, Subquery
 
 
 
@@ -36,33 +37,41 @@ async def cmd_wanted(ctx: CommandContext):
         active_cop_ids.add(session.character_id)
 
     # --- Section 1: Active Wanted records (have a live bounty) ---
+    # Annotate with confiscatable_amount from the linked CriminalRecord
+    confiscatable_sq = (
+        CriminalRecord.objects.filter(
+            character=OuterRef("character"), cleared_at__isnull=True
+        )
+        .order_by("-confiscatable_amount")
+        .values("confiscatable_amount")[:1]
+    )
+
     active_bounties: list[dict] = []
+    active_character_ids: set[int] = set()
     async for wanted in (
         Wanted.objects.filter(expired_at__isnull=True, wanted_remaining__gt=0)
         .select_related("character")
-        .order_by("-amount")
+        .annotate(confiscatable_amount=Subquery(confiscatable_sq))
     ):
         if wanted.character_id in active_cop_ids:
             continue
+        active_character_ids.add(wanted.character_id)
         stars = _compute_stars(wanted.wanted_remaining)
         is_online = wanted.character.guid in online_guids
+        confiscatable = wanted.confiscatable_amount or 0
         active_bounties.append(
             {
                 "name": wanted.character.name,
                 "stars": stars,
-                "amount": wanted.amount,
+                "confiscatable_amount": confiscatable,
                 "online": is_online,
             }
         )
 
-    # --- Section 2: Criminal records without an active Wanted ---
-    # Collect character IDs already shown in active bounties
-    active_character_ids = set()
-    async for wanted in Wanted.objects.filter(
-        expired_at__isnull=True, wanted_remaining__gt=0
-    ):
-        active_character_ids.add(wanted.character_id)
+    # Sort active bounties: online first, then by confiscatable_amount desc within each group
+    active_bounties.sort(key=lambda e: (not e["online"], -e["confiscatable_amount"]))
 
+    # --- Section 2: Criminal records without an active Wanted ---
     other_records = [
         r
         async for r in CriminalRecord.objects.filter(cleared_at__isnull=True)
@@ -107,39 +116,41 @@ async def cmd_wanted(ctx: CommandContext):
     msg = "<Title>Wanted List</>\n\n"
 
     def _row_bounty(e: dict) -> str:
-        bounty_str = f"${e['amount']:,}" if e["amount"] > 0 else "no bounty"
-        return f"{_stars(e['stars'])} {e['name']} <Secondary>{bounty_str}</>\n"
+        confiscatable = e["confiscatable_amount"]
+        amount_str = f"${confiscatable:,}" if confiscatable > 0 else "no bounty"
+        return f"{_stars(e['stars'])} {e['name']} <Secondary>{amount_str}</>\n"
 
     def _row_record(e: dict) -> str:
         confiscatable = e["confiscatable_amount"]
-        amount_str = f" ${confiscatable:,}" if confiscatable > 0 else ""
+        amount_str = f"${confiscatable:,}" if confiscatable > 0 else "no bounty"
         return (
             f"<Highlight>C{e['level']}</> {e['name']}"
-            f" <Secondary>${e['laundered']:,}{amount_str}</>\n"
+            f" <Secondary>{amount_str}</>\n"
         )
 
     if active_bounties:
         bounties_online = [e for e in active_bounties if e["online"]]
         bounties_offline = [e for e in active_bounties if not e["online"]]
-        msg += "<Title>⚠ Active Bounties</>\n"
+        msg += "<Title>Active Bounties</>\n"
         if bounties_online:
-            msg += "<Secondary>🟢 Online</>\n"
+            msg += "<EffectGood>Online</>\n"
             for e in bounties_online:
                 msg += _row_bounty(e)
         if bounties_offline:
-            msg += "<Secondary>🔴 Offline</>\n"
+            msg += "<Warning>Offline</>\n"
             for e in bounties_offline:
                 msg += _row_bounty(e)
         msg += "\n"
+    # (active_bounties already sorted: online first, then confiscatable_amount desc)
 
     if other_online or other_offline:
         msg += "<Title>Criminal Record</>\n"
         if other_online:
-            msg += "<Secondary>🟢 Online</>\n"
+            msg += "<EffectGood>Online</>\n"
             for e in other_online:
                 msg += _row_record(e)
         if other_offline:
-            msg += "<Secondary>🔴 Offline</>\n"
+            msg += "<Warning>Offline</>\n"
             for e in other_offline:
                 msg += _row_record(e)
 
