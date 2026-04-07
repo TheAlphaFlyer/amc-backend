@@ -24,6 +24,14 @@ LOCATION_TELEPORT_DETECTION_ENABLED = os.environ.get(
     "LOCATION_TELEPORT_DETECTION_ENABLED", "1"
 ).lower() in ("1", "true", "yes")
 
+# Jail boundary enforcement
+JAIL_BOUNDARY_RADIUS = 1_000   # 10 m (100 game units = 1 m)
+JAIL_DURATION_SECONDS = 30     # auto-release after this many seconds
+JAIL_BOUNDARY_MESSAGE = """\
+<Title>⛓️ Stay in Jail</Title>
+<Warning>You are under arrest — you cannot leave jail!</Warning>
+"""
+
 
 point_of_interests = [
     (
@@ -205,9 +213,78 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
     await _handle_teleport_or_respawn(event, character, handler_ctx)
 
 
+async def _check_jail_boundary(character, new_location, ctx):
+    """Enforce the jail perimeter for recently arrested characters.
+
+    If ``character.jailed_at`` is set the player is under arrest.  Two
+    outcomes are possible on each call:
+
+    1. **Time expired** — 30 s have passed since arrest → clear ``jailed_at``
+       and return.  The player is now free.
+    2. **Out of bounds** — player is more than JAIL_BOUNDARY_RADIUS game units
+       from the jail ``TeleportPoint`` → teleport them back and show a popup.
+    """
+    if not character.jailed_at:
+        return
+
+    # Auto-release when JAIL_DURATION_SECONDS have elapsed
+    from django.utils import timezone as _tz
+    from datetime import timedelta
+
+    if _tz.now() - character.jailed_at >= timedelta(seconds=JAIL_DURATION_SECONDS):
+        character.jailed_at = None
+        return
+
+    http_client_mod = ctx.get("http_client_mod")
+    if http_client_mod is None:
+        return
+
+    # Fetch jail TeleportPoint (cheap — only hit when character is jailed)
+    from amc.models import TeleportPoint
+
+    try:
+        jail_tp = await TeleportPoint.objects.aget(name__iexact="jail")
+    except TeleportPoint.DoesNotExist:
+        logger.warning("Jail boundary check skipped — 'jail' TeleportPoint not found")
+        return
+
+    jail_point = jail_tp.location
+    distance = new_location.distance(jail_point)
+
+    if distance <= JAIL_BOUNDARY_RADIUS:
+        return  # within bounds — nothing to do
+
+    logger.info(
+        "Jailed player %s strayed %.0f units from jail — teleporting back",
+        character.name,
+        distance,
+    )
+
+    jail_coords = {"X": jail_point.x, "Y": jail_point.y, "Z": jail_point.z}
+    # Use player_id (FK integer) directly — avoids a sync DB access in async context
+    player_uid = str(character.player_id)
+    try:
+        await teleport_player(
+            http_client_mod,
+            player_uid,
+            jail_coords,
+            no_vehicles=True,
+            force=True,
+        )
+    except Exception:
+        # Teleport failed (e.g. player already offline) — do not crash the monitor
+        pass
+    else:
+        await show_popup(
+            http_client_mod,
+            JAIL_BOUNDARY_MESSAGE,
+            player_id=player_uid,
+        )
+
+
 async def _check_pois_and_portals(character, old_location, new_location, ctx):
     """Check POI entries and portal triggers using the cached last_location."""
-    player = character.player
+    player_id = character.player_id
     http_client_mod = ctx.get("http_client_mod")
     if http_client_mod is None:
         return
@@ -220,7 +297,7 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
         is_inside = distance_to_new <= target_radius_meters
 
         if was_outside and is_inside:
-            await show_popup(http_client_mod, message, player_id=player.unique_id)
+            await show_popup(http_client_mod, message, player_id=player_id)
             await asyncio.sleep(0.1)
 
     for source_point, source_radius_meters, target_point in portals:
@@ -233,7 +310,7 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
         if was_outside and is_inside:
             await teleport_player(
                 http_client_mod,
-                str(player.unique_id),
+                str(player_id),
                 {"X": target_point.x, "Y": target_point.y, "Z": target_point.z},
             )
             await asyncio.sleep(0.1)
@@ -280,6 +357,9 @@ async def monitor_locations(ctx):
         vehicle_key = player_info["VehicleKey"]
 
         # Use cached last_location instead of querying 175M-row table
+        # Jail boundary check runs unconditionally (needs only new_point)
+        await _check_jail_boundary(character, new_point, ctx)
+
         if character.last_location:
             await _check_pois_and_portals(
                 character, character.last_location, new_point, ctx
@@ -319,5 +399,6 @@ async def monitor_locations(ctx):
                 "last_vehicle_key",
                 "last_online",
                 "shortcut_zone_entered_at",
+                "jailed_at",
             ],
         )

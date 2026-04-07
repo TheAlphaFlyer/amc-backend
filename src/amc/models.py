@@ -299,6 +299,16 @@ class Character(models.Model):
     # Wealth tax crossover DM — sent once when tax > interest, 30-day cooldown
     crossover_warning_sent_at = models.DateTimeField(null=True, blank=True)
 
+    # Jail boundary enforcement — set on arrest, cleared after JAIL_DURATION_SECONDS
+    jailed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Set when the player is teleported to jail. "
+            "Boundary enforcement stops after JAIL_DURATION_SECONDS (30 s)."
+        ),
+    )
+
     objects: ClassVar[CharacterManager] = CharacterManager()
 
     if TYPE_CHECKING:

@@ -261,6 +261,11 @@ async def execute_arrest(
             player_id=crim_uid,
         )
 
+        # Mark character as jailed so monitor_locations enforces jail perimeter
+        if suspect_char:
+            suspect_char.jailed_at = timezone.now()
+            await suspect_char.asave(update_fields=["jailed_at"])
+
         arrested_names.append(name)
 
     return arrested_names, total_confiscated
