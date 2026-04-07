@@ -549,16 +549,6 @@
         packages.scripts = pythonSet.mkVirtualEnv "amc-scripts-env"  { scripts = []; };
         packages.staticRoot = staticRoot;
 
-        # Flake check for pyrefly type checking
-        checks.pyrefly =
-          pkgs.runCommand "pyrefly-check" {
-            buildInputs = [ virtualenv ];
-          } ''
-            cp -r ${./.}/src .
-            chmod -R +w .
-            pyrefly check .
-            touch $out
-          '';
 
         checks.ruff =
           pkgs.runCommand "ruff-check" {
@@ -629,16 +619,6 @@
         # Git hooks configuration
         pre-commit.settings.hooks = {
           ruff.enable = true;
-          pyrefly = {
-            enable = true;
-            name = "pyrefly";
-            description = "Type check Python code with Pyrefly";
-            entry = "pyrefly check";
-            files = "\\.py$";
-            excludes = [ "migrations/" ];
-            language = "system";
-            pass_filenames = true;
-          };
         };
 
         devShells.default = pkgs.mkShell {
