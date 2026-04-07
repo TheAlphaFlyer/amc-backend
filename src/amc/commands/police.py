@@ -10,7 +10,11 @@ from amc.police import (
 )
 from amc.special_cargo import create_or_refresh_wanted
 from amc.utils import fuzzy_find_player
+from datetime import timedelta
+from django.utils import timezone
 from django.utils.translation import gettext as _, gettext_lazy
+
+SETWANTED_COOLDOWN = timedelta(hours=1)
 
 
 @registry.register(
@@ -110,6 +114,29 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
             )
         )
         return
+
+    # Cooldown: 1 hour since last Wanted expiry
+    last_expired = (
+        await Wanted.objects.filter(
+            character=target_character, expired_at__isnull=False
+        )
+        .order_by("-expired_at")
+        .afirst()
+    )
+    if last_expired:
+        cooldown_end = last_expired.expired_at + SETWANTED_COOLDOWN
+        now = timezone.now()
+        if now < cooldown_end:
+            remaining = cooldown_end - now
+            remaining_mins = int(remaining.total_seconds() / 60) + 1
+            await ctx.reply(
+                _(
+                    "<Title>Cooldown Active</>\n\n"
+                    "{name} was recently released. "
+                    "You can set them as wanted again in {mins} minute(s)."
+                ).format(name=target_character.name, mins=remaining_mins)
+            )
+            return
 
     # Innocence check: CriminalRecord is the single source of truth.
     # A NULL cleared_at means the character has an active criminal record.

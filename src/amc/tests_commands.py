@@ -2971,3 +2971,110 @@ class ArrestCommandTestCase(TestCase):
         output = self.ctx.reply.call_args[0][0]
         self.assertNotIn("CopWithRecord", output)
         self.assertIn("RegularCriminal", output)
+
+
+# ---------------------------------------------------------------------------
+# SetWantedCooldownTestCase
+# ---------------------------------------------------------------------------
+
+
+class SetWantedCooldownTestCase(TestCase):
+    """Tests for the 1-hour cooldown on /setwanted after a Wanted record expires."""
+
+    def setUp(self):
+        from amc.commands.police import cmd_setwanted
+        from amc.models import Player, Character, PoliceSession
+
+        self.cmd_setwanted = cmd_setwanted
+
+        self.cop_player = Player.objects.create(unique_id="76561199000001001")
+        self.cop_char = Character.objects.create(
+            name="OfficerCool",
+            player=self.cop_player,
+            guid="cop-guid-cool",
+        )
+        PoliceSession.objects.create(character=self.cop_char)
+
+        self.target_player = Player.objects.create(unique_id="76561199000001002")
+        self.target_char = Character.objects.create(
+            name="CooldownTarget",
+            player=self.target_player,
+            guid="target-guid-cool",
+        )
+
+        self.mock_players = [
+            (
+                "76561199000001002",
+                {"character_guid": "target-guid-cool", "name": "CooldownTarget"},
+            )
+        ]
+
+        self.ctx = MagicMock()
+        self.ctx.player = self.cop_player
+        self.ctx.character = self.cop_char
+        self.ctx.http_client = MagicMock()
+        self.ctx.http_client_mod = MagicMock()
+        self.ctx.reply = AsyncMock()
+        self.ctx.announce = AsyncMock()
+
+    async def test_cooldown_blocks_within_one_hour(self):
+        """Target arrested 30m ago -> setwanted blocked with remaining minutes shown."""
+        from amc.models import Wanted
+
+        await Wanted.objects.acreate(
+            character=self.target_char,
+            wanted_remaining=0,
+            expired_at=timezone.now() - timedelta(minutes=30),
+        )
+
+        with patch(
+            "amc.commands.police.get_players",
+            new=AsyncMock(return_value=self.mock_players),
+        ):
+            await self.cmd_setwanted(self.ctx, "CooldownTarget")
+
+        self.ctx.reply.assert_called_once()
+        reply = self.ctx.reply.call_args[0][0]
+        self.assertIn("Cooldown", reply)
+        self.assertIn("CooldownTarget", reply)
+        # Remaining is ~30 minutes (+/- rounding); just verify a number is present
+        self.assertIn("minute", reply)
+
+    async def test_cooldown_allows_after_one_hour(self):
+        """Target arrested 61m ago -> setwanted allowed."""
+        from amc.models import Wanted
+
+        await Wanted.objects.acreate(
+            character=self.target_char,
+            wanted_remaining=0,
+            expired_at=timezone.now() - timedelta(minutes=61),
+        )
+
+        with (
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(return_value=self.mock_players),
+            ),
+            patch(
+                "amc.commands.police.create_or_refresh_wanted", new=AsyncMock()
+            ) as mock_create,
+        ):
+            await self.cmd_setwanted(self.ctx, "CooldownTarget")
+
+        mock_create.assert_called_once()
+
+    async def test_no_previous_wanted_no_cooldown(self):
+        """Target never wanted before -> setwanted always allowed."""
+        with (
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(return_value=self.mock_players),
+            ),
+            patch(
+                "amc.commands.police.create_or_refresh_wanted", new=AsyncMock()
+            ) as mock_create,
+        ):
+            await self.cmd_setwanted(self.ctx, "CooldownTarget")
+
+        mock_create.assert_called_once()
+
