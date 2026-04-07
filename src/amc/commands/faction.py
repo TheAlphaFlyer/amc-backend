@@ -85,7 +85,9 @@ async def execute_arrest(
     """Execute arrest: teleport to jail, confiscate money, announce.
 
     Args:
-        officer_character: The arresting officer's Character model.
+        officer_character: The arresting officer's Character model, or None for
+            a system/automated arrest.  When None, no reward is paid to an
+            officer and no officer-specific messages are sent.
         targets: guid -> (unique_id, location, has_vehicle) for each suspect.
         target_chars: guid -> Character model for each suspect.
         http_client: Game server HTTP client (for announcements).
@@ -151,7 +153,7 @@ async def execute_arrest(
             # Create a Confiscation record for the arrest
             confiscation = await Confiscation.objects.acreate(
                 character=suspect_char,
-                officer=officer_character,
+                officer=officer_character,  # None for system arrests
                 cargo_key="Illicit",
                 amount=confiscated_amount,
             )
@@ -187,31 +189,33 @@ async def execute_arrest(
                     confiscated_amount, "Police Confiscation"
                 )
 
-                await record_confiscation_for_level(
-                    officer_character,
-                    confiscated_amount,
-                    http_client=http_client,
-                    session=http_client_mod,
-                )
+                if officer_character is not None:
+                    await record_confiscation_for_level(
+                        officer_character,
+                        confiscated_amount,
+                        http_client=http_client,
+                        session=http_client_mod,
+                    )
 
-                # Reward officer with confiscated amount
-                await transfer_money(
-                    http_client_mod,
-                    int(confiscated_amount),
-                    "Confiscation Reward",
-                    str(officer_character.player_id),
-                )
-                await send_fund_to_player_wallet(
-                    confiscated_amount, officer_character, "Confiscation Reward"
-                )
+                    # Reward officer with confiscated amount
+                    await transfer_money(
+                        http_client_mod,
+                        int(confiscated_amount),
+                        "Confiscation Reward",
+                        str(officer_character.player_id),
+                    )
+                    await send_fund_to_player_wallet(
+                        confiscated_amount, officer_character, "Confiscation Reward"
+                    )
 
-                await send_system_message(
-                    http_client_mod,
-                    gettext(
-                        "Confiscated ${amount:,} in illegal earnings from {name}. You earned ${amount:,} confiscation reward."
-                    ).format(amount=confiscated_amount, name=name),
-                    character_guid=officer_character.guid,
-                )
+                    await send_system_message(
+                        http_client_mod,
+                        gettext(
+                            "Confiscated ${amount:,} in illegal earnings from {name}. You earned ${amount:,} confiscation reward."
+                        ).format(amount=confiscated_amount, name=name),
+                        character_guid=officer_character.guid,
+                    )
+
                 await send_system_message(
                     http_client_mod,
                     gettext(
@@ -223,6 +227,7 @@ async def execute_arrest(
             # (no financial action for zero-amount arrests)
 
         total_confiscated += confiscated_amount
+
 
         # --- Phase 2: Physical arrest (teleport to jail) ---
         # Always attempt to exit vehicle — snapshot may be stale

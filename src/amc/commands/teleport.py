@@ -1,9 +1,10 @@
 import asyncio
+import logging
 import math
 from datetime import timedelta
 from django.utils import timezone
 from amc.command_framework import registry, CommandContext
-from amc.models import TeleportPoint, RescueRequest, PoliceSession
+from amc.models import TeleportPoint, RescueRequest, PoliceSession, Wanted
 from amc.mod_server import (
     teleport_player,
     list_player_vehicles,
@@ -14,6 +15,56 @@ from amc.police import is_police_vehicle
 from django.conf import settings
 from django.db.models import Q
 from django.utils.translation import gettext as _, gettext_lazy
+
+logger = logging.getLogger("amc.commands.teleport")
+
+WANTED_TELEPORT_JAIL_MESSAGE = """\
+<Title>Arrested</>
+<Warning>You are wanted by the police — teleporting is not allowed!</>
+You have been automatically arrested. Your illegal earnings have been confiscated.
+"""
+
+
+async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mod):
+    """Run the full arrest flow when a wanted criminal attempts to teleport.
+
+    Calls execute_arrest with officer_character=None (system arrest):
+      - Expires the Wanted record.
+      - Confiscates the criminal's bounty + delivery earnings.
+      - Records confiscation to the treasury (no officer reward).
+      - Teleports the criminal to jail.
+      - Sets character.jailed_at for boundary enforcement.
+      - Shows a popup.
+    """
+    from amc.commands.faction import execute_arrest
+
+    # Build the minimal synthetic targets / target_chars dicts execute_arrest expects.
+    # Location is the character's last known position or a zero-vector sentinel.
+    loc = character.last_location
+    if loc is not None:
+        crim_loc = (loc.x, loc.y, loc.z)
+    else:
+        crim_loc = (0.0, 0.0, 0.0)
+
+    guid = character.guid or str(character.pk)
+    targets = {guid: (str(player.unique_id), crim_loc, False)}
+    target_chars = {guid: character}
+
+    try:
+        await execute_arrest(
+            officer_character=None,
+            targets=targets,
+            target_chars=target_chars,
+            http_client=None,
+            http_client_mod=http_client_mod,
+        )
+    except ValueError as exc:
+        # Jail TeleportPoint not configured — log and bail
+        logger.warning("auto_arrest_wanted_criminal: %s", exc)
+    except Exception:
+        logger.exception(
+            "auto_arrest_wanted_criminal: unexpected error for %s", character.name
+        )
 
 
 @registry.register(
@@ -103,6 +154,27 @@ async def cmd_tp_coords(ctx: CommandContext, x: int, y: int, z: int):
 async def cmd_tp_name(ctx: CommandContext, name: str = ""):
     CORPS_WITH_TP = {"69FF57844F3F79D1F9665991B4006325"}
     player_info = ctx.player_info or {}
+
+    # --- Wanted check: criminals cannot teleport ---
+    # Admins are exempt; everyone else with an active Wanted gets sent to jail.
+    if not player_info.get("bIsAdmin"):
+        active_wanted = await Wanted.objects.filter(
+            character=ctx.character,
+            expired_at__isnull=True,
+            wanted_remaining__gt=0,
+        ).afirst()
+        if active_wanted:
+            logger.info(
+                "Wanted criminal %s attempted /tp — sending to jail",
+                ctx.character.name,
+            )
+            await _auto_arrest_wanted_criminal(
+                active_wanted,
+                ctx.character,
+                ctx.player,
+                ctx.http_client_mod,
+            )
+            return
 
     tp_points = TeleportPoint.objects.filter(character__isnull=True).order_by("name")
     tp_points_names = [tp.name async for tp in tp_points]

@@ -308,6 +308,30 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
         is_inside = distance_to_new <= source_radius_meters
 
         if was_outside and is_inside:
+            # Block wanted criminals from using portals — send to jail instead
+            from amc.models import Wanted
+
+            active_wanted = await Wanted.objects.filter(
+                character=character,
+                expired_at__isnull=True,
+                wanted_remaining__gt=0,
+            ).afirst()
+            if active_wanted:
+                logger.info(
+                    "Wanted criminal %s entered portal — sending to jail",
+                    character.name,
+                )
+                from amc.commands.teleport import _auto_arrest_wanted_criminal
+
+                await _auto_arrest_wanted_criminal(
+                    active_wanted,
+                    character,
+                    character.player,
+                    http_client_mod,
+                )
+                await asyncio.sleep(0.1)
+                continue
+
             await teleport_player(
                 http_client_mod,
                 str(player_id),
