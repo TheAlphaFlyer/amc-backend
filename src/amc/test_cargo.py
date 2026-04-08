@@ -24,21 +24,23 @@ class ParseCargosTests(TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["Net_CargoKey"], "Wood")
 
-    def test_zero_delivery_id_skipped(self):
-        """Cargos with DeliveryId == 0 are silently dropped — no bank, no gov levels."""
+    def test_zero_delivery_id_included(self):
+        """Cargos with DeliveryId == 0 are now included — fraud detection still applies."""
         event = _make_event(_cargo("Wood", 5000, delivery_id=0))
         result = _parse_cargos(event)
-        self.assertEqual(result, [], "Expected non-delivery cargo to be excluded")
+        self.assertEqual(len(result), 1, "DeliveryId=0 cargo should be processed, not dropped")
 
-    def test_mixed_cargos_only_valid_returned(self):
-        """Only the cargo with a real DeliveryId is kept when mixed."""
+    def test_mixed_cargos_all_returned(self):
+        """Both DeliveryId=0 and real DeliveryId cargos are returned."""
         event = _make_event(
             _cargo("Coal", 2000, delivery_id=0),
             _cargo("Iron", 3000, delivery_id=99),
         )
         result = _parse_cargos(event)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["Net_CargoKey"], "Iron")
+        self.assertEqual(len(result), 2)
+        keys = [c["Net_CargoKey"] for c in result]
+        self.assertIn("Coal", keys)
+        self.assertIn("Iron", keys)
 
     def test_cargo_without_delivery_id_field_included(self):
         """Cargos that have no Net_DeliveryId key at all are treated as normal."""
@@ -52,14 +54,14 @@ class ParseCargosTests(TestCase):
         with self.assertRaises(ValueError):
             _parse_cargos(event)
 
-    def test_multiple_zero_delivery_ids_all_skipped(self):
-        """Multiple non-delivery cargos are all dropped."""
+    def test_multiple_zero_delivery_ids_all_included(self):
+        """Multiple DeliveryId=0 cargos are all kept and processed."""
         event = _make_event(
             _cargo("A", 100, delivery_id=0),
             _cargo("B", 200, delivery_id=0),
         )
         result = _parse_cargos(event)
-        self.assertEqual(result, [])
+        self.assertEqual(len(result), 2)
 
 
 class GetCargoBonusTests(TestCase):

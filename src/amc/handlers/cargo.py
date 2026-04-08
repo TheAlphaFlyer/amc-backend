@@ -91,7 +91,7 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
     timestamp = _parse_timestamp(event)
 
-    # --- 1. Parse cargos, skip non-delivery (DeliveryId == 0) items ---
+    # --- 1. Parse cargos (all non-negative payments, including DeliveryId == 0) ---
     valid_cargos = _parse_cargos(event)
 
     # --- 2. Build logs (parallel) ---
@@ -307,21 +307,22 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
 
 def _parse_cargos(event):
-    """Extract valid cargos, skipping non-delivery (DeliveryId == 0) items.
+    """Extract cargos from a ServerCargoArrived event.
 
-    Non-delivery cargos are silently ignored — they should not be paid out
-    to the bank or count towards government levels.
+    All cargos with non-negative payments are returned for processing.
+    DeliveryId is informational only — a value of 0 or absence of the key
+    no longer causes a cargo to be dropped. Fraud detection and illicit cargo
+    handling still apply to every item.
     """
     valid_cargos = []
     for cargo in event["data"]["Cargos"]:
         if cargo["Net_Payment"] < 0:
             raise ValueError(f"Negative payment for cargo: {cargo}")
-        if "Net_DeliveryId" in cargo and cargo["Net_DeliveryId"] == 0:
+        if cargo.get("Net_DeliveryId", -1) == 0:
             logger.debug(
-                "Skipping non-delivery cargo (DeliveryId=0): %s",
+                "Processing cargo with DeliveryId=0 (non-job delivery): %s",
                 cargo.get("Net_CargoKey"),
             )
-            continue
         valid_cargos.append(cargo)
     return valid_cargos
 
