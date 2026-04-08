@@ -34,10 +34,10 @@ BASE_DECAY_PER_TICK = Wanted.INITIAL_WANTED_LEVEL / BASE_WANTED_DURATION  # 1.0/
 # Escape gate ensures it cannot expire while within ESCAPE_DISTANCE regardless.
 
 # Bounty growth — amount ($) added per second while police are nearby (within ESCAPE_DISTANCE).
-# Uses 1/r proximity factor (flatter than decay's 1/r²), capped at 1.0 ($500/s).
-# At 200m (factor=0.5): growth = $250/s → ~$75k over 5 min chase.
-# At REF_DISTANCE (100m, factor=1.0): growth = $500/s (cap).
-BOUNTY_GROWTH_PER_TICK = 500  # $/s at reference distance (100m), rate is capped at this
+# Uses 1/r proximity factor (flatter than decay's 1/r²), capped at 1.0 ($100/s).
+# At 200m (factor=0.5): growth = $50/s → ~$15k over 5 min chase.
+# At REF_DISTANCE (100m, factor=1.0): growth = $100/s (cap).
+BOUNTY_GROWTH_PER_TICK = 100  # $/s at reference distance (100m), rate is capped at this
 
 # Logout heat escalation — same 1/r² law as teleport, but capped lower since
 # logging out near police is less deliberate than teleporting.
@@ -170,7 +170,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     Closer police → larger factor → slower decay. Decay never reverses.
 
     Bounty growth: uses 1/r law (flatter than decay) while police are within
-    ESCAPE_DISTANCE (500m).  $250/s at 200m, ~$75k over a 5-min chase.
+    ESCAPE_DISTANCE (500m).  $50/s at 200m, ~$15k over a 5-min chase.
 
     Escape gate: cannot expire (clamped at ESCAPE_FLOOR) while any officer
     is within ESCAPE_DISTANCE (500m). Beyond 500m, full base-rate decay resumes.
