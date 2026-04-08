@@ -18,22 +18,24 @@ logger = logging.getLogger("amc.criminals")
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
 
 # Escape gate constants
-ESCAPE_DISTANCE = 50_000  # 500m (game units) — suspect must be beyond all cops to clear
+ESCAPE_DISTANCE = 20_000  # 200m (game units) — suspect must be beyond all cops to clear
 ESCAPE_FLOOR = 0.1        # minimum wanted_remaining while near police (cannot expire)
 ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 
-# Time-based decay — wanted expires after BASE_WANTED_DURATION seconds without police
-BASE_WANTED_DURATION = 600  # 10 minutes
-BASE_DECAY_PER_TICK = Wanted.INITIAL_WANTED_LEVEL / BASE_WANTED_DURATION  # 0.5/tick
+# Time-based decay — online suspects always decay; clears in BASE_WANTED_DURATION seconds.
+BASE_WANTED_DURATION = 300  # 5 minutes
+BASE_DECAY_PER_TICK = Wanted.INITIAL_WANTED_LEVEL / BASE_WANTED_DURATION  # 1.0/tick
 
-# Police proximity ADDS heat, prolonging the wanted status (1/r² law).
-# At REF_DISTANCE (100m) growth = WANTED_GROWTH_PER_TICK × 1.0 = 1.0/tick.
-# Breakeven distance (growth == decay): REF_DISTANCE × sqrt(growth/decay) ≈ 141m.
-# Below ~141m heat grows; above ~141m heat still decays (but more slowly than without police).
-WANTED_GROWTH_PER_TICK = 1.0  # heat units/s added at reference distance (100m)
+# Police proximity SLOWS decay (1/r² law).
+# effective_decay = BASE_DECAY_PER_TICK / (1 + proximity_factor)
+# At no police (factor=0):      1.0/tick  (clears in 5 min)
+# At REF_DISTANCE (100m, f=1):  0.5/tick  (clears in 10 min)
+# At MIN_DISTANCE  (10m,  f=10): ≈0.09/tick (clears in ~55 min)
+# Escape gate ensures it cannot expire while within ESCAPE_DISTANCE regardless.
 
 # Bounty growth — amount ($) added per second while police are nearby.
-# At REF_DISTANCE (100m) growth = BOUNTY_GROWTH_PER_TICK * 1.0 = $50/s.
+# Uses the same 1/r² proximity factor (higher factor = nearer).
+# At REF_DISTANCE (100m) growth = BOUNTY_GROWTH_PER_TICK × 1.0 = $50/s.
 # At point blank (10m) factor = MAX_DECAY (10) so growth = $500/s.
 BOUNTY_GROWTH_PER_TICK = 50  # $/s at reference distance (100m)
 
@@ -160,19 +162,15 @@ _compute_stars = compute_stars
 async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     """Single tick of the wanted countdown. Called from an arq cron.
 
-    Time-based decay: wanted_remaining drops by BASE_DECAY_PER_TICK every tick,
-    expiring in BASE_WANTED_DURATION (10 min) with no police involvement.
+    Time-based decay: online suspects always lose BASE_DECAY_PER_TICK per tick,
+    clearing in BASE_WANTED_DURATION (5 min) with no police nearby.
 
-    Police proximity PROLONGS the wanted status: when police are within
-    ESCAPE_DISTANCE (500m), heat is ADDED proportionally to 1/r² (closer =
-    more growth), counteracting or exceeding the natural decay.
+    Police proximity SLOWS decay via 1/r² law:
+        effective_decay = BASE_DECAY_PER_TICK / (1 + proximity_factor)
+    Closer police → larger factor → slower decay. Decay never reverses.
 
-    Breakeven distance ≈ 141m: at <141m police add more heat than decays;
-    at >141m the wanted still decays but slower than without police.
-
-    Escape gate: wanted cannot expire while any officer is within ESCAPE_DISTANCE
-    — it is clamped at ESCAPE_FLOOR. Once all officers are beyond 500m the
-    floor is lifted and natural decay can bring it to 0.
+    Escape gate: cannot expire (clamped at ESCAPE_FLOOR) while any officer
+    is within ESCAPE_DISTANCE (200m). Beyond 200m, full base-rate decay resumes.
 
     Offline suspects: no decay, wanted persists indefinitely.
     """
@@ -224,45 +222,44 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
         if sus_guid not in locations:
             continue
 
-        # --- Always apply time-based decay ---
-        wanted.wanted_remaining -= BASE_DECAY_PER_TICK * TICK_INTERVAL
+        _, sus_loc, _ = locations[sus_guid]
+
+        # Default: full base decay rate
+        effective_decay = BASE_DECAY_PER_TICK * TICK_INTERVAL
+        near_police = False
 
         if cop_locations:
-            _, sus_loc, _ = locations[sus_guid]
             min_dist = min(_distance_3d(sus_loc, cop_loc) for cop_loc in cop_locations)
 
             if min_dist < ESCAPE_DISTANCE:
-                # --- Police within range: add heat to prolong wanted ---
+                near_police = True
                 clamped_dist = max(min_dist, Wanted.MIN_DISTANCE)
                 proximity_factor = min(
                     Wanted.MAX_DECAY, (Wanted.REF_DISTANCE / clamped_dist) ** 2
                 )
-                growth = WANTED_GROWTH_PER_TICK * proximity_factor * TICK_INTERVAL
-                wanted.wanted_remaining += growth
-                # Cap at initial level; floor at ESCAPE_FLOOR (cannot expire near police)
-                wanted.wanted_remaining = min(
-                    Wanted.INITIAL_WANTED_LEVEL,
-                    max(ESCAPE_FLOOR, wanted.wanted_remaining),
-                )
+                # Proximity slows decay: divide by (1 + factor)
+                effective_decay = (BASE_DECAY_PER_TICK / (1 + proximity_factor)) * TICK_INTERVAL
 
                 # Bounty grows proportionally to police proximity
                 wanted.amount += int(BOUNTY_GROWTH_PER_TICK * proximity_factor)
 
-                # At floor near police → queue throttled escape popup
-                if wanted.wanted_remaining <= ESCAPE_FLOOR:
-                    now = time.monotonic()
-                    last_sent = _last_escape_msg_sent.get(sus_guid, 0.0)
-                    if now - last_sent >= ESCAPE_MSG_COOLDOWN:
-                        _last_escape_msg_sent[sus_guid] = now
-                        escape_popups.append(sus_guid)
-            # else: beyond escape distance — natural decay only, free to expire
-
-        # If no cops online: natural decay only, free to expire
-
-        # Mark expired if heat reached zero
-        if wanted.wanted_remaining <= 0:
-            wanted.wanted_remaining = 0
-            expired_characters.append(wanted.character)
+        # Apply decay
+        if near_police:
+            # Cannot expire while within ESCAPE_DISTANCE — clamp at floor
+            if wanted.wanted_remaining > ESCAPE_FLOOR:
+                wanted.wanted_remaining = max(ESCAPE_FLOOR, wanted.wanted_remaining - effective_decay)
+            # At floor near police → queue throttled escape popup
+            if wanted.wanted_remaining <= ESCAPE_FLOOR:
+                now = time.monotonic()
+                last_sent = _last_escape_msg_sent.get(sus_guid, 0.0)
+                if now - last_sent >= ESCAPE_MSG_COOLDOWN:
+                    _last_escape_msg_sent[sus_guid] = now
+                    escape_popups.append(sus_guid)
+        else:
+            # No cops within escape distance — full decay, can expire freely
+            wanted.wanted_remaining = max(0.0, wanted.wanted_remaining - effective_decay)
+            if wanted.wanted_remaining <= 0:
+                expired_characters.append(wanted.character)
 
         # Track star changes for deferred notification
         new_stars = _compute_stars(wanted.wanted_remaining)
