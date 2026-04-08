@@ -26,7 +26,6 @@ LOCATION_TELEPORT_DETECTION_ENABLED = os.environ.get(
 
 # Jail boundary enforcement
 JAIL_BOUNDARY_RADIUS = 1_000   # 10 m (100 game units = 1 m)
-JAIL_DURATION_SECONDS = 30     # auto-release after this many seconds
 JAIL_BOUNDARY_MESSAGE = """\
 <Title>⛓️ Stay in Jail</Title>
 <Warning>You are under arrest — you cannot leave jail!</Warning>
@@ -216,23 +215,22 @@ async def _check_teleport_by_location(character, old_location, new_location, ctx
 async def _check_jail_boundary(character, new_location, ctx):
     """Enforce the jail perimeter for recently arrested characters.
 
-    If ``character.jailed_at`` is set the player is under arrest.  Two
+    If ``character.jailed_until`` is set the player is under arrest.  Two
     outcomes are possible on each call:
 
-    1. **Time expired** — 30 s have passed since arrest → clear ``jailed_at``
+    1. **Time expired** — current time is past ``jailed_until`` → clear it
        and return.  The player is now free.
     2. **Out of bounds** — player is more than JAIL_BOUNDARY_RADIUS game units
        from the jail ``TeleportPoint`` → teleport them back and show a popup.
     """
-    if not character.jailed_at:
+    if not character.jailed_until:
         return
 
-    # Auto-release when JAIL_DURATION_SECONDS have elapsed
+    # Auto-release when current time is past jailed_until
     from django.utils import timezone as _tz
-    from datetime import timedelta
 
-    if _tz.now() - character.jailed_at >= timedelta(seconds=JAIL_DURATION_SECONDS):
-        character.jailed_at = None
+    if _tz.now() >= character.jailed_until:
+        character.jailed_until = None
         return
 
     http_client_mod = ctx.get("http_client_mod")
@@ -423,6 +421,6 @@ async def monitor_locations(ctx):
                 "last_vehicle_key",
                 "last_online",
                 "shortcut_zone_entered_at",
-                "jailed_at",
+                "jailed_until",
             ],
         )

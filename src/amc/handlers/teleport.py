@@ -68,7 +68,7 @@ async def _handle_teleport_or_respawn(event, character, ctx):
     ServerRespawnCharacter.
 
     For wanted players the outcome is:
-      - Teleport to jail (+ activate jail boundary via jailed_at).
+      - Teleport to jail (+ activate jail boundary via jailed_until).
       - Show a popup explaining why.
       - Wanted record is left active — police must still make a proper arrest.
 

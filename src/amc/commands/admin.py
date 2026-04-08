@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
 from django.db.models import F
@@ -27,6 +28,7 @@ from amc.models import (
     TeleportPoint,
 )
 from amc.enums import VehicleKey
+from django.utils import timezone
 from django.utils.translation import gettext as _, gettext_lazy
 from amc.utils import fuzzy_find_player
 from amc.player_tags import strip_all_tags
@@ -286,14 +288,51 @@ async def cmd_tp_player(
         return
 
     # Teleport
+    is_jail = teleport_point.name.lower() == "jail"
+
+    if is_jail:
+        try:
+            await force_exit_vehicle(ctx.http_client_mod, str(target_pid))
+            await asyncio.sleep(1.5)
+        except Exception:
+            pass
+
     await teleport_player(
         ctx.http_client_mod,
         str(target_pid),
         location,
-        no_vehicles=False,  # Admins might want to move vehicles too, or maybe not. Defaulting to False (move vehicle) as it's often useful.
+        no_vehicles=is_jail,
+        force=is_jail,
         reset_trailers=False,
         reset_carried_vehicles=False,
     )
+
+    if is_jail:
+        # Apply jail boundary enforcement for 60 seconds
+        target_player_data = next(
+            (p for pid, p in players if str(pid) == str(target_pid)), None
+        )
+        if target_player_data:
+            try:
+                target_character = await Character.objects.aget(
+                    guid=target_player_data["character_guid"]
+                )
+                target_character.jailed_until = timezone.now() + timedelta(seconds=60)
+                await target_character.asave(
+                    update_fields=["jailed_until"]
+                )
+            except Character.DoesNotExist:
+                pass
+
+        await show_popup(
+            ctx.http_client_mod,
+            _(
+                "<Title>Arrested</>\n<Warning>You have been jailed by an admin.</>\n"
+                "You will be released in 60 seconds."
+            ),
+            player_id=str(target_pid),
+        )
+
     await ctx.reply(
         _("Teleported {player} to {location}").format(
             player=target_player_name, location=location_name

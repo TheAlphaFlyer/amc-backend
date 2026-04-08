@@ -22,11 +22,15 @@ def _make_ctx(http_client_mod=None):
     return {"http_client_mod": http_client_mod or AsyncMock()}
 
 
-async def _make_jailed_character(offset_seconds=0):
-    """Create a player + character with jailed_at set."""
+async def _make_jailed_character(offset_seconds=60):
+    """Create a player + character with jailed_until set.
+
+    Default offset of 60s keeps the jail active during the test.
+    Use negative values to test expired jail scenarios.
+    """
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(player=player)
-    character.jailed_at = timezone.now() - timedelta(seconds=offset_seconds)
+    character.jailed_until = timezone.now() + timedelta(seconds=offset_seconds)
     return player, character
 
 
@@ -51,16 +55,13 @@ class JailBoundaryTests(TestCase):
     test method.  Each method receives ``mock_tp`` as its first argument.
     """
 
-    async def asyncSetUp(self):
-        await _make_jail_tp()
-
     # ── fast-path: player not jailed ─────────────────────────────────────────
 
     async def test_not_jailed_returns_immediately(self, mock_tp):
-        """When jailed_at is None, no DB hit and no teleport should occur."""
+        """When jailed_until is None, no DB hit and no teleport should occur."""
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        # jailed_at is None (default)
+        # jailed_until is None (default)
         ctx = _make_ctx()
 
         from amc.locations import _check_jail_boundary
@@ -68,35 +69,35 @@ class JailBoundaryTests(TestCase):
         await _check_jail_boundary(character, Point(99_999, 99_999, 0, srid=0), ctx)
 
         mock_tp.assert_not_awaited()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
-    # ── auto-release after 30 s ───────────────────────────────────────────────
+    # ── auto-release after expiry ────────────────────────────────────────────
 
-    async def test_expired_jail_clears_jailed_at(self, mock_tp):
-        """After JAIL_DURATION_SECONDS, jailed_at is cleared and no teleport fired."""
-        from amc.locations import JAIL_DURATION_SECONDS, _check_jail_boundary
+    async def test_expired_jail_clears_jailed_until(self, mock_tp):
+        """When jailed_until is in the past, it is cleared and no teleport fired."""
+        from amc.locations import _check_jail_boundary
 
         _, character = await _make_jailed_character(
-            offset_seconds=JAIL_DURATION_SECONDS  # exactly at expiry boundary
+            offset_seconds=0  # jailed_until = now → already expired
         )
         ctx = _make_ctx()
 
         await _check_jail_boundary(character, Point(99_999, 0, 0, srid=0), ctx)
 
         mock_tp.assert_not_awaited()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
-    async def test_well_past_expiry_clears_jailed_at(self, mock_tp):
-        """Far past auto-release → jailed_at cleared, no teleport."""
+    async def test_well_past_expiry_clears_jailed_until(self, mock_tp):
+        """Far past auto-release → jailed_until cleared, no teleport."""
         from amc.locations import _check_jail_boundary
 
-        _, character = await _make_jailed_character(offset_seconds=120)
+        _, character = await _make_jailed_character(offset_seconds=-120)
         ctx = _make_ctx()
 
         await _check_jail_boundary(character, Point(99_999, 0, 0, srid=0), ctx)
 
         mock_tp.assert_not_awaited()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
     # ── within bounds ─────────────────────────────────────────────────────────
 
@@ -104,6 +105,7 @@ class JailBoundaryTests(TestCase):
         """Player within JAIL_BOUNDARY_RADIUS → no teleport."""
         from amc.locations import JAIL_BOUNDARY_RADIUS, _check_jail_boundary
 
+        await _make_jail_tp()
         _, character = await _make_jailed_character()
         # Place player 800 units from jail center (< 1000 threshold)
         near_point = Point(
@@ -122,6 +124,7 @@ class JailBoundaryTests(TestCase):
         """Player exactly at JAIL_BOUNDARY_RADIUS → no teleport (uses <=)."""
         from amc.locations import JAIL_BOUNDARY_RADIUS, _check_jail_boundary
 
+        await _make_jail_tp()
         _, character = await _make_jailed_character()
         on_boundary = Point(
             JAIL_POINT.x + JAIL_BOUNDARY_RADIUS,
@@ -142,7 +145,6 @@ class JailBoundaryTests(TestCase):
         import amc.locations as locations_mod
         from amc.locations import JAIL_BOUNDARY_RADIUS
 
-        # Ensure jail TeleportPoint exists (guard against asyncSetUp race)
         await _make_jail_tp()
 
         _, character = await _make_jailed_character()
@@ -171,7 +173,6 @@ class JailBoundaryTests(TestCase):
         import amc.locations as locations_mod
         from amc.locations import JAIL_BOUNDARY_RADIUS
 
-        # Ensure jail TeleportPoint exists (guard against asyncSetUp race)
         await _make_jail_tp()
 
         _, character = await _make_jailed_character()
@@ -193,6 +194,7 @@ class JailBoundaryTests(TestCase):
         """If 'jail' TeleportPoint is missing → logs a warning and does not crash."""
         from amc.locations import _check_jail_boundary
 
+        await _make_jail_tp()
         await TeleportPoint.objects.filter(name__iexact="jail").adelete()
 
         _, character = await _make_jailed_character()

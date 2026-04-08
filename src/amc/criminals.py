@@ -18,7 +18,7 @@ logger = logging.getLogger("amc.criminals")
 TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
 
 # Escape gate constants
-ESCAPE_DISTANCE = 20_000  # 200m (game units) — suspect must be beyond all cops to clear
+ESCAPE_DISTANCE = 50_000  # 500m (game units) — suspect must be beyond all cops to clear
 ESCAPE_FLOOR = 0.1        # minimum wanted_remaining while near police (cannot expire)
 ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 
@@ -170,7 +170,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
     Closer police → larger factor → slower decay. Decay never reverses.
 
     Escape gate: cannot expire (clamped at ESCAPE_FLOOR) while any officer
-    is within ESCAPE_DISTANCE (200m). Beyond 200m, full base-rate decay resumes.
+    is within ESCAPE_DISTANCE (500m). Beyond 500m, full base-rate decay resumes.
 
     Offline suspects: no decay, wanted persists indefinitely.
     """

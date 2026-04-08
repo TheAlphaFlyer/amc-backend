@@ -33,7 +33,7 @@ async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mo
       - Confiscates the criminal's bounty + delivery earnings.
       - Records confiscation to the treasury (no officer reward).
       - Teleports the criminal to jail.
-      - Sets character.jailed_at for boundary enforcement.
+      - Sets character.jailed_until for boundary enforcement.
       - Shows a popup.
     """
     from amc.commands.faction import execute_arrest

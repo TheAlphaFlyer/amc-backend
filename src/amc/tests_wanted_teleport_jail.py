@@ -95,14 +95,12 @@ def _faction_patches():
 class TpCommandWantedJailTests(TestCase):
     """Wanted criminals who use /tp get the full arrest, not their destination."""
 
-    async def asyncSetUp(self):
-        await _make_jail_tp()
-
     async def test_wanted_criminal_auto_arrested(self):
         """A wanted criminal's /tp triggers a full system arrest."""
         from amc.command_framework import CommandContext
         from amc.commands.teleport import cmd_tp_name
 
+        await _make_jail_tp()
         player, character, _ = await _make_wanted_character()
 
         ctx = MagicMock(spec=CommandContext)
@@ -133,7 +131,7 @@ class TpCommandWantedJailTests(TestCase):
 
         # Character is jailed
         await character.arefresh_from_db()
-        self.assertIsNotNone(character.jailed_at)
+        self.assertIsNotNone(character.jailed_until)
 
     async def test_clean_player_not_arrested(self):
         """A player without a Wanted record can /tp normally — no arrest."""
@@ -166,7 +164,7 @@ class TpCommandWantedJailTests(TestCase):
         self.assertEqual(dest["X"], dest_point.x)
 
         await character.arefresh_from_db()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
     async def test_admin_wanted_criminal_can_still_tp(self):
         """Admins bypass the wanted check — they can always teleport."""
@@ -201,7 +199,7 @@ class TpCommandWantedJailTests(TestCase):
         mock_cmd_tp.assert_awaited_once()
 
         await character.arefresh_from_db()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
 
 # ---------------------------------------------------------------------------
@@ -212,15 +210,13 @@ class TpCommandWantedJailTests(TestCase):
 class PortalWantedJailTests(TestCase):
     """Wanted criminals who enter a portal are arrested instead of teleported."""
 
-    async def asyncSetUp(self):
-        await _make_jail_tp()
-
     async def test_wanted_criminal_entering_portal_gets_arrested(self):
         from amc.locations import _check_pois_and_portals, portals
 
         if not portals:
             self.skipTest("No portals configured")
 
+        await _make_jail_tp()
         player, character, _ = await _make_wanted_character()
         ctx = {"http_client_mod": _make_http_client_mod()}
 
@@ -249,7 +245,7 @@ class PortalWantedJailTests(TestCase):
         wanted = await Wanted.objects.aget(character=character)
         self.assertIsNotNone(wanted.expired_at)
         await character.arefresh_from_db()
-        self.assertIsNotNone(character.jailed_at)
+        self.assertIsNotNone(character.jailed_until)
 
     async def test_clean_player_goes_through_portal_normally(self):
         from amc.locations import _check_pois_and_portals, portals
@@ -277,7 +273,7 @@ class PortalWantedJailTests(TestCase):
         # Arrest flow NOT triggered
         faction_tp_mock.assert_not_awaited()
         await character.arefresh_from_db()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
 
 # ---------------------------------------------------------------------------
@@ -287,9 +283,6 @@ class PortalWantedJailTests(TestCase):
 
 class WebhookTeleportWantedJailTests(TestCase):
     """ServerTeleportCharacter / ServerRespawnCharacter auto-arrest wanted criminals."""
-
-    async def asyncSetUp(self):
-        await _make_jail_tp()
 
     def _make_event(self, hook="ServerTeleportCharacter"):
         return {
@@ -309,6 +302,7 @@ class WebhookTeleportWantedJailTests(TestCase):
         """Helper: run _handle_teleport_or_respawn and verify full arrest happened."""
         from amc.handlers.teleport import _handle_teleport_or_respawn
 
+        await _make_jail_tp()
         player, character, _ = await _make_wanted_character()
         event = self._make_event(hook_name)
         ctx = self._make_ctx()
@@ -337,7 +331,7 @@ class WebhookTeleportWantedJailTests(TestCase):
 
         # Character jailed
         await character.arefresh_from_db()
-        self.assertIsNotNone(character.jailed_at)
+        self.assertIsNotNone(character.jailed_until)
 
     async def test_server_teleport_character_arrests_criminal(self):
         await self._run_and_verify_arrest("ServerTeleportCharacter")
@@ -363,7 +357,7 @@ class WebhookTeleportWantedJailTests(TestCase):
         faction_tp_mock.assert_not_awaited()
 
         await character.arefresh_from_db()
-        self.assertIsNone(character.jailed_at)
+        self.assertIsNone(character.jailed_until)
 
     async def test_expired_wanted_player_not_arrested(self):
         """A player whose Wanted has expired is treated as clean."""

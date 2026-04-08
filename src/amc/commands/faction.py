@@ -29,6 +29,7 @@ from amc_finance.services import (
     send_fund_to_player_wallet,
 )
 from amc.police import is_police_vehicle, record_confiscation_for_level
+from datetime import timedelta
 from amc.player_tags import refresh_player_name
 
 logger = logging.getLogger("amc.commands.faction")
@@ -268,8 +269,8 @@ async def execute_arrest(
 
         # Mark character as jailed so monitor_locations enforces jail perimeter
         if suspect_char:
-            suspect_char.jailed_at = timezone.now()
-            await suspect_char.asave(update_fields=["jailed_at"])
+            suspect_char.jailed_until = timezone.now() + timedelta(seconds=30)
+            await suspect_char.asave(update_fields=["jailed_until"])
 
         arrested_names.append(name)
 
