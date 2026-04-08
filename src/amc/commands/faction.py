@@ -28,7 +28,11 @@ from amc_finance.services import (
     record_treasury_confiscation_income,
     send_fund_to_player_wallet,
 )
-from amc.police import is_police_vehicle, record_confiscation_for_level
+from amc.police import (
+    get_active_police_characters,
+    is_police_vehicle,
+    record_confiscation_for_level,
+)
 from datetime import timedelta
 from amc.player_tags import refresh_player_name
 
@@ -190,32 +194,42 @@ async def execute_arrest(
                     confiscated_amount, "Police Confiscation"
                 )
 
-                if officer_character is not None:
-                    await record_confiscation_for_level(
-                        officer_character,
-                        confiscated_amount,
-                        http_client=http_client,
-                        session=http_client_mod,
+                # --- Spread confiscation to all online police ---
+                online_police = [
+                    c
+                    async for c in get_active_police_characters()
+                ]
+                if online_police:
+                    per_officer_money = max(
+                        1, confiscated_amount // len(online_police)
                     )
-
-                    # Reward officer with confiscated amount
-                    await transfer_money(
-                        http_client_mod,
-                        int(confiscated_amount),
-                        "Confiscation Reward",
-                        str(officer_character.player_id),
-                    )
-                    await send_fund_to_player_wallet(
-                        confiscated_amount, officer_character, "Confiscation Reward"
-                    )
-
-                    await send_system_message(
-                        http_client_mod,
-                        gettext(
-                            "Confiscated ${amount:,} in illegal earnings from {name}. You earned ${amount:,} confiscation reward."
-                        ).format(amount=confiscated_amount, name=name),
-                        character_guid=officer_character.guid,
-                    )
+                    for officer in online_police:
+                        await record_confiscation_for_level(
+                            officer,
+                            confiscated_amount,
+                            http_client=http_client,
+                            session=http_client_mod,
+                        )
+                        await transfer_money(
+                            http_client_mod,
+                            int(per_officer_money),
+                            "Confiscation Reward",
+                            str(officer.player_id),
+                        )
+                        await send_fund_to_player_wallet(
+                            per_officer_money, officer, "Confiscation Reward"
+                        )
+                        await send_system_message(
+                            http_client_mod,
+                            gettext(
+                                "Confiscated ${total:,} in illegal earnings from {name}. Your share: ${share:,}."
+                            ).format(
+                                total=confiscated_amount,
+                                name=name,
+                                share=per_officer_money,
+                            ),
+                            character_guid=officer.guid,
+                        )
 
                 await send_system_message(
                     http_client_mod,

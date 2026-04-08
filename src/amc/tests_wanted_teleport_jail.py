@@ -74,6 +74,11 @@ def _make_http_client_mod():
 
 def _faction_patches():
     """Return a dict of all external-call patches needed for execute_arrest."""
+
+    async def _empty_police():
+        if False:
+            yield  # make this an async generator that yields nothing
+
     return {
         "amc.commands.faction.teleport_player": AsyncMock(),
         "amc.commands.faction.force_exit_vehicle": AsyncMock(),
@@ -82,6 +87,7 @@ def _faction_patches():
         "amc.commands.faction.send_fund_to_player_wallet": AsyncMock(),
         "amc.commands.faction.refresh_player_name": AsyncMock(),
         "amc.commands.faction.show_popup": AsyncMock(),
+        "amc.commands.faction.get_active_police_characters": _empty_police,
         # sleep is patched to avoid 1.5s real wait in tests
         "asyncio.sleep": AsyncMock(),
     }
@@ -232,6 +238,7 @@ class PortalWantedJailTests(TestCase):
              patch("amc.commands.faction.send_fund_to_player_wallet", new_callable=AsyncMock), \
              patch("amc.commands.faction.refresh_player_name", new_callable=AsyncMock), \
              patch("amc.commands.faction.show_popup", new_callable=AsyncMock), \
+             patch("amc.commands.faction.get_active_police_characters", _faction_patches()["amc.commands.faction.get_active_police_characters"]), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _check_pois_and_portals(character, old_loc, new_loc, ctx)
 
@@ -315,6 +322,7 @@ class WebhookTeleportWantedJailTests(TestCase):
              patch("amc.commands.faction.send_fund_to_player_wallet", new_callable=AsyncMock), \
              patch("amc.commands.faction.refresh_player_name", new_callable=AsyncMock), \
              patch("amc.commands.faction.show_popup", new_callable=AsyncMock), \
+             patch("amc.commands.faction.get_active_police_characters", _faction_patches()["amc.commands.faction.get_active_police_characters"]), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             result = await _handle_teleport_or_respawn(event, character, ctx)
 

@@ -2240,7 +2240,7 @@ class ArrestCommandTestCase(TestCase):
             mock_cache.set.assert_called()
 
     async def test_cmd_arrest_retroactive_confiscates_money(self):
-        """Criminal arrested — Wanted.amount=25000 → full 25000 confiscated."""
+        """Criminal arrested — Wanted.amount=25000 → full 25000 confiscated, split among online police."""
         from amc.models import (
             FactionMembership,
             FactionChoice,
@@ -2273,6 +2273,10 @@ class ArrestCommandTestCase(TestCase):
             criminals=[((200, 200, 300), False)],
         )
 
+        # Helper to make an async iterable mock for get_active_police_characters
+        async def _mock_active_police():
+            yield self.character
+
         with (
             patch(
                 "amc.commands.faction.get_players",
@@ -2299,6 +2303,10 @@ class ArrestCommandTestCase(TestCase):
             patch(
                 "amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()
             ) as mock_fund_wallet,
+            patch(
+                "amc.commands.faction.get_active_police_characters",
+                new=_mock_active_police,
+            ),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2338,7 +2346,6 @@ class ArrestCommandTestCase(TestCase):
             self.assertTrue(
                 await Confiscation.objects.filter(
                     amount=25000,
-                    officer=self.character,
                     character=self.criminal_character,
                 ).aexists()
             )
@@ -2349,8 +2356,8 @@ class ArrestCommandTestCase(TestCase):
                 f"Expected confiscation alert in msgs: {msgs}",
             )
             self.assertTrue(
-                any("confiscation reward" in m for m in msgs),
-                f"Expected reward notification in msgs: {msgs}",
+                any("Your share: $25,000" in m for m in msgs),
+                f"Expected share notification in msgs: {msgs}",
             )
 
             # Wanted should be expired (not deleted) after arrest
@@ -2387,6 +2394,9 @@ class ArrestCommandTestCase(TestCase):
             criminals=[((200, 200, 300), False)],
         )
 
+        async def _mock_active_police():
+            yield self.character
+
         with (
             patch(
                 "amc.commands.faction.get_players",
@@ -2409,6 +2419,10 @@ class ArrestCommandTestCase(TestCase):
                 "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
             ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.get_active_police_characters",
+                new=_mock_active_police,
+            ),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2450,6 +2464,9 @@ class ArrestCommandTestCase(TestCase):
             criminals=[((200, 200, 300), False)],
         )
 
+        async def _mock_active_police():
+            yield self.character
+
         with (
             patch(
                 "amc.commands.faction.get_players",
@@ -2472,6 +2489,10 @@ class ArrestCommandTestCase(TestCase):
                 "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
             ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.get_active_police_characters",
+                new=_mock_active_police,
+            ),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)
@@ -2584,6 +2605,9 @@ class ArrestCommandTestCase(TestCase):
             criminals=[((200, 200, 300), False)],
         )
 
+        async def _mock_active_police():
+            yield self.character
+
         with (
             patch(
                 "amc.commands.faction.get_players",
@@ -2606,6 +2630,10 @@ class ArrestCommandTestCase(TestCase):
                 "amc.commands.faction.record_confiscation_for_level", new=AsyncMock()
             ),
             patch("amc.commands.faction.send_fund_to_player_wallet", new=AsyncMock()),
+            patch(
+                "amc.commands.faction.get_active_police_characters",
+                new=_mock_active_police,
+            ),
         ):
             mock_cache.get.return_value = None
             await cmd_arrest(self.ctx)

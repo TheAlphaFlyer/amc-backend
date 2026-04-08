@@ -15,6 +15,34 @@ SECURITY_BONUS_RATE = 0.50  # 50% per officer
 SECURITY_BONUS_MAX = 2.5  # capped at 250% (max 5 police)
 
 
+async def get_active_police_characters(exclude_character=None):
+    """Return QuerySet of Character models for online police officers.
+
+    An officer counts if they have an active PoliceSession (ended_at is null)
+    AND their character.last_online is within the last 60 seconds.
+    Optionally exclude a specific character (e.g. the arresting officer from
+    a previous code path — though usually all officers are included).
+    """
+    from datetime import timedelta
+    from amc.models import PoliceSession
+
+    online_threshold = timezone.now() - timedelta(seconds=60)
+    qs = (
+        PoliceSession.objects.filter(
+            ended_at__isnull=True,
+            character__last_online__gte=online_threshold,
+        )
+        .select_related("character")
+        .values_list("character", flat=True)
+    )
+    from amc.models import Character
+
+    characters = Character.objects.filter(pk__in=qs)
+    if exclude_character is not None:
+        characters = characters.exclude(pk=exclude_character.pk)
+    return characters
+
+
 async def get_active_police_count() -> int:
     """Count police officers who are on duty AND currently online.
 
