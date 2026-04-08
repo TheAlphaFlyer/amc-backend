@@ -222,8 +222,7 @@ class WorkerSettings:
         # pyrefly: ignore [bad-argument-type]
         cron(transfer_nirc, hour=0, minute=5, second=0),  # daily NIRC drip
         # cron(monitor_events_main, second=None),
-        # pyrefly: ignore [bad-argument-type]
-        cron(monitor_events_event, second=None),
+        # cron(monitor_events_event, second=None),  # Replaced by SSE event handlers
         # pyrefly: ignore [bad-argument-type]
         cron(send_event_embeds, second=set(range(0, 60, 10))),
         # cron(monitor_event_locations, second=None),

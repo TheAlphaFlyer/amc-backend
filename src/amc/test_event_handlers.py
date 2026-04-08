@@ -1,0 +1,537 @@
+"""Tests for the SSE event handler module (amc.handlers.events)."""
+
+import time
+from unittest.mock import AsyncMock, patch
+
+from asgiref.sync import sync_to_async
+from django.test import TestCase
+
+from amc.factories import PlayerFactory, CharacterFactory
+from amc.handlers import dispatch
+from amc.handlers.events import (
+    _upsert_game_event,
+    _upsert_game_event_character,
+)
+from amc.models import (
+    GameEvent,
+    GameEventCharacter,
+    LapSectionTime,
+    RaceSetup,
+)
+from amc.webhook_context import EventContext
+
+
+def _make_ctx(**kwargs):
+    """Create an EventContext with sensible defaults for tests."""
+    defaults = dict(
+        http_client=None,
+        http_client_mod=None,
+        discord_client=None,
+        treasury_balance=100_000,
+        is_rp_mode=False,
+        used_shortcut=False,
+        active_term=None,
+    )
+    defaults.update(kwargs)
+    return EventContext(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Fixture builders
+# ---------------------------------------------------------------------------
+
+RACE_SETUP_RAW = {
+    "NumLaps": 0,
+    "Route": {
+        "RouteName": "Test Route",
+        "Waypoints": [
+            {
+                "Location": {"X": -254858.0, "Y": 118884.0, "Z": -19609.0},
+                "Rotation": {"X": 0.0, "Y": -0.0, "Z": 0.0, "W": 1.0},
+                "Scale3D": {"X": 1.0, "Y": 20.0, "Z": 10.0},
+            },
+            {
+                "Location": {"X": -240477.0, "Y": 99544.0, "Z": -19115.0},
+                "Rotation": {"X": 0.0, "Y": -0.0, "Z": 0.0, "W": 1.0},
+                "Scale3D": {"X": 1.0, "Y": 20.0, "Z": 10.0},
+            },
+        ],
+    },
+    "VehicleKeys": [],
+    "EngineKeys": [],
+}
+
+EVENT_GUID = "5B11926A45D1869C3AA6309F3F564829"
+CHAR_GUID = "E603C74946EFF3F8834C9AAB3D0E3181"
+PLAYER_ID = "76561198378447512"
+
+
+def _make_event_data(state=1, players=None):
+    """Build a full FMTEvent dict as emitted by the C++ ServerAddEvent hook."""
+    if players is None:
+        players = [
+            {
+                "CharacterId": {
+                    "UniqueNetId": PLAYER_ID,
+                    "CharacterGuid": CHAR_GUID,
+                },
+                "PlayerName": "testplayer",
+                "Rank": 0,
+                "SectionIndex": -1,
+                "Laps": 0,
+                "BestLapTime": 0.0,
+                "LastSectionTotalTimeSeconds": 0.0,
+                "bFinished": False,
+                "bDisqualified": False,
+                "bWrongVehicle": False,
+                "bWrongEngine": False,
+                "LapTimes": [],
+                "Reward_Money": {"BaseValue": 0},
+            }
+        ]
+
+    return {
+        "EventGuid": EVENT_GUID,
+        "EventName": "Test Event",
+        "State": state,
+        "OwnerCharacterId": {
+            "UniqueNetId": PLAYER_ID,
+            "CharacterGuid": CHAR_GUID,
+        },
+        "RaceSetup": RACE_SETUP_RAW,
+        "Players": players,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests: _upsert_game_event
+# ---------------------------------------------------------------------------
+
+
+class UpsertGameEventTests(TestCase):
+    async def test_creates_game_event(self):
+        event_data = _make_event_data(state=1)
+        game_event, transition = await _upsert_game_event(event_data)
+
+        self.assertIsNotNone(game_event)
+        self.assertEqual(game_event.guid, EVENT_GUID)
+        self.assertEqual(game_event.name, "Test Event")
+        self.assertEqual(game_event.state, 1)
+        self.assertIsNone(transition)
+        self.assertTrue(await GameEvent.objects.filter(guid=EVENT_GUID).aexists())
+
+    async def test_creates_race_setup(self):
+        event_data = _make_event_data()
+        await _upsert_game_event(event_data)
+
+        race_setup = await RaceSetup.objects.afirst()
+        self.assertIsNotNone(race_setup)
+        self.assertEqual(race_setup.config["Route"]["RouteName"], "Test Route")
+        self.assertEqual(race_setup.config["NumLaps"], 0)
+
+    async def test_updates_state_with_transition(self):
+        event_data = _make_event_data(state=1)
+        await _upsert_game_event(event_data)
+
+        event_data["State"] = 2
+        game_event, transition = await _upsert_game_event(event_data)
+
+        self.assertEqual(game_event.state, 2)
+        self.assertEqual(transition, (1, 2))
+
+    async def test_no_transition_for_same_state(self):
+        event_data = _make_event_data(state=1)
+        await _upsert_game_event(event_data)
+
+        game_event, transition = await _upsert_game_event(event_data)
+        self.assertIsNone(transition)
+
+    async def test_associates_owner_character(self):
+        await sync_to_async(CharacterFactory)(
+            player__unique_id=int(PLAYER_ID), guid=CHAR_GUID
+        )
+        event_data = _make_event_data()
+        game_event, _ = await _upsert_game_event(event_data)
+
+        self.assertIsNotNone(game_event.owner)
+        self.assertEqual(game_event.owner.guid, CHAR_GUID)
+
+
+# ---------------------------------------------------------------------------
+# Tests: _upsert_game_event_character
+# ---------------------------------------------------------------------------
+
+
+class UpsertGameEventCharacterTests(TestCase):
+    async def test_creates_game_event_character(self):
+        event_data = _make_event_data(state=1)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        gec = await _upsert_game_event_character(game_event, player_info)
+
+        self.assertIsNotNone(gec)
+        self.assertEqual(gec.rank, 0)
+        self.assertEqual(gec.section_index, -1)
+        self.assertFalse(gec.finished)
+
+    async def test_skips_finished_character(self):
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        player_info["bFinished"] = True
+        gec = await _upsert_game_event_character(game_event, player_info)
+        self.assertIsNotNone(gec)
+        self.assertTrue(gec.finished)
+
+        # Second call should return None (already finished)
+        player_info["Rank"] = 1
+        result = await _upsert_game_event_character(game_event, player_info)
+        self.assertIsNone(result)
+
+    async def test_records_lap_section_time(self):
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        player_info["SectionIndex"] = 0
+        player_info["Laps"] = 1
+        player_info["LastSectionTotalTimeSeconds"] = 69.73
+        player_info["Rank"] = 1
+
+        gec = await _upsert_game_event_character(game_event, player_info)
+        self.assertIsNotNone(gec)
+
+        lst = await LapSectionTime.objects.filter(
+            game_event_character=gec
+        ).afirst()
+        self.assertIsNotNone(lst)
+        self.assertEqual(lst.section_index, 0)
+        self.assertEqual(lst.total_time_seconds, 69.73)
+
+    async def test_first_section_time_tracking(self):
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        player_info["SectionIndex"] = 0
+        player_info["Laps"] = 1
+        player_info["LastSectionTotalTimeSeconds"] = 69.73
+
+        gec = await _upsert_game_event_character(game_event, player_info)
+        await gec.arefresh_from_db()
+        self.assertEqual(gec.first_section_total_time_seconds, 69.73)
+
+    async def test_first_section_buggy_large_number(self):
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        player_info["SectionIndex"] = 0
+        player_info["Laps"] = 1
+        player_info["LastSectionTotalTimeSeconds"] = 99_999_999.0  # buggy value
+
+        gec = await _upsert_game_event_character(game_event, player_info)
+        await gec.arefresh_from_db()
+        self.assertEqual(gec.first_section_total_time_seconds, 0)
+
+
+# ---------------------------------------------------------------------------
+# Tests: dispatch to event handlers
+# ---------------------------------------------------------------------------
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class EventDispatchTests(TestCase):
+    async def test_server_add_event_dispatch(self, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, guid=CHAR_GUID
+        )
+
+        event = {
+            "hook": "ServerAddEvent",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "Event": _make_event_data(state=1),
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, subsidy, contract_pay, clawback = await dispatch(
+            "ServerAddEvent", event, player, character, ctx
+        )
+
+        self.assertEqual(base_pay, 0)
+        self.assertEqual(subsidy, 0)
+        self.assertTrue(await GameEvent.objects.filter(guid=EVENT_GUID).aexists())
+
+    async def test_server_change_event_state_dispatch(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, guid=CHAR_GUID
+        )
+
+        # Create initial event
+        event_data = _make_event_data(state=1)
+        await _upsert_game_event(event_data)
+
+        # Change state to 2
+        event_data["State"] = 2
+        event = {
+            "hook": "ServerChangeEventState",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "Event": event_data,
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, subsidy, contract_pay, clawback = await dispatch(
+            "ServerChangeEventState", event, player, character, ctx
+        )
+
+        self.assertEqual(base_pay, 0)
+        ge = await GameEvent.objects.aget(guid=EVENT_GUID)
+        self.assertEqual(ge.state, 2)
+
+    async def test_server_passed_race_section_dispatch(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, guid=CHAR_GUID
+        )
+
+        # Create event + character
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+        await _upsert_game_event_character(game_event, event_data["Players"][0])
+
+        event = {
+            "hook": "ServerPassedRaceSection",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+                "SectionIndex": 0,
+                "TotalTimeSeconds": 69.73,
+                "LaptimeSeconds": 69.73,
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, subsidy, contract_pay, clawback = await dispatch(
+            "ServerPassedRaceSection", event, player, character, ctx
+        )
+
+        self.assertEqual(base_pay, 0)
+        gec = await GameEventCharacter.objects.filter(
+            game_event=game_event, character=character
+        ).afirst()
+        self.assertIsNotNone(gec)
+        self.assertEqual(gec.section_index, 0)
+        self.assertEqual(gec.last_section_total_time_seconds, 69.73)
+
+    async def test_server_passed_race_section_creates_lap_time(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, guid=CHAR_GUID
+        )
+
+        event_data = _make_event_data(state=2)
+        game_event, _ = await _upsert_game_event(event_data)
+
+        player_info = event_data["Players"][0]
+        player_info["SectionIndex"] = 0
+        player_info["Laps"] = 1
+        gec = await _upsert_game_event_character(game_event, player_info)
+
+        event = {
+            "hook": "ServerPassedRaceSection",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+                "SectionIndex": 1,
+                "TotalTimeSeconds": 142.5,
+                "LaptimeSeconds": 72.77,
+            },
+        }
+        ctx = _make_ctx()
+        await dispatch("ServerPassedRaceSection", event, player, character, ctx)
+
+        lst = await LapSectionTime.objects.filter(
+            game_event_character=gec, section_index=1
+        ).afirst()
+        self.assertIsNotNone(lst)
+        self.assertEqual(lst.total_time_seconds, 142.5)
+
+    async def test_remove_event_noop(self, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerRemoveEvent",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, _, _, _ = await dispatch(
+            "ServerRemoveEvent", event, player, character, ctx
+        )
+        self.assertEqual(base_pay, 0)
+
+    async def test_join_event_noop(self, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerJoinEvent",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, _, _, _ = await dispatch(
+            "ServerJoinEvent", event, player, character, ctx
+        )
+        self.assertEqual(base_pay, 0)
+
+    async def test_leave_event_noop(self, mock_get_treasury, mock_get_rp_mode):
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLeaveEvent",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+            },
+        }
+        ctx = _make_ctx()
+        base_pay, _, _, _ = await dispatch(
+            "ServerLeaveEvent", event, player, character, ctx
+        )
+        self.assertEqual(base_pay, 0)
+
+
+# ---------------------------------------------------------------------------
+# Integration: full event lifecycle via SSE
+# ---------------------------------------------------------------------------
+
+
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+class EventLifecycleTests(TestCase):
+    async def test_add_then_state_change_then_section(
+        self, mock_get_treasury, mock_get_rp_mode
+    ):
+        """Simulate: AddEvent(state=1) → ChangeState(2) → PassedRaceSection → ChangeState(3)."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, guid=CHAR_GUID
+        )
+        ctx = _make_ctx()
+
+        # 1. AddEvent (state=1, Ready)
+        event_data = _make_event_data(state=1)
+        event = {
+            "hook": "ServerAddEvent",
+            "timestamp": int(time.time()),
+            "data": {"CharacterGuid": str(character.guid), "Event": event_data},
+        }
+        await dispatch("ServerAddEvent", event, player, character, ctx)
+
+        ge = await GameEvent.objects.aget(guid=EVENT_GUID)
+        self.assertEqual(ge.state, 1)
+
+        # 2. ChangeState to 2 (In Progress)
+        event_data["State"] = 2
+        event["hook"] = "ServerChangeEventState"
+        event["data"]["Event"] = event_data
+        await dispatch("ServerChangeEventState", event, player, character, ctx)
+
+        await ge.arefresh_from_db()
+        self.assertEqual(ge.state, 2)
+
+        # 3. PassedRaceSection (first section)
+        section_event = {
+            "hook": "ServerPassedRaceSection",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "EventGuid": EVENT_GUID,
+                "SectionIndex": 0,
+                "TotalTimeSeconds": 69.73,
+                "LaptimeSeconds": 69.73,
+            },
+        }
+        await dispatch(
+            "ServerPassedRaceSection", section_event, player, character, ctx
+        )
+
+        gec = await GameEventCharacter.objects.filter(
+            game_event__guid=EVENT_GUID, character=character
+        ).afirst()
+        self.assertEqual(gec.section_index, 0)
+        self.assertEqual(gec.last_section_total_time_seconds, 69.73)
+        self.assertEqual(gec.first_section_total_time_seconds, 69.73)
+
+        # 4. PassedRaceSection (second section)
+        section_event["data"]["SectionIndex"] = 1
+        section_event["data"]["TotalTimeSeconds"] = 142.5
+        await dispatch(
+            "ServerPassedRaceSection", section_event, player, character, ctx
+        )
+
+        await gec.arefresh_from_db()
+        self.assertEqual(gec.section_index, 1)
+        self.assertEqual(gec.last_section_total_time_seconds, 142.5)
+
+        # 5. ChangeState to 3 (Finished)
+        event_data["State"] = 3
+        event_data["Players"][0]["bFinished"] = True
+        event_data["Players"][0]["SectionIndex"] = 1
+        event_data["Players"][0]["Laps"] = 1
+        event_data["Players"][0]["LastSectionTotalTimeSeconds"] = 142.5
+        event["data"]["Event"] = event_data
+        await dispatch("ServerChangeEventState", event, player, character, ctx)
+
+        await ge.arefresh_from_db()
+        self.assertEqual(ge.state, 3)
