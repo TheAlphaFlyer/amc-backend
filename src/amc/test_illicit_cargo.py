@@ -15,7 +15,7 @@ from amc.models import (
     DeliveryPoint,
     Wanted,
 )
-from amc.special_cargo import ILLICIT_CARGO_KEYS, WANTED_MIN_BOUNTY
+from amc.special_cargo import ILLICIT_CARGO_KEYS
 from amc.webhook import process_event
 
 
@@ -428,7 +428,7 @@ class IllicitCargoKeysRegistryTests(TestCase):
 @patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
 @patch("amc.handlers.cargo.accumulate_illicit_delivery", new_callable=AsyncMock, return_value=100_000)
 class WantedBountyTests(TestCase):
-    """Wanted.amount must always be at least WANTED_MIN_BOUNTY (100k)."""
+    """Wanted.amount starts at 0 — bounty only grows from police proximity."""
 
     async def _setup_character(self):
         player = await sync_to_async(PlayerFactory)()
@@ -461,10 +461,10 @@ class WantedBountyTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_small_delivery_creates_wanted_with_min_bounty(
+    async def test_delivery_creates_wanted_with_zero_bounty(
         self, mock_treasury, mock_refresh, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
     ):
-        """A tiny delivery (5k) still produces a Wanted record with amount >= WANTED_MIN_BOUNTY."""
+        """A delivery creates a Wanted record with amount=0 — bounty only grows from police chase."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
@@ -476,18 +476,18 @@ class WantedBountyTests(TestCase):
             character=character, expired_at__isnull=True
         ).afirst()
         self.assertIsNotNone(wanted)
-        self.assertGreaterEqual(
+        self.assertEqual(
             wanted.amount,
-            WANTED_MIN_BOUNTY,
-            "Wanted.amount must be at least WANTED_MIN_BOUNTY even for tiny deliveries",
+            0,
+            "Wanted.amount must start at 0 — bounty only grows from police proximity",
         )
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_large_delivery_preserves_actual_amount(
+    async def test_large_delivery_also_zero_bounty(
         self, mock_treasury, mock_refresh, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
     ):
-        """A delivery exceeding the floor keeps its actual payment as the bounty."""
+        """Even a large delivery produces amount=0 — bounty is tracked separately via police chase."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
@@ -499,32 +499,32 @@ class WantedBountyTests(TestCase):
             character=character, expired_at__isnull=True
         ).afirst()
         self.assertIsNotNone(wanted)
-        self.assertGreaterEqual(wanted.amount, 250_000)
+        self.assertEqual(wanted.amount, 0)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_refresh_also_applies_min_bounty(
+    async def test_refresh_does_not_add_to_bounty(
         self, mock_treasury, mock_refresh, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
     ):
-        """Even when refreshing an existing Wanted, each increment is >= WANTED_MIN_BOUNTY."""
+        """Refreshing an existing Wanted does not add to amount (amount=0 passed from cargo handler)."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
 
-        # Seed an existing wanted with a known amount
+        # Seed an existing wanted with a known bounty (from police chase)
         existing_wanted = await Wanted.objects.acreate(
             character=character,
             wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
-            amount=50_000,
+            amount=30_000,
         )
 
-        # Deliver something small — the refresh increment must still be >= 100k
+        # Deliver something — the refresh should NOT add to amount
         event = self._cargo_event(character, payment=1_000)
         await process_event(event, player, character)
 
         await existing_wanted.arefresh_from_db()
-        # 50k (seed) + min(100k, actual 1k) = 50k + 100k = 150k
-        self.assertGreaterEqual(existing_wanted.amount, 50_000 + WANTED_MIN_BOUNTY)
+        # 30k (from chase) + 0 (cargo handler passes amount=0) = 30k
+        self.assertEqual(existing_wanted.amount, 30_000)
 
 
 # ---------------------------------------------------------------------------

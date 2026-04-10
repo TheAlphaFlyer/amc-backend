@@ -858,8 +858,8 @@ async def process_log_event(
                 from amc.criminals import escalate_heat_on_logout
 
                 await deactivate_police(character, None)
-                # Heat penalty for logging out near police while wanted
-                await escalate_heat_on_logout(character, http_client)
+                # Auto-arrest if logging out near police while wanted
+                await escalate_heat_on_logout(character, http_client, http_client_mod)
             if (
                 discord_client
                 and ctx.get("startup_time")
@@ -885,8 +885,8 @@ async def process_log_event(
             from amc.criminals import escalate_heat_on_logout
 
             await deactivate_police(character, None)
-            # Heat penalty for logging out near police while wanted
-            await escalate_heat_on_logout(character, http_client)
+            # Auto-arrest if logging out near police while wanted
+            await escalate_heat_on_logout(character, http_client, http_client_mod)
 
         case CompanyAddedLogEvent(
             timestamp, company_name, is_corp, owner_name, owner_id

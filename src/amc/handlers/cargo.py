@@ -252,8 +252,11 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 character=character, expired_at__isnull=True
             ).aexists()
             if already_wanted or should_trigger_wanted(accumulated_amount):
+                # Bounty (Wanted.amount) starts at 0 — it only grows from police
+                # proximity during chase, tracked in tick_wanted_countdown.
+                # Delivery payments are confiscated via CriminalRecord.confiscatable_amount.
                 wanted, newly_created = await create_or_refresh_wanted(
-                    character, ctx.http_client_mod, amount=delivery_amount
+                    character, ctx.http_client_mod, amount=0
                 )
                 # Announce only when a new Wanted record is created
                 if newly_created and ctx.http_client:

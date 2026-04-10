@@ -66,12 +66,14 @@ def _calculate_logout_heat(min_police_distance: float) -> float:
     return (proximity_factor / Wanted.MAX_DECAY) * LOGOUT_HEAT_MAX
 
 
-async def escalate_heat_on_logout(character, http_client) -> None:
-    """Escalate wanted heat when a Wanted player logs out near police.
+async def escalate_heat_on_logout(character, http_client, http_client_mod=None) -> None:
+    """Auto-arrest when a Wanted player logs out near police.
 
-    Uses the same 1/r² formula as the teleport penalty.  No police within
-    2km → no effect.  The Wanted record is never expired here — the
-    player must be arrested or escape through the normal gate.
+    If the player is within LOGOUT_PROXIMITY_RANGE of any on-duty police officer,
+    treats the logout as an arrest: expires Wanted, confiscates bounty + delivery
+    earnings, clears CriminalRecord, and marks the character for jailing on next
+    login.  If no police are nearby or the player is too far, falls back to the
+    original heat escalation behaviour.
     """
     wanted = await Wanted.objects.filter(
         character=character,
@@ -122,6 +124,36 @@ async def escalate_heat_on_logout(character, http_client) -> None:
         )
         return
 
+    # Player logged out within range of police — treat as arrest
+    if http_client_mod:
+        from amc.commands.faction import execute_arrest
+
+        await character.arefresh_from_db(fields=["player"])
+        guid = character.guid or str(character.pk)
+        targets = {guid: (str(character.player.unique_id), sus_loc, False)}
+        target_chars = {guid: character}
+
+        try:
+            arrested_names, total_confiscated = await execute_arrest(
+                officer_character=None,
+                targets=targets,
+                target_chars=target_chars,
+                http_client=http_client,
+                http_client_mod=http_client_mod,
+            )
+            logger.info(
+                "logout arrest: %s — dist=%.0f confiscated=$%d",
+                character.name, min_dist, total_confiscated,
+            )
+            return
+        except ValueError as exc:
+            logger.warning("logout arrest failed (jail not configured?): %s", exc)
+        except Exception:
+            logger.exception(
+                "logout arrest failed unexpectedly for %s", character.name
+            )
+
+    # Fallback: escalate heat if execute_arrest is unavailable or failed
     heat = _calculate_logout_heat(min_dist)
     old_remaining = wanted.wanted_remaining
     old_stars = min(math.ceil(old_remaining / Wanted.LEVEL_PER_STAR), 5)

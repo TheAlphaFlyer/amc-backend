@@ -41,8 +41,9 @@ ILLICIT_CARGO_KEYS: set[str] = {
 # Wanted trigger probability constants
 WANTED_MIN_CHANCE = 0.10  # 10% floor for small deliveries
 WANTED_FULL_CHANCE_AMOUNT = 100_000  # $100k+ = 100% chance
-# Minimum bounty placed on a Wanted record (creation or per-delivery increment)
-WANTED_MIN_BOUNTY = 50_000
+# Minimum bounty placed on a Wanted record (creation or per-delivery increment).
+# Bounty starts at 0 and only grows from police proximity (chase) in tick_wanted_countdown.
+WANTED_MIN_BOUNTY = 0
 # How long (seconds) to accumulate illicit deliveries before resetting the window
 ILLICIT_DELIVERY_DEBOUNCE = 30
 
@@ -174,9 +175,9 @@ async def create_or_refresh_wanted(
     Args:
         character: The Character model instance.
         http_client_mod: Mod server HTTP client.
-        amount: The delivery payment amount to accumulate on the Wanted record.
-            Values are floored at WANTED_MIN_BOUNTY (100k) to ensure a
-            meaningful minimum bounty.
+        amount: Additional bounty to accumulate on the Wanted record.
+            Typically 0 — bounty grows from police proximity in tick_wanted_countdown.
+            Values are floored at WANTED_MIN_BOUNTY.
     """
     from amc.mod_server import send_system_message
 
