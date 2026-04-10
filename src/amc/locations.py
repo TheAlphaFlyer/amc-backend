@@ -17,11 +17,14 @@ from amc.mod_server import show_popup, teleport_player
 
 logger = logging.getLogger("amc.locations")
 
-# Teleport detection via location delta
-TELEPORT_DISTANCE_THRESHOLD = 10_000  # game units (~100m)
+# Teleport detection via location delta (disabled by default — the mod server
+# hooks (ServerTeleportCharacter etc.) are the correct detection mechanism.
+# This hotfix fires false positives when wanted players drive at normal speed,
+# as 10,000 units (100m) is easily exceeded between ticks.)
+TELEPORT_DISTANCE_THRESHOLD = 100_000  # game units (~1km)
 TELEPORT_DETECTION_WINDOW = 10  # minutes — match TELEPORT_PENALTY_WINDOW
 LOCATION_TELEPORT_DETECTION_ENABLED = os.environ.get(
-    "LOCATION_TELEPORT_DETECTION_ENABLED", "1"
+    "LOCATION_TELEPORT_DETECTION_ENABLED", "0"
 ).lower() in ("1", "true", "yes")
 
 # Jail boundary enforcement

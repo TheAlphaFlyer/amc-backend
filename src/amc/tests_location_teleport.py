@@ -32,8 +32,9 @@ class LocationTeleportDetectionTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player)
         return player, character
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_teleport_detected_for_wanted_player(self, mock_handle):
-        """Wanted player moves >100m → heat escalation triggered."""
+        """Wanted player moves >threshold → heat escalation triggered."""
         _, character = await self._setup_character()
         await Wanted.objects.acreate(
             character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
@@ -42,7 +43,7 @@ class LocationTeleportDetectionTests(TestCase):
         from amc.locations import _check_teleport_by_location
 
         old_loc = Point(0, 0, 0)
-        new_loc = Point(50_000, 0, 0)  # 50,000 units apart = well over threshold
+        new_loc = Point(200_000, 0, 0)  # 200,000 units = well over 100k threshold
         ctx = _make_ctx()
 
         await _check_teleport_by_location(character, old_loc, new_loc, ctx)
@@ -53,7 +54,7 @@ class LocationTeleportDetectionTests(TestCase):
         self.assertEqual(call_args[0][1], character)
 
     async def test_normal_driving_no_trigger(self, mock_handle):
-        """Wanted player moves <100m between ticks → no trigger."""
+        """Wanted player moves <threshold between ticks → no trigger."""
         _, character = await self._setup_character()
         await Wanted.objects.acreate(
             character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
@@ -69,22 +70,24 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_not_wanted_no_trigger(self, mock_handle):
-        """Non-wanted player teleporting → no trigger."""
+        """Non-wanted player teleporting → no trigger (even with detection enabled)."""
         _, character = await self._setup_character()
 
         from amc.locations import _check_teleport_by_location
 
         old_loc = Point(0, 0, 0)
-        new_loc = Point(50_000, 0, 0)
+        new_loc = Point(200_000, 0, 0)  # over threshold, but player isn't wanted
         ctx = _make_ctx()
 
         await _check_teleport_by_location(character, old_loc, new_loc, ctx)
 
         mock_handle.assert_not_awaited()
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_expired_wanted_no_trigger(self, mock_handle):
-        """Player with expired wanted → no trigger."""
+        """Player with expired wanted → no trigger (even with detection enabled)."""
         from django.utils import timezone
 
         _, character = await self._setup_character()
@@ -97,15 +100,16 @@ class LocationTeleportDetectionTests(TestCase):
         from amc.locations import _check_teleport_by_location
 
         old_loc = Point(0, 0, 0)
-        new_loc = Point(50_000, 0, 0)
+        new_loc = Point(200_000, 0, 0)  # over threshold, but wanted is expired
         ctx = _make_ctx()
 
         await _check_teleport_by_location(character, old_loc, new_loc, ctx)
 
         mock_handle.assert_not_awaited()
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_police_officer_not_triggered(self, mock_handle):
-        """Active police officers should not have heat escalated."""
+        """Active police officers should not have heat escalated (even with detection enabled)."""
         _, character = await self._setup_character()
         await Wanted.objects.acreate(
             character=character, wanted_remaining=Wanted.INITIAL_WANTED_LEVEL
@@ -115,7 +119,7 @@ class LocationTeleportDetectionTests(TestCase):
         from amc.locations import _check_teleport_by_location
 
         old_loc = Point(0, 0, 0)
-        new_loc = Point(50_000, 0, 0)
+        new_loc = Point(200_000, 0, 0)  # over threshold, but officer is exempt
         ctx = _make_ctx()
 
         await _check_teleport_by_location(character, old_loc, new_loc, ctx)
@@ -133,13 +137,14 @@ class LocationTeleportDetectionTests(TestCase):
         from amc.locations import _check_teleport_by_location
 
         old_loc = Point(0, 0, 0)
-        new_loc = Point(50_000, 0, 0)
+        new_loc = Point(200_000, 0, 0)  # over threshold, but detection disabled
         ctx = _make_ctx()
 
         await _check_teleport_by_location(character, old_loc, new_loc, ctx)
 
         mock_handle.assert_not_awaited()
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_exactly_at_threshold_no_trigger(self, mock_handle):
         """Distance exactly at threshold → no trigger (uses > not >=)."""
         _, character = await self._setup_character()
@@ -160,6 +165,7 @@ class LocationTeleportDetectionTests(TestCase):
 
         mock_handle.assert_not_awaited()
 
+    @patch("amc.locations.LOCATION_TELEPORT_DETECTION_ENABLED", True)
     async def test_just_over_threshold_triggers(self, mock_handle):
         """Distance just over threshold + wanted → trigger."""
         _, character = await self._setup_character()
