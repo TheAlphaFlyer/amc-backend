@@ -171,7 +171,10 @@ async def shutdown(ctx):
 
 
 async def monitor_event_locations(ctx):
-    await monitor_locations({"http_client_mod": ctx["http_client_event_mod"]})
+    await monitor_locations({
+        "http_client": ctx["http_client_event"],
+        "http_client_mod": ctx["http_client_event_mod"],
+    })
 
 
 async def monitor_events_main(ctx):

@@ -45,6 +45,63 @@ async def get_players(session, password=""):
     return players
 
 
+def _parse_location_string(loc_str):
+    """Parse native game API location string (e.g. 'X=123.4 Y=567.8 Z=-910.1') into a dict."""
+    result = {}
+    for part in loc_str.split():
+        axis, _, value = part.partition("=")
+        result[axis.lower()] = float(value)
+    return result
+
+
+async def get_players_with_location(session):
+    """Return player location data from the native game API.
+
+    Returns a list of dicts with the same keys that monitor_locations expects:
+      CharacterGuid, Location {x, y, z}, VehicleKey, UniqueID, PlayerName
+
+    Uses the native /player/list endpoint (no game-thread pressure) with a 1s
+    Redis cache, replacing the Lua mod server GET /players for location polling.
+    """
+    cache_key = "game_players_with_location"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    data = await game_api_request(session, "/player/list")
+    if not data.get("succeeded") or "data" not in data:
+        return []
+
+    from amc.enums import VehicleKeyByLabel
+
+    result = []
+    for player in data["data"].values():
+        if player is None:
+            continue
+        loc_str = player.get("location", "")
+        if not loc_str:
+            continue
+        try:
+            location = _parse_location_string(loc_str)
+        except (ValueError, AttributeError):
+            continue
+
+        vehicle_info = player.get("vehicle")
+        vehicle_name = vehicle_info["name"] if vehicle_info else None
+        vehicle_key = VehicleKeyByLabel.get(vehicle_name, "None") if vehicle_name else "None"
+
+        result.append({
+            "CharacterGuid": player["character_guid"].upper(),
+            "UniqueID": player["unique_id"],
+            "PlayerName": player["name"],
+            "Location": location,
+            "VehicleKey": vehicle_key,
+        })
+
+    cache.set(cache_key, result, timeout=1)
+    return result
+
+
 async def is_player_online(player_id, session, password=""):
     players = await get_players(session, password)
     player_ids = {str(player_id) for player_id, _ in players}

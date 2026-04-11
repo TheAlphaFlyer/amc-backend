@@ -1,6 +1,11 @@
 import aiohttp
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
 
+# TODO: Lua webserver handlers now return 503 when ExecuteInGameThreadSync times out
+# (game thread too busy). Callers should handle aiohttp 503 responses gracefully —
+# either retry with backoff or treat as a soft failure (log + skip) rather than
+# raising an exception that aborts the enclosing event handler.
+
 # Tighter timeout for high-frequency read-only monitoring endpoints
 FAST_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
@@ -81,38 +86,9 @@ async def get_events(session):
 
 
 async def list_player_vehicles(session, player_id, active=None, complete=None):
-    params = {}
-    if active:
-        params["active"] = 1
-    if complete:
-        params["complete"] = 1
-    async with session.get(f"/player_vehicles/{player_id}/list", params=params) as resp:
-        if resp.status != 200:
-            raise Exception(f"Failed to fetch player vehicles: {player_id}")
-        data = await resp.json()
-        player_vehicles = data["vehicles"]
-        if not player_vehicles:
-            return {}
-        res = {}
-        if isinstance(player_vehicles, dict):
-            for vehicle_id, vehicle in player_vehicles.items():
-                res[vehicle_id] = {**vehicle}
-                vehicle_name = vehicle["fullName"].split(" ")[0].replace("_C", "")
-                res[vehicle_id]["VehicleName"] = vehicle_name
-                asset_path = vehicle["classFullName"].split(" ")[1]
-                res[vehicle_id]["AssetPath"] = asset_path
-
-            return res
-        elif isinstance(player_vehicles, list):
-            for vehicle in player_vehicles:
-                vehicle_id = vehicle["vehicleId"]
-                res[vehicle_id] = {**vehicle}
-                vehicle_name = vehicle["fullName"].split(" ")[0].replace("_C", "")
-                res[vehicle_id]["VehicleName"] = vehicle_name
-                asset_path = vehicle["classFullName"].split(" ")[1]
-                res[vehicle_id]["AssetPath"] = asset_path
-
-            return res
+    # DISABLED: endpoint /player_vehicles/{id}/list is buggy and crashes the server.
+    # Return empty dict to match the expected return type used by callers.
+    return {}
 
 
 async def send_message_as_player(session, message, player_id):

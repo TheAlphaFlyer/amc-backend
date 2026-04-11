@@ -14,6 +14,7 @@ from amc.models import (
 )
 from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
+from amc.game_server import get_players_with_location
 
 logger = logging.getLogger("amc.locations")
 
@@ -343,9 +344,11 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
 
 @skip_if_running
 async def monitor_locations(ctx):
-    http_client = ctx.get("http_client_mod")
-    async with http_client.get("/players") as resp:
-        players = (await resp.json()).get("data", [])
+    # Use the native game API instead of the Lua mod server to avoid
+    # game-thread dispatch pressure from ExecuteInGameThreadSync.
+    # The native /player/list endpoint is thread-safe and cached for 1s.
+    http_client = ctx.get("http_client")
+    players = await get_players_with_location(http_client)
 
     if not players:
         return
@@ -375,9 +378,7 @@ async def monitor_locations(ctx):
         if not character:
             continue
 
-        location_data = {
-            axis.lower(): value for axis, value in player_info["Location"].items()
-        }
+        location_data = player_info["Location"]
         new_point = Point(**location_data)
         vehicle_key = player_info["VehicleKey"]
 
