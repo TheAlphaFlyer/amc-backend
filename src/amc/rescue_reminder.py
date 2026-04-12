@@ -1,8 +1,8 @@
 """Rescue reminder loop.
 
-Periodically checks for open (unresponded) rescue requests and re-announces
-them on Discord and in-game every minute until someone responds or the request
-expires (after RESCUE_EXPIRY_MINUTES).
+Periodically checks for unresponded rescue requests (no responders) and
+re-announces them on Discord and in-game every minute until someone responds
+or the request expires (after RESCUE_EXPIRY_MINUTES).
 
 Runs as a long-lived asyncio task started from the Discord bot's setup_hook,
 following the same pattern as auto_arrest.py.
@@ -27,21 +27,20 @@ RESCUE_EXPIRY_MINUTES = 5
 
 
 async def _reminder_tick(http_client_game, discord_client):
-    """Single tick: find open rescue requests that need a reminder and re-announce."""
+    """Single tick: find unresponded rescue requests that need a reminder and re-announce."""
     now = timezone.now()
     expiry_threshold = now - timedelta(minutes=RESCUE_EXPIRY_MINUTES)
 
     open_requests = [
         req
         async for req in RescueRequest.objects.filter(
-            status=RescueRequest.STATUS_OPEN,
+            responders__isnull=True,
             timestamp__gte=expiry_threshold,
         )
         .select_related("character")
         .order_by("timestamp")
     ]
 
-    expired_ids = []
     remind_requests = []
 
     for req in open_requests:
@@ -49,16 +48,6 @@ async def _reminder_tick(http_client_game, discord_client):
             remind_requests.append(req)
         elif (now - req.last_reminded_at).total_seconds() >= RESCUE_REMIND_INTERVAL:
             remind_requests.append(req)
-
-    for req in open_requests:
-        if req.timestamp < expiry_threshold:
-            expired_ids.append(req.id)
-
-    if expired_ids:
-        await RescueRequest.objects.filter(id__in=expired_ids).aupdate(
-            status=RescueRequest.STATUS_EXPIRED
-        )
-        logger.info(f"Expired {len(expired_ids)} rescue request(s)")
 
     for req in remind_requests:
         minutes_waiting = int((now - req.timestamp).total_seconds() / 60)
@@ -111,6 +100,6 @@ async def run_rescue_reminder_loop(http_client_game, discord_client):
             logger.info("Rescue reminder loop shutting down")
             return
         except Exception:
-            logger.exception("Rescue reminder tick error")
+            logger.exception("Rescue reminder tick tick error")
 
         await asyncio.sleep(RESCUE_REMIND_INTERVAL)
