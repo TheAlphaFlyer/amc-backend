@@ -88,7 +88,8 @@ async def get_players_with_location(session):
 
         vehicle_info = player.get("vehicle")
         vehicle_name = vehicle_info["name"] if vehicle_info else None
-        vehicle_key = VehicleKeyByLabel.get(vehicle_name, "None") if vehicle_name else "None"
+        # Map display name → DB key; fall back to raw name for unlisted vehicles
+        vehicle_key = VehicleKeyByLabel.get(vehicle_name, vehicle_name) if vehicle_name else "None"
 
         result.append({
             "CharacterGuid": player["character_guid"].upper(),
