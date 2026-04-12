@@ -24,7 +24,9 @@ from .schema import (
     PersonalStandingSchema,
     TeamStandingSchema,
     DeliveryPointSchema,
+    DeliveryPointDetailSchema,
     DeliveryJobSchema,
+    DeliveryJobSummarySchema,
     LapSectionTimeSchema,
     # Phase 1
     CargoSchema,
@@ -550,7 +552,7 @@ async def list_deliverypoints(request):
     return [dp async for dp in DeliveryPoint.objects.all()]
 
 
-@deliverypoints_router.get("/{guid}/", response=DeliveryPointSchema)
+@deliverypoints_router.get("/{guid}/", response=DeliveryPointDetailSchema)
 async def get_deliverypoint(request, guid):
     return await DeliveryPoint.objects.aget(guid=guid)
 
@@ -573,6 +575,53 @@ async def list_deliveryjobs(request):
             ).filter_active()
         )
     ]
+
+
+webui_deliveryjobs_router = Router()
+
+
+@webui_deliveryjobs_router.get("/", response=list[DeliveryJobSummarySchema])
+async def list_webui_deliveryjobs(request):
+    jobs = []
+    async for job in DeliveryJob.objects.prefetch_related(
+        "cargos",
+        "source_points",
+        "destination_points",
+        Prefetch(
+            "deliveries", queryset=Delivery.objects.select_related("character")
+        ),
+    ).filter_active():
+        jobs.append({
+            "id": job.id,
+            "name": job.name,
+            "quantity_requested": job.quantity_requested,
+            "quantity_fulfilled": job.quantity_fulfilled,
+            "requested_at": job.requested_at,
+            "fulfilled_at": job.fulfilled_at,
+            "expired_at": job.expired_at,
+            "bonus_multiplier": job.bonus_multiplier,
+            "completion_bonus": job.completion_bonus,
+            "description": job.description,
+            "fulfilled": job.fulfilled,
+            "cargos": [c.key async for c in job.cargos.all()],
+            "source_points": [dp.guid async for dp in job.source_points.all()],
+            "destination_points": [dp.guid async for dp in job.destination_points.all()],
+            "deliveries": [
+                {
+                    "timestamp": d.timestamp,
+                    "character": {
+                        "player_id": str(d.character.player_id),
+                        "name": d.character.name,
+                    },
+                    "cargo_key": d.cargo_key,
+                    "quantity": d.quantity,
+                    "payment": d.payment,
+                    "subsidy": d.subsidy,
+                }
+                async for d in job.deliveries.all()
+            ],
+        })
+    return jobs
 
 
 # Phase 1: Public API Routers
