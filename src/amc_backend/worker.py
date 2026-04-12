@@ -24,6 +24,7 @@ from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
 from amc.supply_chain import monitor_supply_chain_events  # noqa: E402
 from amc.auto_arrest import run_patrol_loop  # noqa: E402
+from amc.rescue_reminder import send_rescue_reminders  # noqa: E402
 import discord  # noqa: E402
 from amc.discord_client import bot as discord_client  # noqa: E402
 from amc_finance.services import (  # noqa: E402
@@ -242,6 +243,8 @@ class WorkerSettings:
         cron(refresh_all_vehicle_stats, hour=None, minute=30, second=0),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_supply_chain_events, second=47),
+        # pyrefly: ignore [bad-argument-type]
+        cron(send_rescue_reminders, second=0),
         # cron(monitor_server_condition, minute=set(range(3, 60, 5))),
         # cron(monitor_rp_mode, second=set(range(7, 60, 13))),
     ]

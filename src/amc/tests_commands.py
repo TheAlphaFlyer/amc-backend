@@ -773,7 +773,7 @@ class CommandsTestCase(TestCase):
             self.ctx.announce.assert_called()
 
     async def test_rescue_reminder_sends_reminder(self):
-        from amc.rescue_reminder import _reminder_tick
+        from amc.rescue_reminder import send_rescue_reminders
 
         mock_req = MagicMock()
         mock_req.timestamp = timezone.now() - timedelta(minutes=2)
@@ -794,14 +794,13 @@ class CommandsTestCase(TestCase):
                 mock_req
             ]
 
-            mock_http = MagicMock()
-            mock_discord = MagicMock()
-            await _reminder_tick(mock_http, mock_discord)
+            ctx = {"http_client": MagicMock(), "discord_client": None}
+            await send_rescue_reminders(ctx)
             mock_announce.assert_called()
             mock_req.asave.assert_called()
 
     async def test_rescue_reminder_no_open_requests(self):
-        from amc.rescue_reminder import _reminder_tick
+        from amc.rescue_reminder import send_rescue_reminders
 
         with (
             patch(
@@ -811,9 +810,8 @@ class CommandsTestCase(TestCase):
         ):
             mock_filter.return_value.select_related.return_value.order_by.return_value = []
 
-            mock_http = MagicMock()
-            mock_discord = MagicMock()
-            await _reminder_tick(mock_http, mock_discord)
+            ctx = {"http_client": MagicMock(), "discord_client": None}
+            await send_rescue_reminders(ctx)
             mock_announce.assert_not_called()
 
     # --- Admin & Spawning Tests ---

@@ -1,11 +1,10 @@
-"""Rescue reminder loop.
+"""Rescue reminder task for arq cron.
 
 Periodically checks for unresponded rescue requests (no responders) and
 re-announces them on Discord and in-game every minute until someone responds
 or the request expires (after RESCUE_EXPIRY_MINUTES).
 
-Runs as a long-lived asyncio task started from the Discord bot's setup_hook,
-following the same pattern as auto_arrest.py.
+Scheduled as an arq cron job in amc_backend.worker.WorkerSettings.
 """
 
 import asyncio
@@ -26,8 +25,8 @@ RESCUE_REMIND_INTERVAL = 60
 RESCUE_EXPIRY_MINUTES = 5
 
 
-async def _reminder_tick(http_client_game, discord_client):
-    """Single tick: find unresponded rescue requests that need a reminder and re-announce."""
+async def send_rescue_reminders(ctx):
+    """arq cron task: re-announce unresponded rescue requests."""
     now = timezone.now()
     expiry_threshold = now - timedelta(minutes=RESCUE_EXPIRY_MINUTES)
 
@@ -55,9 +54,10 @@ async def _reminder_tick(http_client_game, discord_client):
         in_game_msg = _(
             "{name} still needs a rescue! Respond with /respond {request_id}"
         ).format(name=req.character.name, request_id=req.id)
-        asyncio.create_task(announce(in_game_msg, http_client_game))
+        asyncio.create_task(announce(in_game_msg, ctx["http_client"]))
 
-        if discord_client:
+        discord_client = ctx.get("discord_client")
+        if discord_client and discord_client.is_ready():
             try:
                 from amc.utils import forward_to_discord
 
@@ -69,13 +69,17 @@ async def _reminder_tick(http_client_game, discord_client):
                     minutes=minutes_waiting,
                     message=req.message or "",
                 )
-                await forward_to_discord(
-                    discord_client,
-                    settings.DISCORD_RESCUE_CHANNEL_ID,
-                    discord_msg,
-                    escape_mentions=False,
-                    silent=True,
-                )
+
+                async def send_discord():
+                    await forward_to_discord(
+                        discord_client,
+                        settings.DISCORD_RESCUE_CHANNEL_ID,
+                        discord_msg,
+                        escape_mentions=False,
+                        silent=True,
+                    )
+
+                asyncio.run_coroutine_threadsafe(send_discord(), discord_client.loop)
             except Exception:
                 logger.exception("Failed to send Discord reminder for rescue %s", req.id)
 
@@ -84,22 +88,3 @@ async def _reminder_tick(http_client_game, discord_client):
 
     if remind_requests:
         logger.info(f"Sent reminders for {len(remind_requests)} rescue request(s)")
-
-
-async def run_rescue_reminder_loop(http_client_game, discord_client):
-    """Long-running loop that re-announces unresponded rescue requests.
-
-    Launched via asyncio.create_task from the Discord bot's setup_hook.
-    """
-    logger.info("Rescue reminder loop started")
-
-    while True:
-        try:
-            await _reminder_tick(http_client_game, discord_client)
-        except asyncio.CancelledError:
-            logger.info("Rescue reminder loop shutting down")
-            return
-        except Exception:
-            logger.exception("Rescue reminder tick tick error")
-
-        await asyncio.sleep(RESCUE_REMIND_INTERVAL)
