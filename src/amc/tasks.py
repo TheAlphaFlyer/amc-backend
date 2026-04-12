@@ -238,14 +238,26 @@ async def _resolve_guid_from_game_server(http_client, player_id):
         if str(uid) == str(player_id):
             guid = pdata.get("character_guid")
             if guid and guid != Character.INVALID_GUID:
-                return guid
+                # Native game API returns lowercase GUIDs; normalize to uppercase
+                # to match the mod server convention and what's stored in the DB.
+                return guid.upper()
     return None
 
 
 async def aget_or_create_character(player_name, player_id, http_client_mod=None, http_client=None):
     character_guid = None
     player_info = None
-    if http_client_mod:
+
+    # Try the native game server first — it's cached (1s TTL) and doesn't
+    # touch the game thread, so it's the cheapest source for GUID resolution.
+    if http_client:
+        try:
+            character_guid = await _resolve_guid_from_game_server(http_client, player_id)
+        except Exception as e:
+            logger.debug(f"Game server GUID lookup failed (non-blocking): {e}")
+
+    # Fallback: mod server (has its own 5s per-player cache)
+    if not character_guid and http_client_mod:
         # Single attempt — never blocks with retries
         try:
             player_info = await get_player(http_client_mod, player_id)
@@ -256,13 +268,6 @@ async def aget_or_create_character(player_name, player_id, http_client_mod=None,
                     character_guid = None
         except Exception as e:
             logger.debug(f"Player info fetch failed (non-blocking): {e}")
-
-    # Fallback: game server player list (authoritative, cached)
-    if not character_guid and http_client:
-        try:
-            character_guid = await _resolve_guid_from_game_server(http_client, player_id)
-        except Exception as e:
-            logger.debug(f"Game server GUID fallback failed (non-blocking): {e}")
 
     (
         character,

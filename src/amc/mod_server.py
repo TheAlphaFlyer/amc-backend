@@ -1,4 +1,5 @@
 import aiohttp
+from django.core.cache import cache
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
 
 # TODO: Lua webserver handlers now return 503 when ExecuteInGameThreadSync times out
@@ -143,11 +144,18 @@ async def spawn_dealership(session, vehicle_key, location, yaw):
 
 
 async def get_player(session, player_id):
+    cache_key = f"mod_player_info:{player_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     async with session.get(f"/players/{player_id}") as resp:
         data = await resp.json()
         if not data or not data.get("data"):
             return None
-        return data["data"][0]
+        result = data["data"][0]
+        cache.set(cache_key, result, timeout=5)
+        return result
 
 
 async def get_players(session):
