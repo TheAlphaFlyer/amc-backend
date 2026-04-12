@@ -244,7 +244,7 @@ class WorkerSettings:
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_supply_chain_events, second=47),
         # pyrefly: ignore [bad-argument-type]
-        cron(send_rescue_reminders, second=0),
+        cron(send_rescue_reminders, second=set(range(0, 60, 15))),
         # cron(monitor_server_condition, minute=set(range(3, 60, 5))),
         # cron(monitor_rp_mode, second=set(range(7, 60, 13))),
     ]
