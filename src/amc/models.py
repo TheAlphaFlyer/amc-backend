@@ -2250,6 +2250,15 @@ class PlayerShift(models.Model):
 
 @final
 class RescueRequest(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_RESPONDED = "responded"
+    STATUS_EXPIRED = "expired"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_RESPONDED, "Responded"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+
     timestamp = models.DateTimeField(auto_now_add=True)
     character = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="rescue_requests"
@@ -2260,6 +2269,10 @@ class RescueRequest(models.Model):
     )
     message = models.TextField(blank=True)
     location = models.PointField(srid=0, dim=3, null=True, blank=True)
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True
+    )
+    last_reminded_at = models.DateTimeField(null=True, blank=True)
 
 
 @final

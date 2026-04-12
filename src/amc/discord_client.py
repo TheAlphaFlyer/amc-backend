@@ -57,6 +57,12 @@ class AMCDiscordBot(commands.Bot):
         await self.add_cog(CrimeStatsCog(self), guild=guild)
         await self.tree.sync(guild=guild)
 
+        # Start rescue reminder loop
+        from amc.rescue_reminder import run_rescue_reminder_loop
+        self._rescue_reminder_task = asyncio.create_task(
+            run_rescue_reminder_loop(self.http_client_game, self)
+        )
+
 
 intents = discord.Intents.default()
 intents.messages = True

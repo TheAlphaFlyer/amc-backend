@@ -128,6 +128,8 @@ async def cmd_respond(ctx: CommandContext, rescue_id: int):
             return
 
     await rescue_request.responders.aadd(ctx.player)
+    rescue_request.status = RescueRequest.STATUS_RESPONDED
+    await rescue_request.asave(update_fields=["status"])
 
     await ctx.announce(
         _("{responder} is responding to {requester}'s rescue request!").format(

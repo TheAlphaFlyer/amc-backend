@@ -744,6 +744,8 @@ class CommandsTestCase(TestCase):
     async def test_cmd_respond(self):
         mock_req = MagicMock()
         mock_req.discord_message_id = 123
+        mock_req.status = "open"
+        mock_req.asave = AsyncMock()
 
         # Setup discord mocks
         mock_cog = MagicMock()
@@ -765,12 +767,55 @@ class CommandsTestCase(TestCase):
 
             await cmd_respond(self.ctx, 123)
             mock_req.responders.aadd.assert_called_with(self.ctx.player)
+            self.assertEqual(mock_req.status, "responded")
+            mock_req.asave.assert_called_with(update_fields=["status"])
 
             # Handle unawaited coroutine from run_coroutine_threadsafe
             if mock_run.called:
                 coro = mock_run.call_args[0][0]
                 coro.close()
             self.ctx.announce.assert_called()
+
+    async def test_rescue_reminder_skips_responded(self):
+        from amc.rescue_reminder import _reminder_tick
+
+        mock_req = MagicMock()
+        mock_req.status = "responded"
+        mock_req.timestamp = timezone.now() - timedelta(minutes=2)
+        mock_req.last_reminded_at = None
+
+        with (
+            patch(
+                "amc.rescue_reminder.RescueRequest.objects.filter"
+            ) as mock_filter,
+            patch("amc.rescue_reminder.announce", new=AsyncMock()),
+            patch("amc.rescue_reminder.forward_to_discord", new=AsyncMock()),
+        ):
+            mock_filter.return_value.select_related.return_value.order_by.return_value = [
+                mock_req
+            ]
+            mock_filter.return_value.aupdate = AsyncMock()
+
+            mock_http = MagicMock()
+            mock_discord = MagicMock()
+            await _reminder_tick(mock_http, mock_discord)
+
+    async def test_rescue_reminder_expires_old_requests(self):
+        from amc.rescue_reminder import _reminder_tick
+
+        with (
+            patch(
+                "amc.rescue_reminder.RescueRequest.objects.filter"
+            ) as mock_filter,
+            patch("amc.rescue_reminder.announce", new=AsyncMock()),
+        ):
+            mock_qs = MagicMock()
+            mock_filter.return_value.select_related.return_value.order_by.return_value = []
+            mock_filter.return_value.aupdate = AsyncMock()
+
+            mock_http = MagicMock()
+            mock_discord = MagicMock()
+            await _reminder_tick(mock_http, mock_discord)
 
     # --- Admin & Spawning Tests ---
 

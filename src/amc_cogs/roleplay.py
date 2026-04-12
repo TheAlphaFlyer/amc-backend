@@ -262,3 +262,5 @@ class RoleplayCog(commands.Cog):
             return
 
         await rescue_request.responders.aadd(player)
+        rescue_request.status = RescueRequest.STATUS_RESPONDED
+        await rescue_request.asave(update_fields=["status"])
