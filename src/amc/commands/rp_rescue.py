@@ -64,7 +64,7 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
         location = Point(loc["X"], loc["Y"], loc["Z"], srid=0)
 
     rescue_request = await RescueRequest.objects.acreate(
-        character=ctx.character, message=message, location=location
+        character=ctx.character, message=message, location=location, last_reminded_at=timezone.now()
     )
 
     if ctx.is_current_event:
