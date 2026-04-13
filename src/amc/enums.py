@@ -86,6 +86,14 @@ class CargoKey(models.TextChoices):
     Cement = "Cement", "Cement"
     Terra = "Terra", "Terra"
     SunflowerSeed = "SunflowerSeed", "Sunflower Seed"
+    Raven = "Raven", "Raven"
+    CopperConcentrate = "CopperConcentrate", "Copper Concentrate"
+    CopperOre = "CopperOre", "Copper Ore"
+    CopperRodCoil_2t = "CopperRodCoil_2t", "Copper Rod Coil 2t"
+    Tank_250kL = "Tank_250kL", "Tank 250kL"
+    Transformer_5MVA = "Transformer_5MVA", "Transformer 5MVA"
+    Transformer_20MVA = "Transformer_20MVA", "Transformer 20MVA"
+    Transformer_50MVA = "Transformer_50MVA", "Transformer 50MVA"
     Money = "Money", "Money Stack"
     Ganja = "Ganja", "Ganja Pack"
     CocaLeavesPallet = "CocaLeavesPallet", "Coca Leaves Pallet"
@@ -161,11 +169,13 @@ class VehicleKey(models.TextChoices):
     Jemusi = "Jemusi", "Jemusi"
     Jemusi_Tanker = "Jemusi_Tanker", "Jemusi Tanker"
     Jemusi_Dump = "Jemusi_Dump", "Jemusi Dump"
+    Jemusi_Flatbed = "Jemusi_Flatbed", "Jemusi Flatbed"
     Jemusi_Semi = "Jemusi_Semi", "Jemusi Semi"
     Lobo = "Lobo", "Lobo"
     Bora = "Bora", "Bora"
     Dabo = "Dabo", "Dabo"
     DumpTruck_01 = "DumpTruck_01", "Dumpy"
+    Atlas_6x2_Garbage = "Atlas_6x2_Garbage", "Atlas 6x2 Garbage"
     Atlas_8x4_Dump = "Atlas_8x4_Dump", "Atlas 8x4 Dump"
     Atlas_6x2_Tanker = "Atlas_6x2_Tanker", "Atlas 6x2 Tanker"
     Atlas_6x2_Dryvan = "Atlas_6x2_Dryvan", "Atlas 6x2 Dry Van"
@@ -177,6 +187,9 @@ class VehicleKey(models.TextChoices):
     Kuda_Dryvan_4x2 = "Kuda_Dryvan_4x2", "Kuda Dry Van"
     Kuda_Flatbed_4x2 = "Kuda_Flatbed_4x2", "Kuda Flatbed"
     Golima_Semi = "Golima_Semi", "Golima Semi"
+    Goliath4 = "Goliath4", "Goliath 4x2"
+    Goliath6 = "Goliath6", "Goliath 6x4"
+    Goliath10 = "Goliath10", "Goliath 10x4"
     Longhorn_Semi = "Longhorn_Semi", "Longhorn Semi"
     Brutus_Tanker = "Brutus_Tanker", "Brutus Tanker"
     Bongo = "Bongo", "Bongo"
@@ -184,8 +197,10 @@ class VehicleKey(models.TextChoices):
     Roadmaster = "Roadmaster", "Roadmaster"
     Trailer_Flanker3 = "Trailer_Flanker3", "Flanker3"
     Trailer_Flanker3S = "Trailer_Flanker3S", "Flanker3S"
+    Trailer_Cotra_20 = "Trailer_Cotra_20", "Cotra 20"
     Trailer_Cotra_20_3 = "Trailer_Cotra_20_3", "Cotra 20-3"
     Trailer_Cotra_20_3L = "Trailer_Cotra_20_3L", "Cotra 20-3L"
+    Trailer_Cotra_40 = "Trailer_Cotra_40", "Cotra 40"
     Trailer_Cotra_40_3 = "Trailer_Cotra_40_3", "Cotra 40-3"
     Trailer_Vamos3 = "Trailer_Vamos3", "Vamos3"
     Trailer_Lomax = "Trailer_Lomax", "Lomax"
@@ -201,6 +216,9 @@ class VehicleKey(models.TextChoices):
     Trailer_Olbe = "Trailer_Olbe", "Olbe"
     Trailer_Small_Cage_01 = "Trailer_Small_Cage_01", "Small Cage Trailer"
     Trailer_Middle_Tanker_01 = "Trailer_Middle_Tanker_01", "5t Tanker Trailer"
+    Trailer_Dinky_Flatbed = "Trailer_Dinky_Flatbed", "Dinky Flatbed"
+    Trailer_Dinky_Dryvan = "Trailer_Dinky_Dryvan", "Dinky Dryvan"
+    Trailer_Dinky_Tanker = "Trailer_Dinky_Tanker", "Dinky Tanker"
     Trailer_SPT1 = "Trailer_SPT1", "SPT1"
     Trailer_LoboVan = "Trailer_LoboVan", "LoboVan"
     Trailer_Bulko = "Trailer_Bulko", "Bulko"
@@ -208,10 +226,13 @@ class VehicleKey(models.TextChoices):
     Trailer_Dooly_D1 = "Trailer_Dooly_D1", "Linky D1"
     Trailer_Dooly_S2 = "Trailer_Dooly_S2", "Linky S2"
     Trailer_Dooly_D2 = "Trailer_Dooly_D2", "Linky D2"
+    Trailer_Shovan = "Trailer_Shovan", "Shovan"
     Trailer_Shovan_7 = "Trailer_Shovan_7", "Shovan 7"
     Trailer_Shovan_10 = "Trailer_Shovan_10", "Shovan 10"
+    Trailer_Shobed = "Trailer_Shobed", "Shobed"
     Trailer_Shobed_7 = "Trailer_Shobed_7", "Shobed 7"
     Trailer_Shobed_10 = "Trailer_Shobed_10", "Shobed 10"
+    Trailer_Shotan = "Trailer_Shotan", "Shotan"
     Trailer_Shotan_7 = "Trailer_Shotan_7", "Shotan 7"
     Trailer_Shotan_10 = "Trailer_Shotan_10", "Shotan 10"
     Trailer_Hobber_Lead = "Trailer_Hobber_Lead", "Hobber Lead"
@@ -226,6 +247,9 @@ class VehicleKey(models.TextChoices):
     Trailer_Flaber_Rear = "Trailer_Flaber_Rear", "Flaber Rear"
     Trailer_Taber_Lead = "Trailer_Taber_Lead", "Taber Lead"
     Trailer_Taber_Rear = "Trailer_Taber_Rear", "Taber Rear"
+    Raven = "Raven", "Raven"
+    EVan = "EVan", "EVan"
+    Trophy2 = "Trophy2", "Trophy 2"
     Nuke = "Nuke", "Nuke"
     Nuke_Police = "Nuke_Police", "Nuke Police"
     Nuke_Taxi = "Nuke_Taxi", "Nuke Taxi"
@@ -243,6 +267,8 @@ class VehicleKey(models.TextChoices):
     Dory_Wrecker = "Dory_Wrecker", "Dory Wrecker"
     TowTruck_01 = "TowTruck_01", "Pulio"
     Kira_RollbackTow = "Kira_RollbackTow", "Kira Rollback Tow"
+    Longhorn_Rollback = "Longhorn_Rollback", "Longhorn Rollback"
+    Longhorn_Rollback_UL = "Longhorn_Rollback_UL", "Longhorn Rollback UL"
     Brutus_Wrecker = "Brutus_Wrecker", "Brutus Wrecker"
     GolimaRotator = "GolimaRotator", "Golima Rotator"
     Vulcan = "Vulcan", "Vulcan"
@@ -587,6 +613,11 @@ VEHICLE_DATA = {
         "object_name": "Jemusi_Dump_C",
         "cost": 100000,
     },
+    "Jemusi_Flatbed": {
+        "asset_path": "/Game/Cars/Models/Jemusi/Jemusi_Flatbed.Jemusi_Flatbed_C",
+        "object_name": "Jemusi_Flatbed_C",
+        "cost": 80000,
+    },
     "Jemusi_Semi": {
         "asset_path": "/Game/Cars/Models/Jemusi/Jemusi_Semi.Jemusi_Semi_C",
         "object_name": "Jemusi_Semi_C",
@@ -611,6 +642,11 @@ VEHICLE_DATA = {
         "asset_path": "/Game/Cars/Models/Maity/Dumpy.Dumpy_C",
         "object_name": "Dumpy_C",
         "cost": 150000,
+    },
+    "Atlas_6x2_Garbage": {
+        "asset_path": "/Game/Cars/Models/Atlas/Atlas_6x2_Garbage.Atlas_6x2_Garbage_C",
+        "object_name": "Atlas_6x2_Garbage_C",
+        "cost": 280000,
     },
     "Atlas_8x4_Dump": {
         "asset_path": "/Game/Cars/Models/Atlas/Atlas_8x4_Dump.Atlas_8x4_Dump_C",
@@ -666,6 +702,21 @@ VEHICLE_DATA = {
         "asset_path": "/Game/Cars/Models/Golima/Golima_Semi.Golima_Semi_C",
         "object_name": "Golima_Semi_C",
         "cost": 300000,
+    },
+    "Goliath4": {
+        "asset_path": "/Game/Cars/Models/Goliath/Goliath4.Goliath4_C",
+        "object_name": "Goliath4_C",
+        "cost": 300000,
+    },
+    "Goliath6": {
+        "asset_path": "/Game/Cars/Models/Goliath/Goliath6.Goliath6_C",
+        "object_name": "Goliath6_C",
+        "cost": 500000,
+    },
+    "Goliath10": {
+        "asset_path": "/Game/Cars/Models/Goliath/Goliath10.Goliath10_C",
+        "object_name": "Goliath10_C",
+        "cost": 800000,
     },
     "Longhorn_Semi": {
         "asset_path": "/Game/Cars/Models/Longhorn/Longhorn_Semi.Longhorn_Semi_C",
@@ -1036,6 +1087,61 @@ VEHICLE_DATA = {
         "asset_path": "/Game/Cars/Models/Brutus/Brutus_Ambulance.Brutus_Ambulance_C",
         "object_name": "Brutus_Ambulance_C",
         "cost": 220000,
+    },
+    "Raven": {
+        "asset_path": "/Game/Cars/Models/Volture/Raven.Raven_C",
+        "object_name": "Raven_C",
+        "cost": 100000,
+    },
+    "EVan": {
+        "asset_path": "/Game/Cars/Models/EVan/EVan.EVan_C",
+        "object_name": "EVan_C",
+        "cost": 80000,
+    },
+    "Trophy2": {
+        "asset_path": "/Game/Cars/Models/Trophy2/Trophy2.Trophy2_C",
+        "object_name": "Trophy2_C",
+        "cost": 9000,
+    },
+    "Nimo_Taxi": {
+        "asset_path": "/Game/Cars/Models/Nimo/Nimo_Taxi.Nimo_Taxi_C",
+        "object_name": "Nimo_Taxi_C",
+        "cost": 140000,
+    },
+    "Longhorn_Rollback": {
+        "asset_path": "/Game/Cars/Models/Longhorn_Rollback/Longhorn_Rollback.Longhorn_Rollback_C",
+        "object_name": "Longhorn_Rollback_C",
+        "cost": 300000,
+    },
+    "Longhorn_Rollback_UL": {
+        "asset_path": "/Game/Cars/Models/Longhorn_Rollback/Longhorn_Rollback_UL.Longhorn_Rollback_UL_C",
+        "object_name": "Longhorn_Rollback_UL_C",
+        "cost": 400000,
+    },
+    "Trailer_Cotra_20": {
+        "asset_path": "/Game/Cars/Models/Trailer_Cotra/Cotra_20_3S.Cotra_20_3S_C",
+        "object_name": "Cotra_20_3S_C",
+        "cost": 27000,
+    },
+    "Trailer_Cotra_40": {
+        "asset_path": "/Game/Cars/Models/Trailer_Cotra/Cotra_40_3.Cotra_40_3_C",
+        "object_name": "Cotra_40_3_C",
+        "cost": 50000,
+    },
+    "Trailer_Shovan": {
+        "asset_path": "/Game/Cars/Models/Shovan/Shovan.Shovan_10_C",
+        "object_name": "Shovan_10_C",
+        "cost": 70000,
+    },
+    "Trailer_Shobed": {
+        "asset_path": "/Game/Cars/Models/Shobed/Shobed.Shobed_10_C",
+        "object_name": "Shobed_10_C",
+        "cost": 60000,
+    },
+    "Trailer_Shotan": {
+        "asset_path": "/Game/Cars/Models/Shotan/Shotan.Shotan_10_C",
+        "object_name": "Shotan_10_C",
+        "cost": 160000,
     },
 }
 

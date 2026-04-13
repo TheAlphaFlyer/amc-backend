@@ -256,12 +256,13 @@ async def aget_or_create_character(player_name, player_id, http_client_mod=None,
         except Exception as e:
             logger.debug(f"Game server GUID lookup failed (non-blocking): {e}")
 
-    # Fallback: mod server (has its own 5s per-player cache)
-    if not character_guid and http_client_mod:
-        # Single attempt — never blocks with retries
+    # Always fetch player_info from the mod server — it contains fields
+    # (bIsAdmin, Location, etc.) that the game server API doesn't provide,
+    # and the command framework depends on them.
+    if http_client_mod:
         try:
             player_info = await get_player(http_client_mod, player_id)
-            if player_info:
+            if player_info and not character_guid:
                 character_guid = player_info.get("CharacterGuid")
                 # Mod server returns all-zeros GUID during early login — treat as absent
                 if character_guid == Character.INVALID_GUID:

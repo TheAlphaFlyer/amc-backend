@@ -324,6 +324,9 @@ DISCORD_AUDIT_CHANNEL_ID = int(os.environ.get("DISCORD_AUDIT_CHANNEL_ID", 0))
 RESTART_MOTORTOWN_SCRIPT = os.environ.get(
     "RESTART_MOTORTOWN_SCRIPT", "/usr/local/bin/restart-motortown"
 )
+UPDATE_MOTORTOWN_SCRIPT = os.environ.get(
+    "UPDATE_MOTORTOWN_SCRIPT", "/usr/local/bin/update-motortown"
+)
 
 DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID = int(
     os.environ.get("DISCORD_NECESSE_GAME_CHAT_CHANNEL_ID", "1441342292672909363")
