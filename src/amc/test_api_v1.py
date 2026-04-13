@@ -18,6 +18,7 @@ from amc.api.v1.routes import (
     server_router,
     police_router,
     rescue_router,
+    teleport_router,
 )
 from amc.factories import (
     CharacterFactory,
@@ -37,6 +38,7 @@ from amc.models import (
     PolicePenaltyLog,
     PoliceShiftLog,
     RescueRequest,
+    TeleportPoint,
 )
 from amc_finance.models import Account
 
@@ -442,3 +444,69 @@ class RescueAPITest(TestCase):
         # Privacy: no character or player names
         self.assertNotIn("character_name", data[0])
         self.assertNotIn("player", data[0])
+
+
+# ═══════════════════════════════════════════════════════════════
+# Phase 6: Teleport Points
+# ═══════════════════════════════════════════════════════════════
+
+
+class TeleportPointsAPITest(TestCase):
+    def setUp(self):
+        self.api_client = TestAsyncClient(teleport_router)
+
+    async def test_empty(self):
+        response = await cast(Any, self.api_client.get("/"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    async def test_public_points_only(self):
+        await TeleportPoint.objects.acreate(
+            name="Airport",
+            location=Point(100, 200, 300),
+            character=None,
+        )
+        character = await sync_to_async(CharacterFactory)()
+        await TeleportPoint.objects.acreate(
+            name="MyHome",
+            location=Point(400, 500, 600),
+            character=character,
+        )
+        response = await cast(Any, self.api_client.get("/"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["name"], "Airport")
+        self.assertEqual(data[0]["x"], 100.0)
+        self.assertEqual(data[0]["y"], 200.0)
+        self.assertEqual(data[0]["z"], 300.0)
+
+    async def test_multiple_public_points(self):
+        await TeleportPoint.objects.acreate(
+            name="Airport",
+            location=Point(100, 200, 300),
+            character=None,
+        )
+        await TeleportPoint.objects.acreate(
+            name="Harbor",
+            location=Point(400, 500, 600),
+            character=None,
+        )
+        response = await cast(Any, self.api_client.get("/"))
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        names = {p["name"] for p in data}
+        self.assertIn("Airport", names)
+        self.assertIn("Harbor", names)
+
+    async def test_privacy_no_character_fields(self):
+        await TeleportPoint.objects.acreate(
+            name="Station",
+            location=Point(10, 20, 30),
+            character=None,
+        )
+        response = await cast(Any, self.api_client.get("/"))
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertNotIn("character", data[0])
+        self.assertNotIn("character_id", data[0])

@@ -21,6 +21,7 @@ from amc.api.v1.schema import (
     ServerStatusSchema,
     PoliceStatsSchema,
     RescueRequestSchema,
+    TeleportPointSchema,
 )
 from amc.models import (
     Character,
@@ -33,6 +34,7 @@ from amc.models import (
     SupplyChainEvent,
     SupplyChainContribution,
     RescueRequest,
+    TeleportPoint,
 )
 from amc.enums import VehicleKey, CargoKey, VEHICLE_DATA
 
@@ -470,4 +472,22 @@ async def recent_rescues(request, limit: int = 20):
             ),
         }
         async for r in rescues
+    ]
+
+
+teleport_router = Router()
+
+
+@teleport_router.get("/", response=list[TeleportPointSchema])
+async def list_public_teleport_points(request):
+    teleport_points = TeleportPoint.objects.filter(character__isnull=True)
+
+    return [
+        {
+            "name": tp.name,
+            "x": tp.location.x,
+            "y": tp.location.y,
+            "z": tp.location.z,
+        }
+        async for tp in teleport_points
     ]
