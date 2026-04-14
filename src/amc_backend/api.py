@@ -67,3 +67,6 @@ api.add_router("/auth/", "amc.api.auth_routes.auth_router")
 
 # Anti-cheat physics integrity reporting (PoC — observe-only)
 api.add_router("/ac/", "amc.api.anticheat_routes.router")
+
+# Shortcut Zones
+api.add_router("/shortcut_zones/", "amc.api.routes.shortcut_zones_router")

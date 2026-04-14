@@ -451,3 +451,12 @@ class ServerCommandSchema(Schema):
     description: str
     category: str
     deprecated: bool = False
+
+
+class ShortcutZoneSchema(Schema):
+    """Active shortcut zone with polygon coordinates (SRID 3857)."""
+
+    id: int
+    name: str
+    description: str
+    coordinates: list[list[float]]
