@@ -2354,6 +2354,7 @@ class SeqDeduplicationTests(TestCase):
         cache.delete("webhook:last_epoch")
 
 
+@patch("amc_finance.services.check_treasury_floor", new_callable=AsyncMock, return_value=True)
 @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
 @patch("amc.handlers.cargo.subsidise_player", new_callable=AsyncMock)
@@ -2387,6 +2388,7 @@ class SecurityBonusTests(TestCase):
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
+        mock_check_floor,
     ):
         """0 police on duty → 0% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2419,6 +2421,7 @@ class SecurityBonusTests(TestCase):
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
+        mock_check_floor,
     ):
         """1 police on duty and online → 50% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2463,6 +2466,7 @@ class SecurityBonusTests(TestCase):
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
+        mock_check_floor,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2504,6 +2508,7 @@ class SecurityBonusTests(TestCase):
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
+        mock_check_floor,
     ):
         """2 police on duty and online → 100% risk premium."""
         mock_list_vehicles.return_value = {}
@@ -2547,6 +2552,7 @@ class SecurityBonusTests(TestCase):
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
+        mock_check_floor,
     ):
         """6 police → would be 300%, but capped at 250%."""
         mock_list_vehicles.return_value = {}

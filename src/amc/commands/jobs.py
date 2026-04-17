@@ -28,7 +28,6 @@ async def cmd_jobs(ctx: CommandContext):
     treasury_mult = calculate_treasury_multiplier(
         float(treasury_balance),
         equilibrium=float(config.treasury_equilibrium),
-        sensitivity=config.treasury_sensitivity,
     )
     boost_pct = int(treasury_mult * 100)
     if treasury_mult >= 1.0:

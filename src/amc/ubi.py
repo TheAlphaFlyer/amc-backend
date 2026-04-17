@@ -10,6 +10,7 @@ from amc.mod_server import transfer_money
 from amc.police import is_police
 from amc_finance.services import (
     send_fund_to_player_wallet,
+    get_treasury_fund_balance,
 )
 from amc_finance.loans import (
     get_player_loan_balance,
@@ -20,6 +21,8 @@ TASK_FREQUENCY = 20  # minutes
 ACTIVE_GRANT_AMOUNT = 18_000 / (60 / TASK_FREQUENCY)
 AFK_GRANT_AMOUNT = 6_000 / (60 / TASK_FREQUENCY)
 MAX_LEVEL = 400
+TREASURY_UBI_FLOOR = 5_000_000
+TREASURY_UBI_CEILING = 30_000_000
 
 
 async def handout_ubi(ctx):
@@ -27,6 +30,16 @@ async def handout_ubi(ctx):
     http_client_mod = ctx.get("http_client_mod")
     now = timezone.now()
     start_time = now - timedelta(minutes=TASK_FREQUENCY)
+
+    treasury_balance = await get_treasury_fund_balance()
+    if treasury_balance <= TREASURY_UBI_FLOOR:
+        return
+
+    ubi_scale = min(
+        1.0,
+        (float(treasury_balance) - TREASURY_UBI_FLOOR)
+        / (TREASURY_UBI_CEILING - TREASURY_UBI_FLOOR),
+    )
 
     players = await get_players(http_client)
     if not players:
@@ -77,6 +90,7 @@ async def handout_ubi(ctx):
                 * Decimal(str(character.ubi_multiplier))
                 / MAX_LEVEL,
             )
+            amount = amount * Decimal(str(ubi_scale))
 
             on_duty = await is_police(character)
             if on_duty:

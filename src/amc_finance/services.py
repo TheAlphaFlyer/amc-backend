@@ -11,6 +11,9 @@ from amc_finance.models import Account, JournalEntry, LedgerEntry
 from typing import Any, cast
 
 
+TREASURY_FLOOR = Decimal(1_000_000)
+
+
 async def get_treasury_fund_balance():
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
@@ -29,6 +32,16 @@ async def get_sovereign_reserves_balance():
         name="Sovereign Reserves",
     )
     return reserves.balance
+
+
+async def check_treasury_floor(amount) -> bool:
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    return Decimal(str(treasury_fund.balance)) - Decimal(str(amount)) >= TREASURY_FLOOR
 
 
 async def get_character_total_donations(character, start_time):
@@ -160,6 +173,8 @@ async def player_donation(amount, character, description="Player Donation"):
 
 
 async def send_fund_to_player_wallet(amount, character, description):
+    if not await check_treasury_floor(amount):
+        return
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
         book=Account.Book.GOVERNMENT,
@@ -194,6 +209,8 @@ async def send_fund_to_player_wallet(amount, character, description):
 
 async def record_treasury_expense(amount, description="Treasury Expense"):
     """Burn money from the treasury (Dr. Expenses / Cr. Treasury Fund)."""
+    if not await check_treasury_floor(amount):
+        return
     treasury_fund, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
         book=Account.Book.GOVERNMENT,
@@ -258,6 +275,8 @@ async def record_treasury_confiscation_income(
 
 
 async def send_fund_to_player(amount, character, reason):
+    if not await check_treasury_floor(amount):
+        return
     account, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.LIABILITY,
         book=Account.Book.BANK,
@@ -406,7 +425,7 @@ WEALTH_TAX_BRACKETS = [
 ]
 
 # Sovereign Reserves — NIRC (Net Investment Returns Contribution)
-NIRC_MONTHLY_RATE = 0.05  # 5% of reserves per month drips to operating treasury
+NIRC_DAILY_RATE = Decimal("0.05")
 
 
 def wealth_tax_hourly_rate(k: float, t_hours: float) -> float:
@@ -697,7 +716,7 @@ async def transfer_nirc(ctx):
     """Daily cron: transfer NIRC (Net Investment Returns Contribution)
     from Sovereign Reserves to Operating Treasury.
 
-    Transfers NIRC_ANNUAL_RATE / 365 of reserves balance daily.
+    Transfers NIRC_DAILY_RATE of reserves balance daily.
     """
     reserves, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
@@ -715,8 +734,7 @@ async def transfer_nirc(ctx):
     if reserves.balance <= 0:
         return
 
-    daily_rate = Decimal(str(NIRC_MONTHLY_RATE)) / 30
-    amount = int(reserves.balance * daily_rate)
+    amount = int(reserves.balance * NIRC_DAILY_RATE)
     if amount <= 0:
         return
 

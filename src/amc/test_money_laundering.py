@@ -52,13 +52,14 @@ async def _setup_character(guid_suffix=""):
     return player, character
 
 
+@patch("amc_finance.services.check_treasury_floor", new_callable=AsyncMock, return_value=True)
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
 @patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
 @patch("amc.game_server.announce", new_callable=AsyncMock)
 @patch("amc.special_cargo.announce", new_callable=AsyncMock)
 class MoneyLaunderingTests(TestCase):
     async def test_money_delivery_creates_criminal_record(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Money delivery should create an active CriminalRecord (cleared_at=None)."""
         mock_get_rp_mode.return_value = False
@@ -79,7 +80,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertEqual(record.confiscatable_amount, 10_000)
 
     async def test_money_delivery_reuses_existing_criminal_record(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Subsequent Money deliveries should accumulate on the same active CriminalRecord."""
         mock_get_rp_mode.return_value = False
@@ -116,6 +117,7 @@ class MoneyLaunderingTests(TestCase):
         mock_announce,
         mock_get_treasury,
         mock_get_rp_mode,
+        mock_check_floor,
     ):
         """Money delivery should populate the laundering cache when a new Wanted is created."""
         from django.core.cache import cache
@@ -138,7 +140,7 @@ class MoneyLaunderingTests(TestCase):
 
     @patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
     async def test_money_delivery_announces_only_on_new_wanted(
-        self, mock_should_trigger, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_should_trigger, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Laundering cache is populated on first delivery (new Wanted) but not on refresh."""
         from django.core.cache import cache
@@ -169,7 +171,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertIsNone(data2, "Cache should NOT be set on subsequent delivery (Wanted refresh)")
 
     async def test_money_delivery_treasury_cost(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Money delivery should deduct 20% of the payment from the treasury."""
         mock_get_rp_mode.return_value = False
@@ -188,7 +190,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertEqual(initial_balance - final_balance, expected_cost)
 
     async def test_money_delivery_treasury_cost_multiple_cargos(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Multiple Money cargos in one event should sum up for treasury cost."""
         mock_get_rp_mode.return_value = False
@@ -240,7 +242,7 @@ class MoneyLaunderingTests(TestCase):
         self.assertEqual(initial_balance - final_balance, expected_cost)
 
     async def test_non_money_delivery_no_treasury_cost(
-        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self, mock_sc_announce, mock_announce, mock_get_treasury, mock_get_rp_mode, mock_check_floor
     ):
         """Non-Money cargo deliveries should not incur treasury cost."""
         mock_get_rp_mode.return_value = False

@@ -8,6 +8,7 @@ from amc.models import ServerPassengerArrivedLog, SubsidyRule
 from amc_finance.services import (
     send_fund_to_player_wallet,
     register_player_deposit,
+    get_treasury_fund_balance,
 )
 
 
@@ -233,7 +234,7 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
         # let's duplicate the logic exactly.
 
         current_factor = subsidy_factor
-        scaling = int(treasury_balance) / 50_000_000
+        scaling = int(treasury_balance) / 30_000_000
         effective_factor = min(current_factor, current_factor * scaling)
 
         # Recalculate amount based on effective factor?
@@ -259,7 +260,24 @@ def get_passenger_subsidy(passenger):
             return 0
 
 
+TREASURY_SUBSIDY_FLOOR = 5_000_000
+TREASURY_SUBSIDY_CEILING = 30_000_000
+
+
 async def subsidise_player(subsidy, character, session, message=None):
+    if subsidy > 0:
+        treasury_balance = await get_treasury_fund_balance()
+        if treasury_balance <= TREASURY_SUBSIDY_FLOOR:
+            return
+        scale = min(
+            1.0,
+            (float(treasury_balance) - TREASURY_SUBSIDY_FLOOR)
+            / (TREASURY_SUBSIDY_CEILING - TREASURY_SUBSIDY_FLOOR),
+        )
+        subsidy = int(subsidy * scale)
+        if subsidy <= 0:
+            return
+
     if message is None:
         message = "ASEAN Subsidy" if subsidy > 0 else "ASEAN Tax"
     await transfer_money(

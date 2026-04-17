@@ -114,17 +114,19 @@ async def cleanup_expired_jobs():
 def calculate_treasury_multiplier(
     balance: float,
     equilibrium: float = 50_000_000,
-    sensitivity: float = 0.5,
+    sensitivity: float = 2.0,
 ) -> float:
     """
-    Sigmoid-based treasury multiplier for self-correcting spending.
+    Power curve treasury multiplier for aggressive spending control.
     Returns 0.0–2.0:
-    - At equilibrium balance: ~1.0 (normal spending)
-    - Below equilibrium: < 1.0 (tightens spending)
+    - At equilibrium balance: 1.0 (normal spending)
+    - Below equilibrium: < 1.0 (tightens spending aggressively)
     - Above equilibrium: > 1.0 (increases spending)
     """
+    if balance <= 0:
+        return 0.0
     ratio = balance / max(equilibrium, 1)
-    return 2.0 / (1.0 + math.exp(-sensitivity * (ratio - 1.0)))
+    return min(2.0, ratio ** sensitivity)
 
 
 def weighted_shuffle(templates: list, weight_fn) -> list:
@@ -162,7 +164,6 @@ async def monitor_jobs(ctx):
     treasury_mult = calculate_treasury_multiplier(
         float(treasury_balance),
         equilibrium=float(config.treasury_equilibrium),
-        sensitivity=config.treasury_sensitivity,
     )
 
     # Get adaptive multiplier from recent history

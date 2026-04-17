@@ -494,7 +494,6 @@ class JobsCog(commands.Cog):
         treasury_mult = calculate_treasury_multiplier(
             float(treasury_balance),
             equilibrium=float(config.treasury_equilibrium),
-            sensitivity=config.treasury_sensitivity,
         )
 
         quantity_requested = tmpl.default_quantity
