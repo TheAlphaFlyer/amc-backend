@@ -11,7 +11,7 @@ from django.utils import timezone
 from django.http import HttpRequest
 from ninja import Router, Schema
 
-from amc.models import Player
+from amc.models import Player, Character
 from amc_finance.loans import get_player_bank_balance
 from amc_finance.models import Account
 from amc_finance.services import create_journal_entry
@@ -22,6 +22,7 @@ router = Router()
 class BalanceResponse(Schema):
     player_id: int
     discord_user_id: int
+    character_id: int
     character_name: str
     balance: int
 
@@ -33,11 +34,13 @@ class BalanceErrorResponse(Schema):
 class EscrowRequest(Schema):
     player_discord_id: str
     amount: int
+    character_id: int | None = None
 
 
 class RefundRequest(Schema):
     player_discord_id: str
     amount: int
+    character_id: int | None = None
 
 
 class SettleRequest(Schema):
@@ -45,6 +48,8 @@ class SettleRequest(Schema):
     seller_discord_id: str
     amount: int
     seller_type: str = "player"
+    winner_character_id: int | None = None
+    seller_character_id: int | None = None
 
 
 class SettleResponse(Schema):
@@ -52,22 +57,33 @@ class SettleResponse(Schema):
     seller_id: int | None
     amount: int
     seller_type: str
+    winner_character_id: int | None = None
+    seller_character_id: int | None = None
 
 
 class EscrowResponse(Schema):
     player_id: int
     discord_user_id: int
+    character_id: int
     character_name: str
     balance: int
 
 
-async def _get_player_character(discord_id: str):
+async def _resolve_player_character(discord_id: str, character_id: int | None = None):
     try:
         player = await Player.objects.aget(
             discord_user_id=int(discord_id)
         )
     except (Player.DoesNotExist, ValueError):
         return None, None
+
+    if character_id is not None:
+        try:
+            character = await player.characters.aget(pk=character_id)
+            return player, character
+        except Character.DoesNotExist:
+            return player, None
+
     try:
         character = await player.get_latest_character()
     except Exception:
@@ -112,8 +128,8 @@ async def _get_or_create_auction_revenue() -> Account:
     "/balance/",
     response={200: BalanceResponse, 404: BalanceErrorResponse},
 )
-async def get_balance(request: HttpRequest, player_id: str):
-    player, character = await _get_player_character(player_id)
+async def get_balance(request: HttpRequest, player_id: str, character_id: int | None = None):
+    player, character = await _resolve_player_character(player_id, character_id)
     if not player:
         return 404, {"error": "Player not found"}
     if not character:
@@ -124,6 +140,7 @@ async def get_balance(request: HttpRequest, player_id: str):
     return 200, {
         "player_id": player.unique_id,
         "discord_user_id": player.discord_user_id,
+        "character_id": character.pk,
         "character_name": character.name,
         "balance": int(balance),
     }
@@ -137,7 +154,9 @@ async def escrow_funds(request: HttpRequest, payload: EscrowRequest):
     if payload.amount <= 0:
         return 409, {"error": "Amount must be positive"}
 
-    player, character = await _get_player_character(payload.player_discord_id)
+    player, character = await _resolve_player_character(
+        payload.player_discord_id, payload.character_id
+    )
     if not player:
         return 404, {"error": "Player not found"}
     if not character:
@@ -165,6 +184,7 @@ async def escrow_funds(request: HttpRequest, payload: EscrowRequest):
     return 200, {
         "player_id": player.unique_id,
         "discord_user_id": player.discord_user_id,
+        "character_id": character.pk,
         "character_name": character.name,
         "balance": int(checking.balance),
     }
@@ -178,7 +198,9 @@ async def refund_funds(request: HttpRequest, payload: RefundRequest):
     if payload.amount <= 0:
         return 409, {"error": "Amount must be positive"}
 
-    player, character = await _get_player_character(payload.player_discord_id)
+    player, character = await _resolve_player_character(
+        payload.player_discord_id, payload.character_id
+    )
     if not player:
         return 404, {"error": "Player not found"}
     if not character:
@@ -205,6 +227,7 @@ async def refund_funds(request: HttpRequest, payload: RefundRequest):
     return 200, {
         "player_id": player.unique_id,
         "discord_user_id": player.discord_user_id,
+        "character_id": character.pk,
         "character_name": character.name,
         "balance": int(checking.balance),
     }
@@ -218,7 +241,9 @@ async def settle_funds(request: HttpRequest, payload: SettleRequest):
     if payload.amount <= 0:
         return 409, {"error": "Amount must be positive"}
 
-    winner_player, winner_character = await _get_player_character(payload.winner_discord_id)
+    winner_player, winner_character = await _resolve_player_character(
+        payload.winner_discord_id, payload.winner_character_id
+    )
     if not winner_player or not winner_character:
         return 404, {"error": "Winner not found"}
 
@@ -246,9 +271,13 @@ async def settle_funds(request: HttpRequest, payload: SettleRequest):
             "seller_id": None,
             "amount": payload.amount,
             "seller_type": "treasury",
+            "winner_character_id": winner_character.pk,
+            "seller_character_id": None,
         }
     else:
-        seller_player, seller_character = await _get_player_character(payload.seller_discord_id)
+        seller_player, seller_character = await _resolve_player_character(
+            payload.seller_discord_id, payload.seller_character_id
+        )
         if not seller_player or not seller_character:
             return 404, {"error": "Seller not found"}
 
@@ -269,4 +298,6 @@ async def settle_funds(request: HttpRequest, payload: SettleRequest):
             "seller_id": seller_player.unique_id,
             "amount": payload.amount,
             "seller_type": "player",
+            "winner_character_id": winner_character.pk,
+            "seller_character_id": seller_character.pk,
         }

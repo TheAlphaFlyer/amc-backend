@@ -17,6 +17,7 @@ class BalanceEndpointTests(TestCase):
         response = await client.get(f"/balance/?player_id={player.discord_user_id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["balance"], 10000)
+        self.assertEqual(response.json()["character_id"], character.pk)
 
     async def test_get_balance_zero(self):
         client = TestAsyncClient(router)
@@ -44,6 +45,18 @@ class BalanceEndpointTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn("character", response.json()["error"].lower())
 
+    async def test_get_balance_with_character_id(self):
+        client = TestAsyncClient(router)
+        char1 = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: char1.player)()
+        char2 = await sync_to_async(CharacterFactory)(player=player)
+        await register_player_deposit(10000, char1, player)
+        await register_player_deposit(5000, char2, player)
+        response = await client.get(f"/balance/?player_id={player.discord_user_id}&character_id={char2.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["balance"], 5000)
+        self.assertEqual(response.json()["character_id"], char2.pk)
+
 
 class EscrowEndpointTests(TestCase):
     async def test_escrow_success(self):
@@ -56,6 +69,7 @@ class EscrowEndpointTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["balance"], 5000)
+        self.assertEqual(response.json()["character_id"], character.pk)
 
     async def test_escrow_insufficient_funds(self):
         client = TestAsyncClient(router)
@@ -184,13 +198,50 @@ class EscrowEndpointTests(TestCase):
             "player_discord_id": str(player.discord_user_id), "amount": 5000
         })
         await client.post("/refund/", json={
-            "player_discord_id": str(player.discord_user_id), "amount": 5000
+            "player_discord_id": str(player.discord_user_id), "amount": 5000,
+            "character_id": character.pk,
         })
         response = await client.post("/escrow/", json={
             "player_discord_id": str(player.discord_user_id), "amount": 3000
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["balance"], 7000)
+
+    async def test_escrow_with_character_id(self):
+        client = TestAsyncClient(router)
+        char1 = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: char1.player)()
+        char2 = await sync_to_async(CharacterFactory)(player=player)
+        await register_player_deposit(10000, char1, player)
+        await register_player_deposit(5000, char2, player)
+
+        response = await client.post("/escrow/", json={
+            "player_discord_id": str(player.discord_user_id),
+            "amount": 3000,
+            "character_id": char2.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["character_id"], char2.pk)
+        self.assertEqual(response.json()["balance"], 2000)
+
+        checking1 = await Account.objects.aget(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=char1,
+        )
+        self.assertEqual(checking1.balance, 10000)
+
+    async def test_escrow_invalid_character_id(self):
+        client = TestAsyncClient(router)
+        character = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: character.player)()
+        await register_player_deposit(10000, character, player)
+        response = await client.post("/escrow/", json={
+            "player_discord_id": str(player.discord_user_id),
+            "amount": 5000,
+            "character_id": 99999,
+        })
+        self.assertEqual(response.status_code, 404)
 
 
 class RefundEndpointTests(TestCase):
@@ -319,6 +370,35 @@ class RefundEndpointTests(TestCase):
         escrow = await Account.objects.aget(name="Auction Escrow")
         self.assertEqual(escrow.balance, 3000)
 
+    async def test_refund_with_character_id_returns_to_same_account(self):
+        client = TestAsyncClient(router)
+        char1 = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: char1.player)()
+        char2 = await sync_to_async(CharacterFactory)(player=player)
+        await register_player_deposit(10000, char1, player)
+        await register_player_deposit(5000, char2, player)
+
+        await client.post("/escrow/", json={
+            "player_discord_id": str(player.discord_user_id),
+            "amount": 3000,
+            "character_id": char2.pk,
+        })
+        response = await client.post("/refund/", json={
+            "player_discord_id": str(player.discord_user_id),
+            "amount": 3000,
+            "character_id": char2.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["character_id"], char2.pk)
+        self.assertEqual(response.json()["balance"], 5000)
+
+        checking1 = await Account.objects.aget(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=char1,
+        )
+        self.assertEqual(checking1.balance, 10000)
+
 
 class SettleEndpointTests(TestCase):
     async def test_settle_success(self):
@@ -339,6 +419,8 @@ class SettleEndpointTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["amount"], 5000)
+        self.assertEqual(response.json()["winner_character_id"], winner_char.pk)
+        self.assertEqual(response.json()["seller_character_id"], seller_char.pk)
 
     async def test_settle_winner_not_found(self):
         client = TestAsyncClient(router)
@@ -495,9 +577,45 @@ class SettleEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["seller_type"], "treasury")
         self.assertIsNone(response.json()["seller_id"])
+        self.assertIsNone(response.json()["seller_character_id"])
 
         escrow = await Account.objects.aget(name="Auction Escrow")
         self.assertEqual(escrow.balance, 0)
 
         revenue = await Account.objects.aget(name="Auction Revenue")
         self.assertEqual(revenue.balance, 5000)
+
+    async def test_settle_with_seller_character_id(self):
+        client = TestAsyncClient(router)
+        winner_char = await sync_to_async(CharacterFactory)()
+        winner_player = await sync_to_async(lambda: winner_char.player)()
+        seller_char1 = await sync_to_async(CharacterFactory)()
+        seller_player = await sync_to_async(lambda: seller_char1.player)()
+        seller_char2 = await sync_to_async(CharacterFactory)(player=seller_player)
+        await register_player_deposit(10000, winner_char, winner_player)
+
+        await client.post("/escrow/", json={
+            "player_discord_id": str(winner_player.discord_user_id), "amount": 5000
+        })
+        response = await client.post("/settle/", json={
+            "winner_discord_id": str(winner_player.discord_user_id),
+            "seller_discord_id": str(seller_player.discord_user_id),
+            "amount": 5000,
+            "seller_character_id": seller_char2.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["seller_character_id"], seller_char2.pk)
+
+        seller_checking2 = await Account.objects.aget(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=seller_char2,
+        )
+        self.assertEqual(seller_checking2.balance, 5000)
+
+        exists = await Account.objects.filter(
+            account_type=Account.AccountType.LIABILITY,
+            book=Account.Book.BANK,
+            character=seller_char1,
+        ).aexists()
+        self.assertFalse(exists)

@@ -25,7 +25,6 @@ class FullAuctionLifecycleTest(TestCase):
 
         escrow = await _get_or_create_auction_escrow()
 
-        # Bidder A bids $3000 (escrow)
         checking_a = await _get_or_create_checking(bidder_a_char)
         await checking_a.arefresh_from_db()
         self.assertEqual(checking_a.balance, 10000)
@@ -33,40 +32,43 @@ class FullAuctionLifecycleTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds, settle_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        result = await escrow_funds(None, FakePayload(bidder_a.discord_user_id, 3000))
+        result = await escrow_funds(None, FakePayload(bidder_a.discord_user_id, 3000, character_id=bidder_a_char.pk))
         self.assertEqual(result[0], 200)
         await checking_a.arefresh_from_db()
         self.assertEqual(checking_a.balance, 7000)
         await escrow.arefresh_from_db()
         self.assertEqual(escrow.balance, 3000)
 
-        # Bidder B outbids at $5000 (escrow B, refund A)
-        result = await escrow_funds(None, FakePayload(bidder_b.discord_user_id, 5000))
+        result = await escrow_funds(None, FakePayload(bidder_b.discord_user_id, 5000, character_id=bidder_b_char.pk))
         self.assertEqual(result[0], 200)
         await escrow.arefresh_from_db()
         self.assertEqual(escrow.balance, 8000)
 
-        result = await refund_funds(None, FakePayload(bidder_a.discord_user_id, 3000))
+        result = await refund_funds(None, FakePayload(bidder_a.discord_user_id, 3000, character_id=bidder_a_char.pk))
         self.assertEqual(result[0], 200)
         await escrow.arefresh_from_db()
         self.assertEqual(escrow.balance, 5000)
         await checking_a.arefresh_from_db()
         self.assertEqual(checking_a.balance, 10000)
 
-        # Settle: winner B's $5000 → seller
         class FakeSettlePayload:
-            def __init__(self, winner_id, seller_id, amount, seller_type="player"):
+            def __init__(self, winner_id, seller_id, amount, seller_type="player", winner_character_id=None, seller_character_id=None):
                 self.winner_discord_id = str(winner_id)
                 self.seller_discord_id = str(seller_id)
                 self.amount = amount
                 self.seller_type = seller_type
+                self.winner_character_id = winner_character_id
+                self.seller_character_id = seller_character_id
 
         result = await settle_funds(None, FakeSettlePayload(
-            bidder_b.discord_user_id, seller.discord_user_id, 5000
+            bidder_b.discord_user_id, seller.discord_user_id, 5000,
+            winner_character_id=bidder_b_char.pk,
+            seller_character_id=seller_char.pk,
         ))
         self.assertEqual(result[0], 200)
 
@@ -91,11 +93,12 @@ class DoubleEntryInvariantTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        await escrow_funds(None, FakePayload(player.discord_user_id, 5000))
+        await escrow_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
 
         asset_total = Decimal(0)
         liability_total = Decimal(0)
@@ -106,7 +109,7 @@ class DoubleEntryInvariantTest(TestCase):
                 liability_total += account.balance
         self.assertEqual(asset_total, liability_total)
 
-        await refund_funds(None, FakePayload(player.discord_user_id, 5000))
+        await refund_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
 
         asset_total = Decimal(0)
         liability_total = Decimal(0)
@@ -127,12 +130,13 @@ class JournalEntryBalancedTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        await escrow_funds(None, FakePayload(player.discord_user_id, 5000))
-        await refund_funds(None, FakePayload(player.discord_user_id, 5000))
+        await escrow_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
+        await refund_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
 
         async for je in JournalEntry.objects.all():
             entries = [e async for e in je.entries.all()]
@@ -154,13 +158,14 @@ class NoNegativeBalancesTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        await escrow_funds(None, FakePayload(player1.discord_user_id, 5000))
-        await escrow_funds(None, FakePayload(player2.discord_user_id, 3000))
-        await refund_funds(None, FakePayload(player1.discord_user_id, 5000))
+        await escrow_funds(None, FakePayload(player1.discord_user_id, 5000, character_id=char1.pk))
+        await escrow_funds(None, FakePayload(player2.discord_user_id, 3000, character_id=char2.pk))
+        await refund_funds(None, FakePayload(player1.discord_user_id, 5000, character_id=char1.pk))
 
         async for account in Account.objects.all():
             self.assertGreaterEqual(account.balance, 0)
@@ -179,16 +184,16 @@ class CancelAuctionRefundTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        await escrow_funds(None, FakePayload(player1.discord_user_id, 5000))
-        await escrow_funds(None, FakePayload(player2.discord_user_id, 3000))
+        await escrow_funds(None, FakePayload(player1.discord_user_id, 5000, character_id=char1.pk))
+        await escrow_funds(None, FakePayload(player2.discord_user_id, 3000, character_id=char2.pk))
 
-        # Cancel: refund both
-        await refund_funds(None, FakePayload(player1.discord_user_id, 5000))
-        await refund_funds(None, FakePayload(player2.discord_user_id, 3000))
+        await refund_funds(None, FakePayload(player1.discord_user_id, 5000, character_id=char1.pk))
+        await refund_funds(None, FakePayload(player2.discord_user_id, 3000, character_id=char2.pk))
 
         escrow = await _get_or_create_auction_escrow()
         await escrow.arefresh_from_db()
@@ -211,22 +216,20 @@ class ReEscrowAfterRefundTest(TestCase):
         from amc.api.auction_routes import escrow_funds, refund_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        # Bid $3000
-        result = await escrow_funds(None, FakePayload(player.discord_user_id, 3000))
+        result = await escrow_funds(None, FakePayload(player.discord_user_id, 3000, character_id=char.pk))
         self.assertEqual(result[0], 200)
         self.assertEqual(result[1]["balance"], 7000)
 
-        # Outbid (refund)
-        result = await refund_funds(None, FakePayload(player.discord_user_id, 3000))
+        result = await refund_funds(None, FakePayload(player.discord_user_id, 3000, character_id=char.pk))
         self.assertEqual(result[0], 200)
         self.assertEqual(result[1]["balance"], 10000)
 
-        # Re-bid $5000
-        result = await escrow_funds(None, FakePayload(player.discord_user_id, 5000))
+        result = await escrow_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
         self.assertEqual(result[0], 200)
         self.assertEqual(result[1]["balance"], 5000)
 
@@ -244,14 +247,15 @@ class MultipleAuctionsSamePlayerTest(TestCase):
         from amc.api.auction_routes import escrow_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
-        result1 = await escrow_funds(None, FakePayload(player.discord_user_id, 3000))
+        result1 = await escrow_funds(None, FakePayload(player.discord_user_id, 3000, character_id=char.pk))
         self.assertEqual(result1[0], 200)
 
-        result2 = await escrow_funds(None, FakePayload(player.discord_user_id, 5000))
+        result2 = await escrow_funds(None, FakePayload(player.discord_user_id, 5000, character_id=char.pk))
         self.assertEqual(result2[0], 200)
 
         checking = await _get_or_create_checking(char)
@@ -276,20 +280,25 @@ class SettleTransfersToSellerTest(TestCase):
         from amc.api.auction_routes import escrow_funds, settle_funds
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
         class FakeSettlePayload:
-            def __init__(self, winner_id, seller_id, amount, seller_type="player"):
+            def __init__(self, winner_id, seller_id, amount, seller_type="player", winner_character_id=None, seller_character_id=None):
                 self.winner_discord_id = str(winner_id)
                 self.seller_discord_id = str(seller_id)
                 self.amount = amount
                 self.seller_type = seller_type
+                self.winner_character_id = winner_character_id
+                self.seller_character_id = seller_character_id
 
-        await escrow_funds(None, FakePayload(winner.discord_user_id, 5000))
+        await escrow_funds(None, FakePayload(winner.discord_user_id, 5000, character_id=winner_char.pk))
         await settle_funds(None, FakeSettlePayload(
-            winner.discord_user_id, seller.discord_user_id, 5000
+            winner.discord_user_id, seller.discord_user_id, 5000,
+            winner_character_id=winner_char.pk,
+            seller_character_id=seller_char.pk,
         ))
 
         winner_checking = await _get_or_create_checking(winner_char)
@@ -315,20 +324,24 @@ class SettleToTreasuryTest(TestCase):
         from amc.api.auction_routes import escrow_funds, settle_funds, _get_or_create_auction_revenue
 
         class FakePayload:
-            def __init__(self, discord_id, amount):
+            def __init__(self, discord_id, amount, character_id=None):
                 self.player_discord_id = str(discord_id)
                 self.amount = amount
+                self.character_id = character_id
 
         class FakeSettlePayload:
-            def __init__(self, winner_id, seller_id, amount, seller_type="player"):
+            def __init__(self, winner_id, seller_id, amount, seller_type="player", winner_character_id=None, seller_character_id=None):
                 self.winner_discord_id = str(winner_id)
                 self.seller_discord_id = str(seller_id)
                 self.amount = amount
                 self.seller_type = seller_type
+                self.winner_character_id = winner_character_id
+                self.seller_character_id = seller_character_id
 
-        await escrow_funds(None, FakePayload(winner.discord_user_id, 5000))
+        await escrow_funds(None, FakePayload(winner.discord_user_id, 5000, character_id=winner_char.pk))
         await settle_funds(None, FakeSettlePayload(
-            winner.discord_user_id, "0", 5000, seller_type="treasury"
+            winner.discord_user_id, "0", 5000, seller_type="treasury",
+            winner_character_id=winner_char.pk,
         ))
 
         escrow = await _get_or_create_auction_escrow()
@@ -347,3 +360,35 @@ class SettleToTreasuryTest(TestCase):
             else:
                 liability_total += account.balance
         self.assertEqual(asset_total, liability_total)
+
+
+class MultiCharacterRefundTest(TestCase):
+    async def test_refund_goes_to_correct_character(self):
+        char1 = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: char1.player)()
+        char2 = await sync_to_async(CharacterFactory)(player=player)
+        await register_player_deposit(10000, char1, player)
+        await register_player_deposit(5000, char2, player)
+
+        from amc.api.auction_routes import escrow_funds, refund_funds
+
+        class FakePayload:
+            def __init__(self, discord_id, amount, character_id=None):
+                self.player_discord_id = str(discord_id)
+                self.amount = amount
+                self.character_id = character_id
+
+        await escrow_funds(None, FakePayload(player.discord_user_id, 3000, character_id=char2.pk))
+
+        checking1 = await _get_or_create_checking(char1)
+        checking2 = await _get_or_create_checking(char2)
+        await checking1.arefresh_from_db()
+        await checking2.arefresh_from_db()
+        self.assertEqual(checking1.balance, 10000)
+        self.assertEqual(checking2.balance, 2000)
+
+        await refund_funds(None, FakePayload(player.discord_user_id, 3000, character_id=char2.pk))
+        await checking1.arefresh_from_db()
+        await checking2.arefresh_from_db()
+        self.assertEqual(checking1.balance, 10000)
+        self.assertEqual(checking2.balance, 5000)
