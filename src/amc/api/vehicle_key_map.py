@@ -164,4 +164,9 @@ VEHICLE_KEY_MAP: dict[str, int] = {
     "Ambi": VehicleKey.VEHICLE_KEY_AMBI,
     "Tavan_Ambulance": VehicleKey.VEHICLE_KEY_TAVAN_AMBULANCE,
     "Brutus_Ambulance": VehicleKey.VEHICLE_KEY_BRUTUS_AMBULANCE,
+    "Jemusi_Flatbed": VehicleKey.VEHICLE_KEY_JEMUSI_FLATBED,
+    "Atlas_6x2_Garbage": VehicleKey.VEHICLE_KEY_ATLAS_6X2_GARBAGE,
+    "Goliath4": VehicleKey.VEHICLE_KEY_GOLIATH4,
+    "Goliath6": VehicleKey.VEHICLE_KEY_GOLIATH6,
+    "Goliath10": VehicleKey.VEHICLE_KEY_GOLIATH10,
 }
