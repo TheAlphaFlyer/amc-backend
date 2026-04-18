@@ -619,3 +619,48 @@ class SettleEndpointTests(TestCase):
             character=seller_char1,
         ).aexists()
         self.assertFalse(exists)
+
+
+class CharactersEndpointTests(TestCase):
+    async def test_list_characters_single(self):
+        client = TestAsyncClient(router)
+        character = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: character.player)()
+        await register_player_deposit(10000, character, player)
+        response = await client.get(f"/characters/?player_id={player.discord_user_id}")
+        self.assertEqual(response.status_code, 200)
+        chars = response.json()["characters"]
+        self.assertEqual(len(chars), 1)
+        self.assertEqual(chars[0]["character_id"], character.pk)
+        self.assertEqual(chars[0]["character_name"], character.name)
+        self.assertEqual(chars[0]["balance"], 10000)
+
+    async def test_list_characters_multiple(self):
+        client = TestAsyncClient(router)
+        char1 = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: char1.player)()
+        char2 = await sync_to_async(CharacterFactory)(player=player)
+        await register_player_deposit(10000, char1, player)
+        await register_player_deposit(5000, char2, player)
+        response = await client.get(f"/characters/?player_id={player.discord_user_id}")
+        self.assertEqual(response.status_code, 200)
+        chars = response.json()["characters"]
+        self.assertEqual(len(chars), 2)
+        balances = {c["character_id"]: c["balance"] for c in chars}
+        self.assertEqual(balances[char1.pk], 10000)
+        self.assertEqual(balances[char2.pk], 5000)
+
+    async def test_list_characters_player_not_found(self):
+        client = TestAsyncClient(router)
+        response = await client.get("/characters/?player_id=999999999")
+        self.assertEqual(response.status_code, 404)
+
+    async def test_list_characters_no_balance(self):
+        client = TestAsyncClient(router)
+        character = await sync_to_async(CharacterFactory)()
+        player = await sync_to_async(lambda: character.player)()
+        response = await client.get(f"/characters/?player_id={player.discord_user_id}")
+        self.assertEqual(response.status_code, 200)
+        chars = response.json()["characters"]
+        self.assertEqual(len(chars), 1)
+        self.assertEqual(chars[0]["balance"], 0)

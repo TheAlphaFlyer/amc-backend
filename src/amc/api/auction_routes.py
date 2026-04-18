@@ -27,6 +27,18 @@ class BalanceResponse(Schema):
     balance: int
 
 
+class CharacterEntry(Schema):
+    character_id: int
+    character_name: str
+    balance: int
+
+
+class CharactersResponse(Schema):
+    player_id: int
+    discord_user_id: int
+    characters: list[CharacterEntry]
+
+
 class BalanceErrorResponse(Schema):
     error: str
 
@@ -122,6 +134,32 @@ async def _get_or_create_auction_revenue() -> Account:
         name="Auction Revenue",
     )
     return revenue
+
+
+@router.get(
+    "/characters/",
+    response={200: CharactersResponse, 404: BalanceErrorResponse},
+)
+async def list_characters(request: HttpRequest, player_id: str):
+    try:
+        player = await Player.objects.aget(discord_user_id=int(player_id))
+    except (Player.DoesNotExist, ValueError):
+        return 404, {"error": "Player not found"}
+
+    characters = []
+    async for character in player.characters.all():
+        balance = await get_player_bank_balance(character)
+        characters.append({
+            "character_id": character.pk,
+            "character_name": character.name,
+            "balance": int(balance),
+        })
+
+    return 200, {
+        "player_id": player.unique_id,
+        "discord_user_id": player.discord_user_id,
+        "characters": characters,
+    }
 
 
 @router.get(
