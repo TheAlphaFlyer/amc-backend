@@ -18,7 +18,7 @@ TAG_PATTERNS = [
     re.compile(r"\[MODS\]\s*", re.IGNORECASE),
     re.compile(r"\[MOD\]\s*", re.IGNORECASE),
     re.compile(r"\[GOV\d*\]\s*", re.IGNORECASE),
-    re.compile(r"\[DOT\]\s*", re.IGNORECASE),
+    # NOTE: [DOT] is intentionally NOT stripped — it is a permanent player tag.
 ]
 
 
