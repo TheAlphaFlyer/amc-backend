@@ -163,3 +163,10 @@ class RescueRequestSchema(Schema):
     responder_count: int
     message: str
     location: Optional[dict] = None
+
+
+class TeleportPointSchema(Schema):
+    name: str
+    x: float
+    y: float
+    z: float
