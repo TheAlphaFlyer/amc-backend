@@ -2546,8 +2546,12 @@ class JobPostingConfig(models.Model):
         help_text="Treasury balance at which spending is 'normal' (multiplier = 1.0)",
     )
     treasury_sensitivity = models.FloatField(
-        default=0.5,
+        default=1.5,
         help_text="How aggressively spending changes with treasury balance (higher = steeper curve)",
+    )
+    treasury_cap_ratio = models.FloatField(
+        default=4.0,
+        help_text="Ratio at which above-equilibrium multiplier reaches 2.0 (higher = slower growth)",
     )
     max_posts_per_tick = models.PositiveIntegerField(
         default=3,

@@ -425,7 +425,7 @@ WEALTH_TAX_BRACKETS = [
 ]
 
 # Sovereign Reserves — NIRC (Net Investment Returns Contribution)
-NIRC_DAILY_RATE = Decimal("0.05")
+NIRC_DAILY_RATE = Decimal("0.05") / 30
 
 
 def wealth_tax_hourly_rate(k: float, t_hours: float) -> float:
@@ -716,8 +716,13 @@ async def transfer_nirc(ctx):
     """Daily cron: transfer NIRC (Net Investment Returns Contribution)
     from Sovereign Reserves to Operating Treasury.
 
-    Transfers NIRC_DAILY_RATE of reserves balance daily.
+    Transfers a treasury-health-responsive portion of reserves balance daily.
+    Rate scales inversely with treasury_mult: low treasury → faster transfer,
+    high treasury → slower transfer. Clamped at 10× base rate.
     """
+    from amc.jobs import calculate_treasury_multiplier
+    from amc.models import JobPostingConfig
+
     reserves, _ = await Account.objects.aget_or_create(
         account_type=Account.AccountType.ASSET,
         book=Account.Book.GOVERNMENT,
@@ -734,7 +739,17 @@ async def transfer_nirc(ctx):
     if reserves.balance <= 0:
         return
 
-    amount = int(reserves.balance * NIRC_DAILY_RATE)
+    config = await JobPostingConfig.aget_config()
+    treasury_mult = calculate_treasury_multiplier(
+        float(treasury_fund.balance),
+        equilibrium=float(config.treasury_equilibrium),
+        sensitivity=float(config.treasury_sensitivity),
+        cap_ratio=float(config.treasury_cap_ratio),
+    )
+    nirc_rate_multiplier = min(10.0, 1.0 / max(treasury_mult, 0.1))
+    effective_rate = NIRC_DAILY_RATE * Decimal(str(nirc_rate_multiplier))
+
+    amount = int(reserves.balance * effective_rate)
     if amount <= 0:
         return
 

@@ -63,6 +63,7 @@ CARGO_PER_KM_THRESHOLDS: dict[str, float] = {
     "BeanPallet": 200,
     "BreadBox": 400,
     "MilitarySupplyBox_01": 800,
+    "Moonshine": 1000,
 }
 
 CARGO_PER_UNIT_THRESHOLDS: dict[str, float] = {
@@ -90,6 +91,7 @@ CARGO_PER_UNIT_THRESHOLDS: dict[str, float] = {
     "BeanPallet": 10_000,
     "BreadBox": 12_000,
     "MilitarySupplyBox_01": 15_000,
+    "Moonshine": 20_000,
 }
 
 # Absolute per-delivery ceiling — catches anything absurd regardless of distance.
@@ -109,6 +111,7 @@ CARGO_MAX_ABSOLUTE_PAYMENT: dict[str, float] = {
     "Container_40ft_01": 300_000,
     "MeatBox": 300_000,
     "ToyBoxes": 300_000,
+    "Moonshine": 500_000,
 }
 
 # Minimum meaningful distance (metres).  Deliveries below this are
