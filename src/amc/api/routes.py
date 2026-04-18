@@ -44,6 +44,7 @@ from .schema import (
     VehicleDealershipSchema,
     # Commands
     ServerCommandSchema,
+    ShortcutZoneSchema,
 )
 from django.conf import settings
 from amc.models import (
@@ -71,6 +72,7 @@ from amc.models import (
     ServerPassengerArrivedLog,
     VehicleDecal,
     VehicleDealership,
+    ShortcutZone,
 )
 from amc.utils import lowercase_first_char_in_keys
 from amc.save_file import (
@@ -1016,8 +1018,6 @@ async def list_server_commands(request):
 # Shortcut Zones
 # ═══════════════════════════════════════════════════════════════
 
-from .schema import ShortcutZoneSchema
-from amc.models import ShortcutZone
 
 shortcut_zones_router = Router()
 
