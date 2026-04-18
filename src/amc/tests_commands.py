@@ -772,6 +772,48 @@ class CommandsTestCase(TestCase):
                 coro.close()
             self.ctx.announce.assert_called()
 
+    async def test_rescue_reminder_sends_reminder(self):
+        from amc.rescue_reminder import send_rescue_reminders
+
+        mock_req = MagicMock()
+        mock_req.timestamp = timezone.now() - timedelta(minutes=2)
+        mock_req.last_reminded_at = None
+        mock_req.character.name = "TestChar"
+        mock_req.id = 42
+        mock_req.message = "Help!"
+        mock_req.asave = AsyncMock()
+
+        with (
+            patch(
+                "amc.rescue_reminder.RescueRequest.objects.filter"
+            ) as mock_filter,
+            patch("amc.rescue_reminder.announce", new=AsyncMock()) as mock_announce,
+            patch("amc.rescue_reminder.forward_to_discord", new=AsyncMock()),
+        ):
+            mock_filter.return_value.select_related.return_value.order_by.return_value = [
+                mock_req
+            ]
+
+            ctx = {"http_client": MagicMock(), "discord_client": None}
+            await send_rescue_reminders(ctx)
+            mock_announce.assert_called()
+            mock_req.asave.assert_called()
+
+    async def test_rescue_reminder_no_open_requests(self):
+        from amc.rescue_reminder import send_rescue_reminders
+
+        with (
+            patch(
+                "amc.rescue_reminder.RescueRequest.objects.filter"
+            ) as mock_filter,
+            patch("amc.rescue_reminder.announce", new=AsyncMock()) as mock_announce,
+        ):
+            mock_filter.return_value.select_related.return_value.order_by.return_value = []
+
+            ctx = {"http_client": MagicMock(), "discord_client": None}
+            await send_rescue_reminders(ctx)
+            mock_announce.assert_not_called()
+
     # --- Admin & Spawning Tests ---
 
     async def test_cmd_tp_player(self):

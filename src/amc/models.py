@@ -2260,6 +2260,7 @@ class RescueRequest(models.Model):
     )
     message = models.TextField(blank=True)
     location = models.PointField(srid=0, dim=3, null=True, blank=True)
+    last_reminded_at = models.DateTimeField(null=True, blank=True)
 
 
 @final
