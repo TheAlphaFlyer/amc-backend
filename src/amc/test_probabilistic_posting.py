@@ -104,7 +104,7 @@ class ProbabilisticPostingTestCase(TestCase):
     async def test_equilibrium_treasury_posts_all_slots(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
-        """At equilibrium (treasury_mult=1.0), every slot rolls random() < 1.0 → all post."""
+        """At equilibrium (treasury_mult=1.0), every slot rolls random() < 1.0 -> all post."""
         ctx = {"http_client": AsyncMock()}
         await monitor_jobs(ctx)
 
@@ -112,7 +112,7 @@ class ProbabilisticPostingTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        # 1 template → max 1 job, treasury_mult=1.0 → always posts
+        # 1 template -> max 1 job, treasury_mult=1.0 -> always posts
         self.assertEqual(job_count, 1)
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
@@ -126,13 +126,9 @@ class ProbabilisticPostingTestCase(TestCase):
         """With treasury_mult < 1.0 and random returning 0.6, slots below threshold are skipped."""
         from amc import jobs as jobs_module
 
-        # treasury_mult at equilibrium = 1.0, but force random() to return 0.6
-        # Since 0.6 < 1.0 = treasury_mult, all slots pass at equilibrium
-        # To test the skip behavior, we need treasury_mult < 1.0
-
-        # Set treasury to 25M (50% of 50M equilibrium → treasury_mult ≈ 0.5^1.5 ≈ 0.354)
+        # Set treasury to 25M (50% of 50M equilibrium -> treasury_mult ~ 0.354)
         mock_treasury.return_value = Decimal("25000000")
-        # random() returns 0.5 → 0.5 < 0.354 is False → slot is skipped
+        # random() returns 0.5 -> 0.5 < 0.354 is False -> slot is skipped
         with patch.object(jobs_module.random, "random", return_value=0.5):
             ctx = {"http_client": AsyncMock()}
             await monitor_jobs(ctx)
@@ -141,7 +137,7 @@ class ProbabilisticPostingTestCase(TestCase):
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        # random=0.5, treasury_mult≈0.354: 0.5 < 0.354 → False → no job posted
+        # random=0.5, treasury_mult~0.354: 0.5 < 0.354 -> False -> no job posted
         self.assertEqual(job_count, 0)
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
@@ -156,7 +152,7 @@ class ProbabilisticPostingTestCase(TestCase):
         from amc import jobs as jobs_module
 
         mock_treasury.return_value = Decimal("25000000")
-        # random() returns 0.1 → 0.1 < 0.354 → True → slot is filled
+        # random() returns 0.1 -> 0.1 < 0.354 -> True -> slot is filled
         with patch.object(jobs_module.random, "random", return_value=0.1):
             ctx = {"http_client": AsyncMock()}
             await monitor_jobs(ctx)
@@ -246,33 +242,29 @@ class ProbabilisticPostingMultipleSlotsTestCase(TestCase):
     async def test_multiple_slots_probabilistic_distribution(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
-        """With 3 templates, treasury_mult=0.5, and random returning [0.1, 0.4, 0.7]:
-        slot 1: 0.1 < 0.5 → post
-        slot 2: 0.4 < 0.5 → post
-        slot 3: 0.7 < 0.5 → skip
-        → 2 jobs posted
-        """
+        """With 3 templates and treasury_mult=0.5, controlled random gives 2 of 3 slots."""
         from amc import jobs as jobs_module
 
-        mock_treasury.return_value = Decimal("35355339")
-        # treasury_mult ≈ 0.595 at 35.36M/50M equilibrium
-
-        # Provide controlled values for the probability check, 0.0 default for extra calls
-        # (weighted_shuffle and bonus multipliers also call random internally)
-        controlled = iter([0.1, 0.4, 0.7])
         with patch.object(
-            jobs_module.random,
-            "random",
-            side_effect=itertools.chain(controlled, itertools.repeat(0.0)),
+            jobs_module, "calculate_treasury_multiplier", return_value=0.5
         ):
-            ctx = {"http_client": AsyncMock()}
-            await monitor_jobs(ctx)
+            # Probability gate values: 0.1 < 0.5 pass, 0.8 >= 0.5 fail, 0.3 < 0.5 pass
+            # Pad with 0.5 for weighted_shuffle/bonus calls after the gate
+            prob_values = [0.1, 0.8, 0.3]
+            shuffle_pad = [0.5] * 20
+            controlled = iter(prob_values + shuffle_pad)
+            with patch.object(
+                jobs_module.random,
+                "random",
+                side_effect=itertools.chain(controlled, itertools.repeat(0.5)),
+            ):
+                ctx = {"http_client": AsyncMock()}
+                await monitor_jobs(ctx)
 
         job_count = await DeliveryJob.objects.filter(
             fulfilled_at__isnull=True,
             expired_at__gte=timezone.now(),
         ).acount()
-        # 2 out of 3 slots passed the probability check (0.1 and 0.4 < 0.595, 0.7 > 0.595)
         self.assertEqual(job_count, 2)
 
     @patch(_PATCHES["sc_conflicts"], new_callable=AsyncMock, return_value=set())
@@ -283,20 +275,23 @@ class ProbabilisticPostingMultipleSlotsTestCase(TestCase):
     async def test_all_lucky_at_moderate_treasury(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
-        """At moderate treasury, lucky rolls still post all slots."""
+        """At treasury_mult=0.5, all lucky rolls (all < 0.5) post all slots."""
         from amc import jobs as jobs_module
 
-        mock_treasury.return_value = Decimal("35355339")
-
-        # All values < treasury_mult → all post. Default 0.0 for extra calls.
-        controlled = iter([0.1, 0.2, 0.3])
         with patch.object(
-            jobs_module.random,
-            "random",
-            side_effect=itertools.chain(controlled, itertools.repeat(0.0)),
+            jobs_module, "calculate_treasury_multiplier", return_value=0.5
         ):
-            ctx = {"http_client": AsyncMock()}
-            await monitor_jobs(ctx)
+            # All probability gate values < 0.5 -> all pass
+            prob_values = [0.1, 0.2, 0.3]
+            shuffle_pad = [0.5] * 20
+            controlled = iter(prob_values + shuffle_pad)
+            with patch.object(
+                jobs_module.random,
+                "random",
+                side_effect=itertools.chain(controlled, itertools.repeat(0.5)),
+            ):
+                ctx = {"http_client": AsyncMock()}
+                await monitor_jobs(ctx)
 
         job_count = await DeliveryJob.objects.filter(
             fulfilled_at__isnull=True,
@@ -312,20 +307,22 @@ class ProbabilisticPostingMultipleSlotsTestCase(TestCase):
     async def test_all_unlucky_at_moderate_treasury(
         self, mock_players, mock_announce, mock_treasury, mock_escrow, mock_conflicts
     ):
-        """At moderate treasury, unlucky rolls skip all slots."""
+        """At treasury_mult=0.5, all unlucky rolls (all > 0.5) skip all slots."""
         from amc import jobs as jobs_module
 
-        mock_treasury.return_value = Decimal("35355339")
-
-        # All controlled values > treasury_mult → none post. Default 0.99 for extras.
-        controlled = iter([0.8, 0.9, 0.95])
         with patch.object(
-            jobs_module.random,
-            "random",
-            side_effect=itertools.chain(controlled, itertools.repeat(0.99)),
+            jobs_module, "calculate_treasury_multiplier", return_value=0.5
         ):
-            ctx = {"http_client": AsyncMock()}
-            await monitor_jobs(ctx)
+            # All probability gate values > 0.5 -> all fail, returns early
+            prob_values = [0.8, 0.9, 0.95]
+            controlled = iter(prob_values)
+            with patch.object(
+                jobs_module.random,
+                "random",
+                side_effect=itertools.chain(controlled, itertools.repeat(0.99)),
+            ):
+                ctx = {"http_client": AsyncMock()}
+                await monitor_jobs(ctx)
 
         job_count = await DeliveryJob.objects.filter(
             fulfilled_at__isnull=True,
