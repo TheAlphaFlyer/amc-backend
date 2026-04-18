@@ -4,6 +4,7 @@ from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from ninja import Router
 
+from amc.models import Delivery
 from amc_finance.treasury_summary import (
     get_treasury_summary,
     get_treasury_trend,
@@ -82,7 +83,7 @@ def treasury_spending(request, days: int = 7):
     Args:
         days: Number of days to look back (default: 7).
     """
-    from amc.models import Delivery, DeliveryJob, SubsidyRule
+    from amc.models import DeliveryJob, SubsidyRule
 
     end_date = timezone.now().date() - timedelta(days=1)
     start_date = end_date - timedelta(days=days - 1)
@@ -121,9 +122,37 @@ def treasury_spending(request, days: int = 7):
 
     active_rules = list(
         SubsidyRule.objects.filter(active=True)
-        .values("name", "reward_type", "reward_value", "allocation", "spent", "priority")
+        .prefetch_related("cargos")
         .order_by("-priority")
     )
+
+    # Compute weekly spend per rule by matching cargo types
+    cargo_to_subsidy = {
+        row["cargo_key"]: row["total_subsidy"] or 0
+        for row in subsidy_by_cargo
+    }
+    weekly_rule_spends: dict[int, int] = {}
+    for rule in active_rules:
+        rule_cargo_keys = set(rule.cargos.values_list("key", flat=True))
+        if not rule_cargo_keys:
+            # Rule applies to ALL cargos — sum all cargo subsidies not claimed by other rules
+            weekly_rule_spends[rule.pk] = 0  # skip broad rules for now
+        else:
+            weekly_rule_spends[rule.pk] = sum(
+                cargo_to_subsidy.get(k, 0) for k in rule_cargo_keys
+            )
+
+    active_rules_data = []
+    for rule in active_rules:
+        active_rules_data.append({
+            "name": rule.name,
+            "reward_type": rule.reward_type,
+            "reward_value": float(rule.reward_value),
+            "allocation": float(rule.allocation),
+            "spent": float(rule.spent),
+            "weekly_spent": float(weekly_rule_spends.get(rule.pk, 0)),
+            "priority": rule.priority,
+        })
 
     return {
         "period": {
@@ -161,15 +190,5 @@ def treasury_spending(request, days: int = 7):
             "fulfilled_count": total_bonuses["fulfilled_count"],
             "expired_count": total_bonuses["expired_count"],
         },
-        "active_subsidy_rules": [
-            {
-                "name": rule["name"],
-                "reward_type": rule["reward_type"],
-                "reward_value": float(rule["reward_value"]),
-                "allocation": float(rule["allocation"]),
-                "spent": float(rule["spent"]),
-                "priority": rule["priority"],
-            }
-            for rule in active_rules
-        ],
+        "active_subsidy_rules": active_rules_data,
     }
