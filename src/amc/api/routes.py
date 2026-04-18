@@ -24,7 +24,6 @@ from .schema import (
     PersonalStandingSchema,
     TeamStandingSchema,
     DeliveryPointSchema,
-    DeliveryPointDetailSchema,
     DeliveryJobSchema,
     DeliveryJobSummarySchema,
     LapSectionTimeSchema,
@@ -552,7 +551,7 @@ async def list_deliverypoints(request):
     return [dp async for dp in DeliveryPoint.objects.all()]
 
 
-@deliverypoints_router.get("/{guid}/", response=DeliveryPointDetailSchema)
+@deliverypoints_router.get("/{guid}/", response=DeliveryPointSchema)
 async def get_deliverypoint(request, guid):
     return await DeliveryPoint.objects.aget(guid=guid)
 
