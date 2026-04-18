@@ -44,63 +44,70 @@
     ragenix,
     git-hooks-nix,
     ...
-  }:
-    let
-      inherit (nixpkgs) lib;
-      # TODO: patch on packager level
-      # uv2nix makes it harder to patch source code, since we're importing wheels not sdist
-      # These are needed for GeoDjango
-      mkPostgisDeps = pkgs: {
-        GEOS_LIBRARY_PATH = ''${pkgs.geos}/lib/libgeos_c.${if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so"}'';
-        GDAL_LIBRARY_PATH = ''${pkgs.gdal}/lib/libgdal.${if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so"}'';
-      };
-      backendOptionsSubmodule = {
-        options = {
-          enable = lib.mkEnableOption "Enable Module";
-          user = lib.mkOption {
-            type = lib.types.str;
-            default = "amc";
-            description = "The user that the process runs under";
-          };
-          group = lib.mkOption {
-            type = lib.types.str;
-            default = "amc";
-            description = "The user group that the process runs under";
-          };
-          host = lib.mkOption {
-            type = lib.types.str;
-            default = "0.0.0.0";
-            example = true;
-            description = "The host for the main process to listen to";
-          };
-          allowedHosts = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [];
-            example = ["www.example.com"];
-          };
-          port = lib.mkOption {
-            type = lib.types.int;
-            default = 8000;
-            example = true;
-            description = "The port number for the main process to listen to";
-          };
-          workers = lib.mkOption {
-            type = lib.types.int;
-            default = 1;
-            example = true;
-            description = "The port number for the main process to listen to";
-          };
-          environment = lib.mkOption {
-            type = lib.types.attrsOf lib.types.str;
-            default = {};
-            description = "Environment variables";
-          };
-          environmentFile = lib.mkOption {
-            type = lib.types.path;
-          };
+  }: let
+    inherit (nixpkgs) lib;
+    # TODO: patch on packager level
+    # uv2nix makes it harder to patch source code, since we're importing wheels not sdist
+    # These are needed for GeoDjango
+    mkPostgisDeps = pkgs: {
+      GEOS_LIBRARY_PATH = ''${pkgs.geos}/lib/libgeos_c.${
+          if pkgs.stdenv.hostPlatform.isDarwin
+          then "dylib"
+          else "so"
+        }'';
+      GDAL_LIBRARY_PATH = ''${pkgs.gdal}/lib/libgdal.${
+          if pkgs.stdenv.hostPlatform.isDarwin
+          then "dylib"
+          else "so"
+        }'';
+    };
+    backendOptionsSubmodule = {
+      options = {
+        enable = lib.mkEnableOption "Enable Module";
+        user = lib.mkOption {
+          type = lib.types.str;
+          default = "amc";
+          description = "The user that the process runs under";
+        };
+        group = lib.mkOption {
+          type = lib.types.str;
+          default = "amc";
+          description = "The user group that the process runs under";
+        };
+        host = lib.mkOption {
+          type = lib.types.str;
+          default = "0.0.0.0";
+          example = true;
+          description = "The host for the main process to listen to";
+        };
+        allowedHosts = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = [];
+          example = ["www.example.com"];
+        };
+        port = lib.mkOption {
+          type = lib.types.int;
+          default = 8000;
+          example = true;
+          description = "The port number for the main process to listen to";
+        };
+        workers = lib.mkOption {
+          type = lib.types.int;
+          default = 1;
+          example = true;
+          description = "The port number for the main process to listen to";
+        };
+        environment = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = {};
+          description = "Environment variables";
+        };
+        environmentFile = lib.mkOption {
+          type = lib.types.path;
         };
       };
-    in
+    };
+  in
     flake-parts.lib.mkFlake {inherit inputs;} {
       imports = [
         git-hooks-nix.flakeModule
@@ -119,7 +126,12 @@
           amc-scripts = self.packages.${prev.system}.scripts;
         };
 
-        nixosModules.containers = { config, pkgs, lib, ... }: let
+        nixosModules.containers = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }: let
           cfg = config.services.amc-backend-containers;
         in {
           options.services.amc-backend-containers = {
@@ -189,12 +201,22 @@
               restartIfChanged = true;
               # Forward PostgreSQL port for Tailscale-only bot read access
               forwardPorts = [
-                { containerPort = 5432; hostPort = 5432; protocol = "tcp"; }
+                {
+                  containerPort = 5432;
+                  hostPort = 5432;
+                  protocol = "tcp";
+                }
               ];
-              bindMounts = {
-                "/etc/ssh/ssh_host_ed25519_key".isReadOnly = true;
-              } // cfg.extraBindMounts;
-              config = { config, pkgs, ... }: {
+              bindMounts =
+                {
+                  "/etc/ssh/ssh_host_ed25519_key".isReadOnly = true;
+                }
+                // cfg.extraBindMounts;
+              config = {
+                config,
+                pkgs,
+                ...
+              }: {
                 imports = [
                   self.nixosModules.backend
                   ragenix.nixosModules.default
@@ -203,24 +225,30 @@
                 environment.variables = {
                   inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
                 };
-                age.identityPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+                age.identityPaths = ["/etc/ssh/ssh_host_ed25519_key"];
                 age.secrets.backend = lib.mkIf (cfg.secretFile != null) {
                   file = cfg.secretFile;
                   mode = "400";
                   owner = config.services.amc-backend.user;
                 };
-                services.amc-backend = cfg.backendSettings // {
-                  enable = lib.mkDefault true;
-                  port = lib.mkDefault cfg.port;
-                  allowedHosts = lib.mkDefault ([ cfg.fqdn ] ++ cfg.allowedHosts);
-                  environmentFile = config.age.secrets.backend.path;
-                };
+                services.amc-backend =
+                  cfg.backendSettings
+                  // {
+                    enable = lib.mkDefault true;
+                    port = lib.mkDefault cfg.port;
+                    allowedHosts = lib.mkDefault ([cfg.fqdn] ++ cfg.allowedHosts);
+                    environmentFile = config.age.secrets.backend.path;
+                  };
               };
             };
             containers.amc-log-listener = {
               autoStart = true;
               restartIfChanged = false;
-              config = { config, pkgs, ... }: {
+              config = {
+                config,
+                pkgs,
+                ...
+              }: {
                 imports = [
                   self.nixosModules.log-listener
                 ];
@@ -234,15 +262,18 @@
           };
         };
 
-        nixosModules.log-listener = { config, pkgs, lib, ... }:
-        let
+        nixosModules.log-listener = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }: let
           cfg = config.services.amc-log-listener;
           ingestLogsWrapper = pkgs.writeShellScriptBin "ingest_logs_wrapper" ''
             export REDIS_PORT=${toString cfg.redisPort}
             exec ${pkgs.amc-scripts}/bin/ingest_logs
           '';
-        in
-        {
+        in {
           options.services.amc-log-listener = {
             enable = lib.mkEnableOption "Log listener";
             relpPort = lib.mkOption {
@@ -258,7 +289,7 @@
             };
           };
           config = lib.mkIf cfg.enable {
-            nixpkgs.overlays = [ self.overlays.scripts ];
+            nixpkgs.overlays = [self.overlays.scripts];
             services.rsyslogd = {
               enable = true;
               extraConfig = ''
@@ -280,31 +311,34 @@
           };
         };
 
-        nixosModules.backend = { config, pkgs, lib, ... }:
-        let
+        nixosModules.backend = {
+          config,
+          pkgs,
+          lib,
+          ...
+        }: let
           cfg = config.services.amc-backend;
-        in
-        {
+        in {
           options.services.amc-backend = backendOptionsSubmodule.options;
           config = lib.mkIf cfg.enable {
-            nixpkgs.overlays = [ self.overlays.default ];
+            nixpkgs.overlays = [self.overlays.default];
             nixpkgs.config.allowUnfree = true; # for timescaledb
 
             users.users.${cfg.user} = {
               isSystemUser = true;
               inherit (cfg) group;
-              extraGroups = [ "modders" ];
+              extraGroups = ["modders"];
               description = "AMC Backend";
             };
             users.groups.modders.gid = 987;
             users.groups.${cfg.group} = {
-              members = [ cfg.user ];
+              members = [cfg.user];
             };
 
             services.postgresql = {
               enable = true;
               package = pkgs.postgresql_16;
-              extensions = with pkgs.postgresql_16.pkgs; [ postgis timescaledb pg_partman ];
+              extensions = with pkgs.postgresql_16.pkgs; [postgis timescaledb pg_partman];
               ensureDatabases = [
                 cfg.user
               ];
@@ -340,7 +374,7 @@
               settings = {
                 client_encoding = "UTF8";
                 timezone = "UTC";
-                listen_addresses = pkgs.lib.mkForce "*";  # Container-internal; host firewall limits exposure
+                listen_addresses = pkgs.lib.mkForce "*"; # Container-internal; host firewall limits exposure
               };
               authentication = pkgs.lib.mkOverride 10 ''
                 local all all trust
@@ -373,16 +407,18 @@
             };
 
             systemd.services.amc-backend = {
-              wantedBy = [ "multi-user.target" ]; 
-              requires = [ "amc-backend-migrate.service" ];
-              after = [ "network.target" "amc-backend-migrate.service" ];
+              wantedBy = ["multi-user.target"];
+              requires = ["amc-backend-migrate.service"];
+              after = ["network.target" "amc-backend-migrate.service"];
               description = "API Server";
-              environment = {
-                inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
-                DJANGO_STATIC_ROOT = self.packages.x86_64-linux.staticRoot;
-                ALLOWED_HOSTS = lib.strings.concatStringsSep " " cfg.allowedHosts;
-                DJANGO_SETTINGS_MODULE = "amc_backend.settings";
-              } // cfg.environment;
+              environment =
+                {
+                  inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
+                  DJANGO_STATIC_ROOT = self.packages.x86_64-linux.staticRoot;
+                  ALLOWED_HOSTS = lib.strings.concatStringsSep " " cfg.allowedHosts;
+                  DJANGO_SETTINGS_MODULE = "amc_backend.settings";
+                }
+                // cfg.environment;
               restartIfChanged = false;
               serviceConfig = {
                 Type = "simple";
@@ -402,13 +438,15 @@
             };
 
             systemd.services.amc-worker = {
-              wantedBy = [ "multi-user.target" ]; 
-              after = [ "network.target" ];
+              wantedBy = ["multi-user.target"];
+              after = ["network.target"];
               description = "Job queue and background worker";
-              environment = {
-                inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
-                DJANGO_SETTINGS_MODULE = "amc_backend.settings";
-              } // cfg.environment;
+              environment =
+                {
+                  inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
+                  DJANGO_SETTINGS_MODULE = "amc_backend.settings";
+                }
+                // cfg.environment;
               restartIfChanged = false;
               serviceConfig = {
                 Type = "simple";
@@ -425,11 +463,13 @@
             };
 
             systemd.services.dummy-server = {
-              wantedBy = [ "multi-user.target" ]; 
-              after = [ "network.target" ];
+              wantedBy = ["multi-user.target"];
+              after = ["network.target"];
               description = "Dummy server";
-              environment = {
-              } // cfg.environment;
+              environment =
+                {
+                }
+                // cfg.environment;
               restartIfChanged = true;
               serviceConfig = {
                 Type = "simple";
@@ -446,12 +486,14 @@
 
             systemd.services.amc-backend-migrate = {
               description = "Migrate backend db";
-              requires = [ "postgresql.service" ];
-              after = [ "postgresql.service" ];
-              environment = {
-                DJANGO_SETTINGS_MODULE = "amc_backend.settings";
-                inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
-              } // cfg.environment;
+              requires = ["postgresql.service"];
+              after = ["postgresql.service"];
+              environment =
+                {
+                  DJANGO_SETTINGS_MODULE = "amc_backend.settings";
+                  inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
+                }
+                // cfg.environment;
               restartIfChanged = false;
               serviceConfig = {
                 Type = "oneshot";
@@ -468,14 +510,17 @@
               # Convenience wrapper: `amcm <command>` runs amc-manage as the amc user
               # Inherits cfg.environment so management commands can reach mod/game servers
               (let
-                envVars = cfg.environment // {
-                  DJANGO_SETTINGS_MODULE = "amc_backend.settings";
-                };
+                envVars =
+                  cfg.environment
+                  // {
+                    DJANGO_SETTINGS_MODULE = "amc_backend.settings";
+                  };
                 envExports = lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${v}") envVars);
-              in pkgs.writeShellScriptBin "amcm" ''
-                exec su -s /bin/sh ${cfg.user} -c \
-                  "${envExports} exec ${self.packages.x86_64-linux.default}/bin/amc-manage $(printf ' %q' "$@")"
-              '')
+              in
+                pkgs.writeShellScriptBin "amcm" ''
+                  exec su -s /bin/sh ${cfg.user} -c \
+                    "${envExports} exec ${self.packages.x86_64-linux.default}/bin/amc-manage $(printf ' %q' "$@")"
+                '')
             ];
           };
         };
@@ -491,7 +536,7 @@
         inherit (nixpkgs) lib;
         pkgs = nixpkgs.legacyPackages.${system};
 
-        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+        workspace = uv2nix.lib.workspace.loadWorkspace {workspaceRoot = ./.;};
         overlay = workspace.mkPyprojectOverlay {
           sourcePreference = "wheel";
         };
@@ -512,19 +557,18 @@
           (pkgs.callPackage pyproject-nix.build.packages {
             inherit python;
           }).overrideScope
-            (
-              lib.composeManyExtensions [
-                pyproject-build-systems.overlays.default
-                overlay
-                pyprojectOverrides
-              ]
-            );
+          (
+            lib.composeManyExtensions [
+              pyproject-build-systems.overlays.default
+              overlay
+              pyprojectOverrides
+            ]
+          );
 
-        staticRoot = 
-          let
-            inherit (pkgs) stdenv;
-            venv = self'.packages.default;
-          in
+        staticRoot = let
+          inherit (pkgs) stdenv;
+          venv = self'.packages.default;
+        in
           stdenv.mkDerivation {
             name = "amc-backend-static";
             inherit (pythonSet.amc-backend) src;
@@ -541,18 +585,16 @@
               env DJANGO_STATIC_ROOT="$out" python src/manage.py collectstatic --noinput
             '';
           };
-          
-          virtualenv = (pythonSet.overrideScope editableOverlay).mkVirtualEnv "amc-backend-dev-env" workspace.deps.all;
 
+        virtualenv = (pythonSet.overrideScope editableOverlay).mkVirtualEnv "amc-backend-dev-env" workspace.deps.all;
       in {
         packages.default = pythonSet.mkVirtualEnv "amc-backend-env" workspace.deps.default;
-        packages.scripts = pythonSet.mkVirtualEnv "amc-scripts-env"  { scripts = []; };
+        packages.scripts = pythonSet.mkVirtualEnv "amc-scripts-env" {scripts = [];};
         packages.staticRoot = staticRoot;
-
 
         checks.ruff =
           pkgs.runCommand "ruff-check" {
-            buildInputs = [ pkgs.ruff ];
+            buildInputs = [pkgs.ruff];
           } ''
             export RUFF_CACHE_DIR=$(mktemp -d)
             ruff check ${./.} --cache-dir "$RUFF_CACHE_DIR"
@@ -561,9 +603,13 @@
 
         checks.django-check =
           pkgs.runCommand "django-check" {
-            buildInputs = [ virtualenv pkgs.libspatialite ];
+            buildInputs = [virtualenv pkgs.libspatialite];
             inherit (mkPostgisDeps pkgs) GEOS_LIBRARY_PATH GDAL_LIBRARY_PATH;
-            SPATIALITE_LIBRARY_PATH = "${pkgs.libspatialite}/lib/libspatialite.${if pkgs.stdenv.hostPlatform.isDarwin then "dylib" else "so"}";
+            SPATIALITE_LIBRARY_PATH = "${pkgs.libspatialite}/lib/libspatialite.${
+              if pkgs.stdenv.hostPlatform.isDarwin
+              then "dylib"
+              else "so"
+            }";
           } ''
             python ${./.}/src/manage.py check
             touch $out
@@ -622,19 +668,21 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [
-            virtualenv
-            pkgs.gettext
-            pkgs.uv
-            pkgs.jq
-            pkgs.nil
-            pkgs.alejandra
-            pkgs.nixos-rebuild
-            pkgs.libspatialite
-            (pkgs.postgresql_16.withPackages(p: [p.postgis]))
-            pkgs.redis
-            pkgs.pre-commit
-          ] ++ config.pre-commit.settings.enabledPackages;
+          packages =
+            [
+              virtualenv
+              pkgs.gettext
+              pkgs.uv
+              pkgs.jq
+              pkgs.nil
+              pkgs.alejandra
+              pkgs.nixos-rebuild
+              pkgs.libspatialite
+              (pkgs.postgresql_16.withPackages (p: [p.postgis]))
+              pkgs.redis
+              pkgs.pre-commit
+            ]
+            ++ config.pre-commit.settings.enabledPackages;
           env =
             {
               # Needed for postgis
