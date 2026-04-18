@@ -37,6 +37,7 @@ api.add_router("/results/", "amc.api.routes.results_router")
 api.add_router("/championships/", "amc.api.routes.championships_router")
 api.add_router("/deliverypoints/", "amc.api.routes.deliverypoints_router")
 api.add_router("/deliveryjobs/", "amc.api.routes.deliveryjobs_router")
+api.add_router("/webui/deliveryjobs/", "amc.api.routes.webui_deliveryjobs_router")
 api.add_router("/", "amc.api.routes.app_router")
 
 # Phase 1: Public API Routers

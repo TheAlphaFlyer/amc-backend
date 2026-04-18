@@ -209,9 +209,13 @@ class DeliveryPointSchema(ModelSchema):
             "guid",
             "name",
             "type",
-            "data",
             "last_updated",
         ]
+
+
+class DeliveryPointDetailSchema(DeliveryPointSchema):
+    class Meta(DeliveryPointSchema.Meta):
+        fields = DeliveryPointSchema.Meta.fields + ["data"]
 
 
 class CargoSchema(ModelSchema):
@@ -260,6 +264,52 @@ class DeliveryJobSchema(ModelSchema):
             # 'expected_player_count_for_quantity',
             # 'job_posting_probability',
             # 'template_job_period_hours',
+            "fulfilled",
+        ]
+
+
+# Web UI slim schemas
+
+
+class DeliveryCharacterSlimSchema(Schema):
+    player_id: str
+    name: str
+
+
+class DeliverySlimSchema(ModelSchema):
+    character: DeliveryCharacterSlimSchema
+
+    class Meta:
+        model = Delivery
+        fields = [
+            "timestamp",
+            "character",
+            "cargo_key",
+            "quantity",
+            "payment",
+            "subsidy",
+        ]
+
+
+class DeliveryJobSummarySchema(ModelSchema):
+    cargos: list[str]
+    source_points: list[str]
+    destination_points: list[str]
+    deliveries: List[DeliverySlimSchema]
+
+    class Meta:
+        model = DeliveryJob
+        fields = [
+            "id",
+            "name",
+            "quantity_requested",
+            "quantity_fulfilled",
+            "requested_at",
+            "fulfilled_at",
+            "expired_at",
+            "bonus_multiplier",
+            "completion_bonus",
+            "description",
             "fulfilled",
         ]
 
