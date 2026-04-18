@@ -259,10 +259,11 @@ def test_strip_new_format():
 def test_strip_legacy_format():
     assert strip_all_tags("[MODS] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[GOV1] PlayerOne") == "PlayerOne"
-    assert strip_all_tags("[DOT] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[MODS] [GOV3] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[CRIM] PlayerOne") == "PlayerOne"
     assert strip_all_tags("[CRIM] [MODS] [GOV3] PlayerOne") == "PlayerOne"
+    # [DOT] is a permanent team tag — it must NOT be stripped
+    assert strip_all_tags("[DOT] PlayerOne") == "[DOT] PlayerOne"
 
 
 def test_strip_legacy_subscript_format():

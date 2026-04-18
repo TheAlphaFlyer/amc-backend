@@ -157,31 +157,32 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
     """Integration tests for aget_or_create_character with game server fallback."""
 
     async def test_game_server_guid_used_when_available(self):
-        """When game server returns a good GUID, mod server is NOT consulted."""
+        """When game server returns a good GUID, it is used for character creation."""
         game_players = _make_game_players(PLAYER_ID, VALID_GUID)
+        # get_player is always called for player_info (bIsAdmin, Location, etc.)
+        mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "TestPlayer"}
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock()) as mock_mod:
+            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
                 character, player, created, player_info = await aget_or_create_character(
                     "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
                 )
 
-        # get_player (mod server) should NOT have been called since game server succeeded
-        mock_mod.assert_not_called()
         self.assertEqual(character.guid, VALID_GUID)
 
     async def test_game_server_guid_normalized_to_uppercase(self):
         """GUIDs from the native game API (lowercase) are uppercased before storage."""
         lowercase_guid = VALID_GUID.lower()
         game_players = _make_game_players(PLAYER_ID, lowercase_guid)
+        # get_player is always called for player_info (bIsAdmin, Location, etc.)
+        mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "TestPlayer"}
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock()) as mock_mod:
+            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
                 character, player, created, player_info = await aget_or_create_character(
                     "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
                 )
 
-        mock_mod.assert_not_called()
         self.assertEqual(character.guid, VALID_GUID)  # stored as uppercase
 
     async def test_falls_back_to_mod_server_when_game_server_empty(self):
