@@ -1011,3 +1011,33 @@ async def list_server_commands(request):
     commands.sort(key=lambda x: (x["category"], x["command"]))
 
     return commands
+
+
+# ═══════════════════════════════════════════════════════════════
+# Shortcut Zones
+# ═══════════════════════════════════════════════════════════════
+
+from .schema import ShortcutZoneSchema
+from amc.models import ShortcutZone
+
+shortcut_zones_router = Router()
+
+
+@shortcut_zones_router.get("/", response=list[ShortcutZoneSchema])
+async def list_shortcut_zones(request):
+    """List all active shortcut zones with polygon coordinates."""
+    zones = ShortcutZone.objects.filter(active=True)
+    result = []
+    async for zone in zones:
+        coords = [
+            [x, y] for x, y in zone.polygon.coords[0]
+        ]
+        result.append(
+            {
+                "id": zone.id,
+                "name": zone.name,
+                "description": zone.description or "",
+                "coordinates": coords,
+            }
+        )
+    return result
