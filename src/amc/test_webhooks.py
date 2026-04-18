@@ -500,6 +500,151 @@ class ProcessEventTests(TestCase):
         self.assertEqual(log.finished_amount, 3)
         self.assertTrue(log.delivered)
 
+    async def test_contract_delivered_duplicate_guid(self, mock_get_treasury, mock_get_rp_mode):
+        """Delivery with duplicate GUIDs should not crash — pick the latest record."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        await ServerSignContractLog.objects.acreate(
+            guid="dup_guid",
+            player=player,
+            cargo_key="Coal",
+            amount=20,
+            finished_amount=0,
+            payment=70000,
+            cost=14000,
+            timestamp=timezone.now(),
+        )
+        await ServerSignContractLog.objects.acreate(
+            guid="dup_guid",
+            player=player,
+            cargo_key="IronOre",
+            amount=20,
+            finished_amount=0,
+            payment=91670,
+            cost=18334,
+            timestamp=timezone.now(),
+        )
+
+        event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "dup_guid",
+            },
+        }
+
+        _, _, contract_pay, _ = await process_event(event, player, character)
+        self.assertEqual(contract_pay, 0)
+
+        logs = await sync_to_async(list)(ServerSignContractLog.objects.filter(guid="dup_guid").order_by("-id"))
+        latest = logs[0]
+        await latest.arefresh_from_db()
+        self.assertEqual(latest.finished_amount, 1)
+        self.assertFalse(latest.delivered)
+
+    async def test_contract_delivered_missing_guid(self, mock_get_treasury, mock_get_rp_mode):
+        """Delivery with a GUID that has no sign record should not crash."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "nonexistent_guid",
+            },
+        }
+
+        _, _, contract_pay, _ = await process_event(event, player, character)
+        self.assertEqual(contract_pay, 0)
+        self.assertEqual(await ServerSignContractLog.objects.acount(), 0)
+
+    async def test_contract_delivered_with_item_creates_on_missing(self, mock_get_treasury, mock_get_rp_mode):
+        """Delivery with Item data and no matching sign record should create a new record."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "brand_new_guid",
+                "Item": "Planks",
+                "Amount": 10,
+                "CompletionPayment": 25000,
+                "Cost": 5000,
+            },
+        }
+
+        _, _, contract_pay, _ = await process_event(event, player, character)
+        self.assertEqual(contract_pay, 0)
+        self.assertEqual(await ServerSignContractLog.objects.acount(), 1)
+        log = await ServerSignContractLog.objects.afirst()
+        self.assertEqual(log.guid, "brand_new_guid")
+        self.assertEqual(log.cargo_key, "Planks")
+        self.assertEqual(log.amount, 10)
+        self.assertEqual(log.finished_amount, 1)
+
+    async def test_contract_delivered_duplicate_guid_with_item(self, mock_get_treasury, mock_get_rp_mode):
+        """Delivery with Item data and duplicate GUIDs should update the latest record."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+
+        await ServerSignContractLog.objects.acreate(
+            guid="dup_item_guid",
+            player=player,
+            cargo_key="Coal",
+            amount=20,
+            finished_amount=0,
+            payment=70000,
+            cost=14000,
+            timestamp=timezone.now(),
+        )
+        await ServerSignContractLog.objects.acreate(
+            guid="dup_item_guid",
+            player=player,
+            cargo_key="IronOre",
+            amount=20,
+            finished_amount=0,
+            payment=91670,
+            cost=18334,
+            timestamp=timezone.now(),
+        )
+
+        event = {
+            "hook": "ServerContractCargoDelivered",
+            "timestamp": int(time.time()),
+            "data": {
+                "ContractGuid": "dup_item_guid",
+                "Item": "IronOre",
+                "Amount": 20,
+                "CompletionPayment": 91670,
+                "Cost": 18334,
+            },
+        }
+
+        _, _, contract_pay, _ = await process_event(event, player, character)
+        self.assertEqual(contract_pay, 0)
+
+        logs = await sync_to_async(list)(ServerSignContractLog.objects.filter(guid="dup_item_guid").order_by("-id"))
+        latest = logs[0]
+        await latest.arefresh_from_db()
+        self.assertEqual(latest.finished_amount, 1)
+        self.assertEqual(latest.cargo_key, "IronOre")
+
     @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
     @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.detect_custom_parts")
