@@ -192,6 +192,14 @@ async def monitor_jobs(ctx):
     # Rate-limit: don't post more than max_posts_per_tick per cron cycle
     slots_to_fill = min(slots_to_fill, config.max_posts_per_tick)
 
+    # Probabilistic posting: each slot has treasury_mult chance to actually post.
+    # Low treasury naturally reduces posting rate without hard caps.
+    slots_to_fill = sum(
+        1 for _ in range(slots_to_fill) if random.random() < treasury_mult
+    )
+    if slots_to_fill <= 0:
+        return
+
     job_templates = (
         DeliveryJobTemplate.objects.exclude_has_conflicting_active_job()
         .filter(rp_mode=False, enabled=True)
