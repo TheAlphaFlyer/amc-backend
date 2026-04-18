@@ -427,3 +427,4 @@ ADMINS = [("Admin", os.environ.get("ADMIN_EMAIL"))]
 TP_VEHICLE_USE_TELEPORT_FALLBACK = bool(
     os.environ.get("TP_VEHICLE_USE_TELEPORT_FALLBACK", "1")
 )
+
