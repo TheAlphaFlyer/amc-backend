@@ -1103,11 +1103,6 @@ VEHICLE_DATA = {
         "object_name": "Trophy2_C",
         "cost": 9000,
     },
-    "Nimo_Taxi": {
-        "asset_path": "/Game/Cars/Models/Nimo/Nimo_Taxi.Nimo_Taxi_C",
-        "object_name": "Nimo_Taxi_C",
-        "cost": 140000,
-    },
     "Longhorn_Rollback": {
         "asset_path": "/Game/Cars/Models/Longhorn_Rollback/Longhorn_Rollback.Longhorn_Rollback_C",
         "object_name": "Longhorn_Rollback_C",
