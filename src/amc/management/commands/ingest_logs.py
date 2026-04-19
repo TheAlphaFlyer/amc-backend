@@ -1,9 +1,12 @@
+import logging
 import sys
 import asyncio
 from django.core.management.base import BaseCommand
 from arq import create_pool
 from arq.connections import RedisSettings
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -13,6 +16,16 @@ class Command(BaseCommand):
         redis = await create_pool(RedisSettings(**settings.REDIS_SETTINGS))
 
         for line in sys.stdin:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            try:
+                _log_timestamp, hostname, tag, filename, game_timestamp, content = (
+                    line.split(" ", 5)
+                )
+            except ValueError:
+                logger.warning("Skipping malformed log line: %r", line[:200])
+                continue
             await redis.enqueue_job("process_log_line", line)
             self.stdout.write("OK")
 

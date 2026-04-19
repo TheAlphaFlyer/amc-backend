@@ -145,11 +145,20 @@ class ServerStartedLogEvent(BaseLogEvent):
 
 @dataclass(frozen=True)
 class SecurityAlertLogEvent(BaseLogEvent):
-    """Represents a player logging out."""
+    """Represents a security alert from a player."""
 
     player_name: str
     player_id: int
     message: str
+
+
+@dataclass(frozen=True)
+class AFKChangedLogEvent(BaseLogEvent):
+    """Represents a player's AFK status changing."""
+
+    player_name: str
+    player_id: int
+    is_afk: bool
 
 
 @dataclass(frozen=True)
@@ -186,6 +195,7 @@ LogEvent = (
     | AnnouncementLogEvent
     | SecurityAlertLogEvent
     | ServerStartedLogEvent
+    | AFKChangedLogEvent
     | UnknownLogEntry
 )
 
@@ -374,6 +384,17 @@ def parse_log_content(timestamp, content):
         return ServerStartedLogEvent(
             timestamp=timestamp,
             version=pattern_match.group("version"),
+        )
+
+    if pattern_match := re.match(
+        r"AFK Changed (?P<player_name>.+) \((?P<player_id>\d+)\)\((?P<is_afk>On|Off)\)",
+        content,
+    ):
+        return AFKChangedLogEvent(
+            timestamp=timestamp,
+            player_name=pattern_match.group("player_name"),
+            player_id=int(pattern_match.group("player_id")),
+            is_afk=pattern_match.group("is_afk") == "On",
         )
 
     return UnknownLogEntry(timestamp=timestamp, original_line=content)
