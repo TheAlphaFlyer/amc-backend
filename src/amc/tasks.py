@@ -1043,8 +1043,8 @@ async def process_log_event(
             asyncio.create_task(delay(spawn_dealerships(), 15))
             asyncio.create_task(delay(_spawn_assets(), 20))
             asyncio.create_task(delay(spawn_garages(), 25))
-            asyncio.create_task(delay(spawn_player_vehicles(), 30))
-            asyncio.create_task(delay(spawn_world_vehicles(), 35))
+            asyncio.create_task(delay(spawn_world_vehicles(), 30))
+            asyncio.create_task(delay(spawn_player_vehicles(), 35))
 
         case UnknownLogEntry():
             logger.warning("Unknown log entry: %s", event)
