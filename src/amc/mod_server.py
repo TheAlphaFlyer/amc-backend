@@ -413,5 +413,7 @@ async def spawn_vehicle(
         data["parts"] = parts
 
     async with session.post("/vehicles/spawn", json=data) as resp:
+        if resp.status == 503:
+            raise Exception("Failed to spawn vehicle: server busy (503)")
         if resp.status != 200:
             raise Exception("Failed to spawn vehicle")

@@ -1,3 +1,4 @@
+import asyncio
 import typing
 import re
 import logging
@@ -326,15 +327,28 @@ async def spawn_registered_vehicle(
     else:
         extra_data["forSale"] = vehicle.for_sale
 
-    await spawn_vehicle(
-        http_client_mod,
-        vehicle.config["AssetPath"],
-        location,
-        rotation=rotation,
-        customization=vehicle.config["Customization"],
-        decal=vehicle.config["Decal"],
-        parts=[{**p, "partKey": p["Key"]} for p in vehicle.config["Parts"]],
-        extra_data=extra_data,
-        driver_guid=driver_guid,
-        tag=tag,
-    )
+    for attempt in range(3):
+        try:
+            await spawn_vehicle(
+                http_client_mod,
+                vehicle.config["AssetPath"],
+                location,
+                rotation=rotation,
+                customization=vehicle.config["Customization"],
+                decal=vehicle.config["Decal"],
+                parts=[{**p, "partKey": p["Key"]} for p in vehicle.config["Parts"]],
+                extra_data=extra_data,
+                driver_guid=driver_guid,
+                tag=tag,
+            )
+            return
+        except Exception as e:
+            if "503" in str(e) and attempt < 2:
+                logger.warning(
+                    "Spawn vehicle 503, retrying (%d/3): %s",
+                    attempt + 1,
+                    vehicle.config.get("VehicleName", "?"),
+                )
+                await asyncio.sleep(2 * (attempt + 1))
+            else:
+                raise

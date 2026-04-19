@@ -2276,6 +2276,10 @@ class CharacterVehicle(models.Model):
     alias = models.CharField(max_length=32, null=True, blank=True)
     company_guid = models.CharField(max_length=32, null=True, blank=True)
     spawn_on_restart = models.BooleanField(default=False)
+    is_world_vehicle = models.BooleanField(
+        default=False,
+        help_text="Apply decal/parts to all vehicles of this class in the world on restart (no spawning)",
+    )
     rental = models.BooleanField(default=False)
     for_sale = models.BooleanField(default=False)
     config = models.JSONField()
