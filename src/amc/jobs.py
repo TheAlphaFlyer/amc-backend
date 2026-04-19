@@ -183,7 +183,7 @@ async def monitor_jobs(ctx):
     # Base formula: log2 curve — generous at low player counts, flattens at high
     # e.g. 0→1, 6→4, 10→4, 20→5, 30→6
     base_max_jobs = config.min_base_jobs + round(math.log2(1 + num_players))
-    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult * treasury_mult))
+    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult))
 
     slots_to_fill = max_active_jobs - num_active_jobs
     if slots_to_fill <= 0:
@@ -192,10 +192,11 @@ async def monitor_jobs(ctx):
     # Rate-limit: don't post more than max_posts_per_tick per cron cycle
     slots_to_fill = min(slots_to_fill, config.max_posts_per_tick)
 
-    # Probabilistic posting: each slot has treasury_mult chance to actually post.
-    # Low treasury naturally reduces posting rate without hard caps.
+    # Probabilistic posting: each slot has posting_chance to actually post.
+    # treasury_mult + posting_rate_multiplier control the rate.
+    posting_chance = min(1.0, treasury_mult * config.posting_rate_multiplier)
     slots_to_fill = sum(
-        1 for _ in range(slots_to_fill) if random.random() < treasury_mult
+        1 for _ in range(slots_to_fill) if random.random() < posting_chance
     )
     if slots_to_fill <= 0:
         return
