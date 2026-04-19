@@ -341,7 +341,7 @@ async def set_world_vehicle_decal(
     async with session.post(
         f"/world_vehicles/{vehicle_class}/decal", json=data
     ) as resp:
-        if resp.status != 200:
+        if resp.status not in (200, 204):
             raise Exception("Failed to set vehicle decals")
 
 
