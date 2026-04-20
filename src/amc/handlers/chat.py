@@ -2,9 +2,11 @@
 
 Handles: ServerSendChat (from MTDediMod webhook events)
 
-This is the sole processor for in-game chat messages. The log pipeline
-(PlayerChatMessageLogEvent in tasks.py) is intentionally disabled — all
-chat processing (logging, commands, Discord forwarding, SSE) happens here.
+When CHAT_VIA_WEBHOOK is enabled, this is the sole processor for
+in-game chat messages and the log pipeline (PlayerChatMessageLogEvent in
+tasks.py) is intentionally disabled. When CHAT_VIA_WEBHOOK is disabled
+(default), the log pipeline handles chat processing instead and this handler
+is a no-op.
 """
 
 from __future__ import annotations
@@ -18,13 +20,15 @@ from django.utils import timezone
 from amc.handlers import register
 from amc.models import PlayerChatLog
 from amc.mod_server import get_player
-from amc.tasks import enqueue_discord_message
 
 logger = logging.getLogger("amc.webhook.handlers.chat")
 
 
 @register("ServerSendChat")
 async def handle_server_send_chat(event, player, character, ctx):
+    if not settings.CHAT_VIA_WEBHOOK:
+        return 0, 0, 0, 0
+
     data = event.get("data", {})
     message = data.get("Message", "")
     category = data.get("Category", 0)
@@ -69,6 +73,8 @@ async def handle_server_send_chat(event, player, character, ctx):
         asyncio.create_task(registry.execute(message, cmd_ctx))
 
     if is_normal_chat and ctx.discord_client:
+        from amc.tasks import enqueue_discord_message
+
         player_name = character.name if character else "Unknown"
         enqueue_discord_message(
             settings.DISCORD_GAME_CHAT_CHANNEL_ID,
