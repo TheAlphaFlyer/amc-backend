@@ -20,6 +20,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from amc.game_server import announce
+from amc.mod_server import make_suspect, send_system_message
 from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog, Wanted
 from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
@@ -180,7 +181,6 @@ async def create_or_refresh_wanted(
             Typically 0 — bounty grows from police proximity in tick_wanted_countdown.
             Values are floored at WANTED_MIN_BOUNTY.
     """
-    from amc.mod_server import send_system_message
 
     # Enforce minimum bounty per event.
     effective_amount = max(amount, WANTED_MIN_BOUNTY)
@@ -211,6 +211,17 @@ async def create_or_refresh_wanted(
             character_guid=character.guid,
         )
     )
+
+    # Set the player as a suspect in-game so police can chase them
+    if http_client_mod and character.guid:
+        try:
+            await make_suspect(http_client_mod, character.guid)
+        except Exception:
+            logger.warning(
+                "make_suspect failed for %s (guid=%s)",
+                character.name, character.guid, exc_info=True,
+            )
+
     return active_wanted, created
 
 

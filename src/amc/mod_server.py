@@ -302,6 +302,19 @@ async def enter_last_vehicle(session, character_guid):
         return {"status": "success"}
 
 
+async def make_suspect(session, character_guid, duration_seconds=300):
+    async with session.post(
+        f"/players/{character_guid}/suspect",
+        json={"DurationSeconds": duration_seconds},
+    ) as resp:
+        if resp.status not in (200, 204):
+            body = await resp.text()
+            raise Exception(f"Failed to make suspect (status={resp.status}, body={body[:200]})")
+        if resp.status == 200:
+            return await resp.json()
+        return None
+
+
 async def despawn_player_cargo(session, character_guid):
     async with session.post(f"/players/{character_guid}/despawn_cargo") as resp:
         if resp.status != 200:
@@ -357,6 +370,14 @@ async def despawn_by_tag(session, tag):
     async with session.post("/assets/despawn", json=data) as resp:
         if resp.status != 204:
             raise Exception("Failed to despawn by tag")
+
+
+async def get_garages(session):
+    async with session.get("/garages") as resp:
+        data = await resp.json()
+        if not data or not data.get("data"):
+            return []
+        return data["data"]
 
 
 async def spawn_garage(

@@ -398,6 +398,97 @@ class ContrabandCriminalRecordTests(TestCase):
         mock_refresh.assert_called()
 
 
+@patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)
+@patch("amc.webhook.get_treasury_fund_balance", new_callable=AsyncMock)
+@patch("amc.handlers.cargo.should_trigger_wanted", return_value=True)
+@patch("amc.handlers.cargo.accumulate_illicit_delivery", new_callable=AsyncMock, return_value=100_000)
+class MakeSuspectTests(TestCase):
+    """When a Wanted is created/refreshed, make_suspect should be called on the mod server."""
+
+    async def _setup_character(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await CharacterLocation.objects.acreate(
+            character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
+        )
+        await DeliveryPoint.objects.acreate(guid="s1", name="S1", coord=Point(0, 0, 0))
+        await DeliveryPoint.objects.acreate(guid="d1", name="D1", coord=Point(100, 100, 0))
+        return player, character
+
+    def _cargo_event(self, character, cargo_key="Ganja", payment=5_000):
+        return {
+            "hook": "ServerCargoArrived",
+            "timestamp": int(time.time()),
+            "data": {
+                "CharacterGuid": str(character.guid),
+                "Cargos": [
+                    {
+                        "Net_CargoKey": cargo_key,
+                        "Net_Payment": payment,
+                        "Net_Weight": 10.0,
+                        "Net_Damage": 0.0,
+                        "Net_SenderAbsoluteLocation": {"X": 0, "Y": 0, "Z": 0},
+                        "Net_DestinationLocation": {"X": 100, "Y": 100, "Z": 0},
+                    }
+                ],
+            },
+        }
+
+    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_make_suspect_called_on_wanted_creation(
+        self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
+    ):
+        """When Wanted is created via illicit cargo, make_suspect is called on the mod server."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_http_client_mod = AsyncMock()
+        player, character = await self._setup_character()
+
+        event = self._cargo_event(character)
+        await process_event(event, player, character, http_client_mod=mock_http_client_mod)
+
+        mock_make_suspect.assert_called_once_with(mock_http_client_mod, character.guid)
+
+    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_make_suspect_not_called_without_http_client_mod(
+        self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
+    ):
+        """When http_client_mod is None, make_suspect should not be called."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        player, character = await self._setup_character()
+
+        event = self._cargo_event(character)
+        await process_event(event, player, character)
+
+        mock_make_suspect.assert_not_called()
+
+    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
+    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
+    async def test_make_suspect_failure_does_not_block_wanted_creation(
+        self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
+    ):
+        """If make_suspect fails, the Wanted record should still be created."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_make_suspect.side_effect = Exception("mod server unavailable")
+        mock_http_client_mod = AsyncMock()
+        player, character = await self._setup_character()
+
+        event = self._cargo_event(character)
+        await process_event(event, player, character, http_client_mod=mock_http_client_mod)
+
+        wanted = await Wanted.objects.filter(
+            character=character, expired_at__isnull=True
+        ).afirst()
+        self.assertIsNotNone(wanted, "Wanted should still be created even if make_suspect fails")
+
+
 class IllicitCargoKeysRegistryTests(TestCase):
     """Verify that the ILLICIT_CARGO_KEYS set and handler registry are consistent."""
 
