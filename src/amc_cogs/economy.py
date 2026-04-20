@@ -509,6 +509,7 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         name="government_funding", description="Send government funding to player"
     )
     @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.describe(character_id="Character name")
     @app_commands.autocomplete(discord_user_id=player_autocomplete, character_id=character_autocomplete)
     async def government_funding(
         self,
