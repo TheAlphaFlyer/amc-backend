@@ -29,7 +29,6 @@ from amc.models import (
     Team,
     Character,
     PlayerStatusLog,
-    PlayerChatLog,
     PlayerVehicleLog,
     PlayerRestockDepotLog,
     Company,
@@ -652,67 +651,7 @@ async def process_log_event(
 
     match event:
         case PlayerChatMessageLogEvent(timestamp, player_name, player_id, message):
-            (
-                character,
-                player,
-                character_created,
-                player_info,
-            ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
-            await PlayerChatLog.objects.acreate(
-                timestamp=timestamp,
-                character=character,
-                text=message,
-            )
-
-            # --- New Command Framework ---
-            from amc.command_framework import registry, CommandContext
-
-            cmd_ctx = CommandContext(
-                timestamp=timestamp,
-                character=character,
-                player=player,
-                http_client=http_client,
-                http_client_mod=http_client_mod,
-                discord_client=discord_client,
-                player_info=player_info or {},  # Ensure dict
-                is_current_event=bool(is_current_event),
-            )
-
-            # Fire-and-forget: don't block event processing on command execution
-            asyncio.create_task(registry.execute(message, cmd_ctx))
-
-            # Emit SSE event for all chat messages (allows bot to build conversation history)
-            # Fire-and-forget to avoid blocking event processing
-            if is_current_event:
-                from amc.api.bot_events import emit_bot_event
-
-                is_bot_command = message.startswith("/bot ")
-                asyncio.create_task(
-                    emit_bot_event(
-                        {
-                            "type": "chat_message",
-                            "timestamp": timestamp.isoformat(),
-                            "player_name": player_name,
-                            "player_id": str(player_id),
-                            "discord_id": player.discord_user_id if player else None,
-                            "character_guid": str(character.guid)
-                            if character and character.guid
-                            else None,
-                            "message": message[5:] if is_bot_command else message,
-                            "is_bot_command": is_bot_command,
-                        }
-                    )
-                )
-
-            if (
-                discord_client
-                and ctx.get("startup_time")
-                and timestamp > ctx.get("startup_time")
-            ):
-                forward_message = (
-                    settings.DISCORD_GAME_CHAT_CHANNEL_ID,
-                    f"**{player_name}:** {message}",
-                )
+            pass
 
         case AnnouncementLogEvent(timestamp, message):
             if (
