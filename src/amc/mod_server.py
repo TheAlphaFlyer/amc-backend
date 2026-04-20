@@ -158,22 +158,41 @@ async def get_player(session, player_id):
         return result
 
 
+_MOD_PLAYERS_LIST_TTL = 2
+_MOD_STATUS_TTL = 2
+_MOD_PARTIES_TTL = 2
+_MOD_PARTIES_CACHE_KEY = "mod_parties_list"
+_MOD_STATUS_CACHE_KEY = "mod_status_general"
+
+
 async def get_players(session):
+    cached = cache.get("mod_players_list_all")
+    if cached is not None:
+        return cached
+
     async with session.get("/players") as resp:
         data = await resp.json()
         if not data or not data.get("data"):
             return None
-        return data["data"]
+        result = data["data"]
+        cache.set("mod_players_list_all", result, timeout=_MOD_PLAYERS_LIST_TTL)
+        return result
 
 
 async def get_parties(session):
     """Fetch current parties. Returns empty list on failure (graceful degradation)."""
+    cached = cache.get(_MOD_PARTIES_CACHE_KEY)
+    if cached is not None:
+        return cached
+
     try:
         async with session.get("/parties", timeout=FAST_TIMEOUT) as resp:
             if resp.status != 200:
                 return []
             data = await resp.json()
-            return data.get("data", [])
+            result = data.get("data", [])
+            cache.set(_MOD_PARTIES_CACHE_KEY, result, timeout=_MOD_PARTIES_TTL)
+            return result
     except Exception:
         return []
 
@@ -217,11 +236,17 @@ async def get_webhook_events2(session):
 
 
 async def get_status(session):
+    cached = cache.get(_MOD_STATUS_CACHE_KEY)
+    if cached is not None:
+        return cached
+
     async with session.get("/status/general", timeout=FAST_TIMEOUT) as resp:
         data = await resp.json()
         if not data or not data.get("data"):
             return None
-        return data["data"]
+        result = data["data"]
+        cache.set(_MOD_STATUS_CACHE_KEY, result, timeout=_MOD_STATUS_TTL)
+        return result
 
 
 async def get_rp_mode(session, player_id):
@@ -438,3 +463,29 @@ async def spawn_vehicle(
             raise Exception("Failed to spawn vehicle: server busy (503)")
         if resp.status != 200:
             raise Exception("Failed to spawn vehicle")
+
+
+async def mute_player(session, player_id, mute_for=True, hard=False):
+    data = {
+        "MuteFor": mute_for,
+        "Hard": hard,
+    }
+    async with session.post(f"/players/{player_id}/mute", json=data) as resp:
+        if resp.status != 200:
+            raise Exception("Failed to mute player")
+        return await resp.json()
+
+
+async def unmute_player(session, player_id):
+    async with session.delete(f"/players/{player_id}/mute") as resp:
+        if resp.status != 200:
+            raise Exception("Failed to unmute player")
+        return await resp.json()
+
+
+async def get_muted_players(session):
+    async with session.get("/players/muted", timeout=FAST_TIMEOUT) as resp:
+        if resp.status != 200:
+            return []
+        data = await resp.json()
+        return data.get("data", [])

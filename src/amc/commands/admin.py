@@ -17,6 +17,8 @@ from amc.mod_server import (
     transfer_money,
     get_vehicle_cargos,
     set_world_vehicle_decal,
+    mute_player,
+    unmute_player,
 )
 from amc.game_server import get_players
 from amc.vehicles import spawn_registered_vehicle
@@ -563,3 +565,108 @@ async def cmd_cargo(ctx: CommandContext, target_player_name: Optional[str] = Non
         lines.append(_("\nNo cargo loaded."))
 
     await ctx.reply("\n".join(lines))
+
+
+@registry.register(
+    "/mute",
+    description=gettext_lazy("Mute a player (Admin)"),
+    category="Admin",
+)
+async def cmd_mute(ctx: CommandContext, target_player_name: str, duration: Optional[str] = None):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    players = await get_players_mod(ctx.http_client_mod)
+    if players is None:
+        await ctx.reply(_("Could not fetch player list."))
+        return
+    target = next(
+        (
+            p
+            for p in players
+            if p.get("PlayerName") == target_player_name
+            or strip_all_tags(p.get("PlayerName", "")) == target_player_name
+        ),
+        None,
+    )
+    if not target:
+        await ctx.reply(_("Player '{name}' not found.").format(name=target_player_name))
+        return
+
+    target_unique_id = target.get("UniqueID")
+    display_name = target.get("PlayerName", target_player_name)
+
+    if not target_unique_id:
+        await ctx.reply(_("Could not resolve player ID."))
+        return
+
+    if duration is None:
+        mute_for = True
+    elif duration.isdigit():
+        mute_for = int(duration)
+    else:
+        await ctx.reply(_("Invalid duration. Use a number of seconds or omit for permanent."))
+        return
+
+    try:
+        await mute_player(ctx.http_client_mod, target_unique_id, mute_for=mute_for, hard=False)
+    except Exception as e:
+        await ctx.reply(_("Failed to mute player: {error}").format(error=str(e)))
+        return
+
+    if mute_for is True:
+        duration_text = _("permanently")
+    else:
+        duration_text = _("for {seconds}s").format(seconds=mute_for)
+
+    await ctx.reply(
+        _("<Title>Player Muted</>\n\n{name} has been muted {duration}.").format(
+            name=display_name, duration=duration_text
+        )
+    )
+
+
+@registry.register(
+    "/unmute",
+    description=gettext_lazy("Unmute a player (Admin)"),
+    category="Admin",
+)
+async def cmd_unmute(ctx: CommandContext, target_player_name: str):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    players = await get_players_mod(ctx.http_client_mod)
+    if players is None:
+        await ctx.reply(_("Could not fetch player list."))
+        return
+    target = next(
+        (
+            p
+            for p in players
+            if p.get("PlayerName") == target_player_name
+            or strip_all_tags(p.get("PlayerName", "")) == target_player_name
+        ),
+        None,
+    )
+    if not target:
+        await ctx.reply(_("Player '{name}' not found.").format(name=target_player_name))
+        return
+
+    target_unique_id = target.get("UniqueID")
+    display_name = target.get("PlayerName", target_player_name)
+
+    if not target_unique_id:
+        await ctx.reply(_("Could not resolve player ID."))
+        return
+
+    try:
+        await unmute_player(ctx.http_client_mod, target_unique_id)
+    except Exception as e:
+        await ctx.reply(_("Failed to unmute player: {error}").format(error=str(e)))
+        return
+
+    await ctx.reply(
+        _("<Title>Player Unmuted</>\n\n{name} has been unmuted.").format(name=display_name)
+    )
