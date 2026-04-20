@@ -57,7 +57,7 @@ def create_character_autocomplete(max_num=25):
         choices = [
             app_commands.Choice(
                 name=f"{c.name} ({c.player.unique_id})",
-                value=c.name,
+                value=str(c.id),
             )
             async for c in characters[:max_num]
         ]

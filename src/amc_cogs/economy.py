@@ -509,25 +509,21 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         name="government_funding", description="Send government funding to player"
     )
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.autocomplete(discord_user_id=player_autocomplete, character_name=character_autocomplete)
+    @app_commands.autocomplete(discord_user_id=player_autocomplete, character_id=character_autocomplete)
     async def government_funding(
         self,
         interaction,
         discord_user_id: str,
-        character_name: str,
+        character_id: int,
         amount: int,
         reason: str,
     ):
         await interaction.response.defer()
         try:
-            character = await Character.objects.aget(
-                Q(player__discord_user_id=int(discord_user_id))
-                | Q(player__unique_id=int(discord_user_id)),
-                name=character_name,
-            )
+            character = await Character.objects.aget(id=character_id)
             await send_fund_to_player(amount, character, reason)
             await interaction.followup.send(
-                f"Government funding deposited into {character_name}'s bank account.\nAmount: {amount:,}\nReason: {reason}"
+                f"Government funding deposited into {character.name}'s bank account.\nAmount: {amount:,}\nReason: {reason}"
             )
         except Exception as e:
             await interaction.followup.send(f"Failed to send government funding: {e}")
