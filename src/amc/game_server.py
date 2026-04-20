@@ -169,3 +169,17 @@ async def ban_player(session, unique_id, hours=None, reason=None):
     if reason:
         params["reason"] = reason
     return await game_api_request(session, "/player/ban", method="post", params=params)
+
+
+async def add_player_role(session, unique_id, role):
+    params = {"unique_id": unique_id, "role": role}
+    return await game_api_request(
+        session, "/player/role/add", method="post", params=params
+    )
+
+
+async def remove_player_role(session, unique_id, role):
+    params = {"unique_id": unique_id, "role": role}
+    return await game_api_request(
+        session, "/player/role/remove", method="post", params=params
+    )

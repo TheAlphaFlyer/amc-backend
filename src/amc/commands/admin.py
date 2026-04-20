@@ -20,7 +20,7 @@ from amc.mod_server import (
     mute_player,
     unmute_player,
 )
-from amc.game_server import get_players
+from amc.game_server import get_players, add_player_role, remove_player_role
 from amc.vehicles import spawn_registered_vehicle
 from amc.models import (
     Character,
@@ -670,3 +670,29 @@ async def cmd_unmute(ctx: CommandContext, target_player_name: str):
     await ctx.reply(
         _("<Title>Player Unmuted</>\n\n{name} has been unmuted.").format(name=display_name)
     )
+
+
+@registry.register(
+    "/admin",
+    description=gettext_lazy("Toggle admin status (test server only)"),
+    category="Admin",
+)
+async def cmd_admin(ctx: CommandContext):
+    from django.conf import settings
+
+    if not settings.IS_TEST_SERVER:
+        return
+
+    is_admin = ctx.player_info and ctx.player_info.get("bIsAdmin", False)
+    unique_id = str(ctx.player.unique_id)
+
+    if is_admin:
+        await remove_player_role(ctx.http_client, unique_id, "admin")
+        await ctx.reply(
+            _("<Title>Admin Removed</>\n\nYou are no longer an admin.")
+        )
+    else:
+        await add_player_role(ctx.http_client, unique_id, "admin")
+        await ctx.reply(
+            _("<Title>Admin Granted</>\n\nYou are now an admin.")
+        )
