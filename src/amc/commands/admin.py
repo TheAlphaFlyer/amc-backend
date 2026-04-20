@@ -8,6 +8,7 @@ from amc.mod_server import (
     show_popup,
     despawn_by_tag,
     spawn_garage,
+    get_garages,
     spawn_assets,
     spawn_vehicle,
     force_exit_vehicle,
@@ -15,6 +16,7 @@ from amc.mod_server import (
     teleport_player,
     transfer_money,
     get_vehicle_cargos,
+    set_world_vehicle_decal,
 )
 from amc.game_server import get_players
 from amc.vehicles import spawn_registered_vehicle
@@ -33,6 +35,25 @@ from django.utils.translation import gettext as _, gettext_lazy
 from amc.utils import fuzzy_find_player
 from amc.player_tags import strip_all_tags
 from amc_finance.services import player_donation
+
+
+@registry.register(
+    "/apply_world_vehicles",
+    description=gettext_lazy("Apply decals/parts to world vehicles"),
+    category="Admin",
+)
+async def cmd_apply_world_vehicles(ctx: CommandContext):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        return
+    async for v in CharacterVehicle.objects.filter(is_world_vehicle=True):
+        await set_world_vehicle_decal(
+            ctx.http_client_mod,
+            f"{v.config['VehicleName']}_C",
+            customization=v.config["Customization"],
+            decal=v.config["Decal"],
+            parts=[{**p, "partKey": p["Key"]} for p in v.config["Parts"]],
+        )
+    await ctx.reply(_("World vehicle decals and parts applied."))
 
 
 @registry.register(
@@ -127,7 +148,7 @@ async def cmd_spawn_garage_single(ctx: CommandContext, name: str):
 
 @registry.register(
     "/remove_garage",
-    description=gettext_lazy("Remove nearby garages (within 2m)"),
+    description=gettext_lazy("Remove nearby garages (within 10m)"),
     category="Admin",
 )
 async def cmd_remove_garage(ctx: CommandContext):
@@ -137,30 +158,47 @@ async def cmd_remove_garage(ctx: CommandContext):
     player_loc = ctx.player_info["Location"]
     player_x, player_y, player_z = player_loc["X"], player_loc["Y"], player_loc["Z"]
 
-    removed_count = 0
-    no_tag_count = 0
-    async for garage in Garage.objects.all():
-        if garage.config is None:
-            continue
+    RADIUS = 1000
 
-        garage_loc = garage.config.get("Location")
-        if not garage_loc:
-            continue
+    live_garages = await get_garages(ctx.http_client_mod)
 
-        gx, gy, gz = garage_loc["X"], garage_loc["Y"], garage_loc["Z"]
-
+    nearby_live = []
+    for lg in live_garages:
+        loc = lg.get("Location", {})
+        gx, gy, gz = loc.get("X", 0), loc.get("Y", 0), loc.get("Z", 0)
         distance = (
             (player_x - gx) ** 2 + (player_y - gy) ** 2 + (player_z - gz) ** 2
         ) ** 0.5
+        if distance <= RADIUS:
+            nearby_live.append(lg)
 
-        if distance <= 200:
-            # Despawn from game world
-            if garage.tag:
-                await despawn_by_tag(ctx.http_client_mod, garage.tag)
+    removed_count = 0
+    no_tag_count = 0
+
+    for lg in nearby_live:
+        loc = lg.get("Location", {})
+        lx, ly, lz = loc["X"], loc["Y"], loc["Z"]
+
+        best_garage = None
+        best_dist = float("inf")
+        async for garage in Garage.objects.all():
+            if garage.config is None:
+                continue
+            garage_loc = garage.config.get("Location")
+            if not garage_loc:
+                continue
+            gx, gy, gz = garage_loc["X"], garage_loc["Y"], garage_loc["Z"]
+            d = ((lx - gx) ** 2 + (ly - gy) ** 2 + (lz - gz) ** 2) ** 0.5
+            if d < best_dist:
+                best_dist = d
+                best_garage = garage
+
+        if best_garage and best_dist < RADIUS:
+            if best_garage.tag:
+                await despawn_by_tag(ctx.http_client_mod, best_garage.tag)
             else:
                 no_tag_count += 1
-            # Delete from database
-            await garage.adelete()
+            await best_garage.adelete()
             removed_count += 1
 
     if removed_count > 0:
@@ -175,7 +213,7 @@ async def cmd_remove_garage(ctx: CommandContext):
     else:
         await ctx.reply(
             _(
-                "<Title>No Garages Found</>\n\nNo garages within 2m of your location."
+                "<Title>No Garages Found</>\n\nNo garages within 10m of your location."
             )
         )
 
