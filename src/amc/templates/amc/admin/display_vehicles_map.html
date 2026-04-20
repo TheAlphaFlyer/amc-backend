@@ -1,0 +1,102 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css">
+<link rel="stylesheet" href="/static/gis/css/ol3.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js"></script>
+<style>
+    #display-vehicles-map {
+        width: 100%;
+        height: calc(100vh - 120px);
+        min-height: 500px;
+    }
+    .vehicle-popup {
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-size: 13px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        white-space: nowrap;
+    }
+    .vehicle-popup a {
+        color: #417690;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .vehicle-popup a:hover {
+        text-decoration: underline;
+    }
+    .vehicle-popup .vehicle-id {
+        color: #666;
+        font-size: 11px;
+    }
+    .popup-delete {
+        color: #ba2121 !important;
+    }
+    .popup-delete:hover {
+        color: #7a1212 !important;
+    }
+    #map-toolbar {
+        margin-bottom: 8px;
+    }
+    #map-toolbar a {
+        display: inline-block;
+        padding: 4px 12px;
+        background: #417690;
+        color: #fff;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 13px;
+    }
+    #map-toolbar a:hover {
+        background: #365f78;
+    }
+    .ol-popup {
+        position: absolute;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-size: 13px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        white-space: nowrap;
+        pointer-events: auto;
+    }
+    .ol-popup-closer {
+        text-decoration: none;
+        color: #666;
+        float: right;
+        margin-left: 8px;
+    }
+    .ol-popup-closer:hover {
+        color: #000;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' 'amc' %}">AMC</a>
+    &rsaquo; <a href="{% url 'admin:amc_charactervehicle_changelist' %}">Character Vehicles</a>
+    &rsaquo; Display Vehicles Map
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="map-toolbar">
+    <a href="{% url 'admin:amc_charactervehicle_changelist' %}?spawn_on_restart__exact=1">Back to Character Vehicle list</a>
+</div>
+<div id="display-vehicles-map" class="dj_map"></div>
+<div id="popup" class="ol-popup">
+    <a href="#" id="popup-closer" class="ol-popup-closer">&times;</a>
+    <div id="popup-content"></div>
+</div>
+<script>var geojsonUrl = "{% url 'admin:amc_charactervehicle_display_vehicles_geojson' %}";</script>
+<script>var deleteUrlPattern = "{% url 'admin:amc_charactervehicle_display_vehicles_delete' 0 %}";</script>
+<script>var csrfToken = "{{ csrf_token }}";</script>
+<script src="/static/amc/js/display_vehicles_map.js?v=4"></script>
+{% endblock %}

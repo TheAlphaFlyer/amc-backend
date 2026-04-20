@@ -2,6 +2,7 @@ import asyncio
 import typing
 import re
 import logging
+from django.contrib.gis.geos import Point
 from amc.models import CharacterVehicle, PoliceSession
 from amc.mod_server import list_player_vehicles, spawn_vehicle, show_popup
 from amc.enums import VehiclePartSlot
@@ -169,15 +170,25 @@ async def register_player_vehicles(http_client_mod, character, player, active=No
         asset_path = vehicle["classFullName"].split(" ")[1]
         config["AssetPath"] = asset_path
 
+        position = vehicle["position"]
+        loc = (
+            Point(position["X"], position["Y"], position.get("Z", 0), srid=0)
+            if "X" in position
+            else None
+        )
+        defaults = {"config": config}
+        if loc:
+            defaults["location"] = loc
+
         if owner:
             v, _ = await CharacterVehicle.objects.aupdate_or_create(
-                character=owner, vehicle_id=int(vehicle_id), defaults={"config": config}
+                character=owner, vehicle_id=int(vehicle_id), defaults=defaults
             )
         else:
             v, _ = await CharacterVehicle.objects.aupdate_or_create(
                 company_guid=vehicle["companyGuid"],
                 vehicle_id=int(vehicle_id),
-                defaults={"config": config},
+                defaults=defaults,
             )
         results.append(v)
 
@@ -307,7 +318,14 @@ async def spawn_registered_vehicle(
     extra_data={},
 ):
     if not location:
-        location = vehicle.config["Location"]
+        if vehicle.location:
+            location = {
+                "X": vehicle.location.x,
+                "Y": vehicle.location.y,
+                "Z": vehicle.location.z,
+            }
+        else:
+            location = vehicle.config["Location"]
     if not rotation:
         rotation = vehicle.config.get("Rotation", {})
 

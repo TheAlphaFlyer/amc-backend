@@ -2282,6 +2282,7 @@ class CharacterVehicle(models.Model):
     )
     rental = models.BooleanField(default=False)
     for_sale = models.BooleanField(default=False)
+    location = models.PointField(srid=0, dim=3, null=True, blank=True)
     config = models.JSONField()
 
     @override
@@ -2289,6 +2290,18 @@ class CharacterVehicle(models.Model):
         if vehicle_name := self.config.get("VehicleName"):
             return f"{self.id} {vehicle_name}"
         return f"{self.id}"
+
+    def save(self, *args, **kwargs):
+        if self.location:
+            z = self.location.z
+            if z == 0 and self.config.get("Location", {}).get("Z", 0) != 0:
+                z = self.config["Location"]["Z"]
+            self.config["Location"] = {
+                "X": self.location.x,
+                "Y": self.location.y,
+                "Z": z,
+            }
+        super().save(*args, **kwargs)
 
     class Meta:
         constraints = [

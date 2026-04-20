@@ -3,6 +3,8 @@ import json
 from datetime import timedelta
 from asgiref.sync import async_to_sync
 from django.contrib import admin
+from django.http import JsonResponse
+from django.urls import path
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.conf import settings
@@ -85,8 +87,7 @@ from .models import (
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
 from amc.dashboard_services import get_ministry_dashboard_stats
-from .widgets import AMCOpenLayersWidget
-from django.urls import path
+from .widgets import AMCOpenLayersWidget, AMCPointOpenLayersWidget
 from django.http import HttpResponse
 from django.shortcuts import render
 
@@ -847,6 +848,7 @@ class CharacterVehicleAdmin(admin.ModelAdmin):
         "company_guid",
         "vehicle_id",
         "vehicle_name",
+        "spawn_on_restart",
         "rental",
     ]
     list_select_related = ["character"]
@@ -858,10 +860,124 @@ class CharacterVehicleAdmin(admin.ModelAdmin):
         "character__player__unique_id",
     ]
     list_filter = ["rental", "spawn_on_restart", "for_sale"]
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "character",
+                    "vehicle_id",
+                    "alias",
+                    "company_guid",
+                    "spawn_on_restart",
+                    "is_world_vehicle",
+                    "rental",
+                    "for_sale",
+                    "location",
+                    "config",
+                )
+            },
+        ),
+    )
+
+    class Media:
+        js = (
+            "https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js",
+            "amc/js/OLMapWidget.js",
+        )
+        css = {
+            "all": (
+                "https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css",
+                "gis/css/ol3.css",
+            )
+        }
 
     @admin.display()
     def vehicle_name(self, obj):
         return obj.config.get("VehicleName", "-")
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        defaults = {
+            "widgets": {
+                "location": AMCPointOpenLayersWidget,
+            }
+        }
+        defaults.update(kwargs)
+        return super().get_form(request, obj, change, **defaults)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "display-vehicles-map/",
+                self.admin_site.admin_view(self.display_vehicles_map_view),
+                name="amc_charactervehicle_display_vehicles_map",
+            ),
+            path(
+                "display-vehicles-geojson/",
+                self.admin_site.admin_view(self.display_vehicles_geojson_view),
+                name="amc_charactervehicle_display_vehicles_geojson",
+            ),
+            path(
+                "display-vehicles-delete/<int:object_id>/",
+                self.admin_site.admin_view(self.display_vehicles_delete_view),
+                name="amc_charactervehicle_display_vehicles_delete",
+            ),
+        ]
+        return custom_urls + urls
+
+    def display_vehicles_map_view(self, request):
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Display Vehicles Map",
+        }
+        return TemplateResponse(
+            request, "amc/admin/display_vehicles_map.html", context
+        )
+
+    def display_vehicles_delete_view(self, request, object_id):
+        if request.method != "POST":
+            return JsonResponse({"error": "POST required"}, status=405)
+        if not self.has_delete_permission(request):
+            return JsonResponse({"error": "Permission denied"}, status=403)
+        try:
+            cv = CharacterVehicle.objects.get(pk=object_id)
+        except CharacterVehicle.DoesNotExist:
+            return JsonResponse({"error": "Not found"}, status=404)
+        cv.delete()
+        return JsonResponse({"success": True})
+
+    def display_vehicles_geojson_view(self, request):
+        MAP_REAL_X_LEFT = -1280000
+        MAP_REAL_Y_TOP = -320000
+        MAP_REAL_SIZE = 2200000
+
+        features = []
+        qs = CharacterVehicle.objects.filter(spawn_on_restart=True).select_related(
+            "character"
+        )
+        for cv in qs:
+            if not cv.location:
+                continue
+            x = cv.location.x - MAP_REAL_X_LEFT
+            y = -(cv.location.y - MAP_REAL_Y_TOP) + MAP_REAL_SIZE
+            edit_url = f"/admin/amc/charactervehicle/{cv.id}/change/"
+            label = str(cv)
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [x, y]},
+                    "properties": {
+                        "id": cv.id,
+                        "name": label,
+                        "edit_url": edit_url,
+                    },
+                }
+            )
+        return JsonResponse(
+            {"type": "FeatureCollection", "features": features}
+        )
 
 
 @admin.register(Garage)
