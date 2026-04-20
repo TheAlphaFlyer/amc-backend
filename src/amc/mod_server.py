@@ -465,7 +465,7 @@ async def spawn_vehicle(
             raise Exception("Failed to spawn vehicle")
 
 
-async def mute_player(session, player_id, mute_for=True, hard=False):
+async def mute_player(session, player_id, mute_for=True, hard=True):
     data = {
         "MuteFor": mute_for,
         "Hard": hard,

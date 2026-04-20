@@ -610,7 +610,7 @@ async def cmd_mute(ctx: CommandContext, target_player_name: str, duration: Optio
         return
 
     try:
-        await mute_player(ctx.http_client_mod, target_unique_id, mute_for=mute_for, hard=False)
+        await mute_player(ctx.http_client_mod, target_unique_id, mute_for=mute_for)
     except Exception as e:
         await ctx.reply(_("Failed to mute player: {error}").format(error=str(e)))
         return
