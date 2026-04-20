@@ -1379,8 +1379,8 @@ class PartyShareContractTest(TestCase):
         self.assertEqual(amounts["Party Split"], -25000)
         self.assertEqual(amounts["Party Share"], 25000)
 
-    async def test_contract_with_gov_earner_burned(self, mock_treasury, mock_rp):
-        """Gov employee earner: contract payment is burned (confiscated but not added to treasury).
+    async def test_contract_with_gov_earner_redirected(self, mock_treasury, mock_rp):
+        """Gov employee earner: contract payment is redirected to treasury (not burned).
 
         This verifies the on_player_profit gov path handles contract correctly.
         """
@@ -1419,9 +1419,10 @@ class PartyShareContractTest(TestCase):
             mock_transfer.assert_called_once()
             self.assertEqual(mock_transfer.call_args[0][1], -25000)
 
-            # base_payment = 0, so redirect_income_to_treasury is NOT called
-            # (guard: if base_payment > 0)
-            mock_redirect.assert_not_called()
+            # base_payment = 0, so earnings redirect is NOT called,
+            # but contract_payment > 0, so contract redirect IS called
+            self.assertEqual(mock_redirect.call_count, 1)
+            self.assertEqual(mock_redirect.call_args_list[0].args[0], 25000)
 
     async def test_contract_with_gov_other_member_phantom_confiscation(
         self, mock_treasury, mock_rp
@@ -1698,14 +1699,14 @@ class PartyShareContractTest(TestCase):
             self.assertEqual(payment, 0)
             self.assertEqual(subsidy, 0)
 
-    async def test_contract_gov_earner_burns_full_contract(
+    async def test_contract_gov_earner_redirects_full_contract(
         self, mock_treasury, mock_rp
     ):
         """Full integration: Gov earner completes contract + cargo in party.
 
         When a gov employee earner has both cargo earnings and a contract:
         - Cargo base payment is confiscated and redirected to treasury
-        - Contract payment is confiscated (burned)
+        - Contract payment is confiscated and redirected to treasury
         - The split values should only account for the earner's share
         """
         mock_rp.return_value = False
@@ -1750,14 +1751,16 @@ class PartyShareContractTest(TestCase):
             self.assertEqual(mock_transfer.call_args_list[0].args[1], -30000)
             self.assertEqual(mock_transfer.call_args_list[1].args[1], -250)
 
-            # Two redirect calls: earnings + subsidy contribution
-            self.assertEqual(mock_redirect.call_count, 2)
+            # Three redirect calls: earnings + contract + subsidy contribution
+            self.assertEqual(mock_redirect.call_count, 3)
             # 1. Earnings: amount=5000 (base_payment → treasury)
             self.assertEqual(mock_redirect.call_args_list[0].args[0], 5000)
-            # 2. Subsidy: amount=0 (no donation), contribution=250
-            self.assertEqual(mock_redirect.call_args_list[1].args[0], 0)
+            # 2. Contract: amount=25000 (contract_payment → treasury)
+            self.assertEqual(mock_redirect.call_args_list[1].args[0], 25000)
+            # 3. Subsidy: amount=0 (no donation), contribution=250
+            self.assertEqual(mock_redirect.call_args_list[2].args[0], 0)
             self.assertEqual(
-                mock_redirect.call_args_list[1].kwargs["contribution"], 250
+                mock_redirect.call_args_list[2].kwargs["contribution"], 250
             )
 
             # Subsidy paid to wallet before confiscation

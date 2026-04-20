@@ -77,6 +77,14 @@ async def on_player_profit(
                     http_client=http_client,
                     session=session,
                 )
+            if contract_payment > 0:
+                await redirect_income_to_treasury(
+                    contract_payment,
+                    character,
+                    "Government Service – Contract",
+                    http_client=http_client,
+                    session=session,
+                )
 
         if subsidy > 0:
             await subsidise_player(subsidy, character, session)
