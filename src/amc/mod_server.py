@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 from django.core.cache import cache
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
@@ -143,19 +144,41 @@ async def spawn_dealership(session, vehicle_key, location, yaw):
             raise Exception("Failed to spawn dealership")
 
 
+_NEG_SENTINEL = "__none__"
+_inflight: dict[str, asyncio.Future] = {}
+
+
 async def get_player(session, player_id):
     cache_key = f"mod_player_info:{player_id}"
-    cached = cache.get(cache_key)
+    cached = await cache.aget(cache_key)
     if cached is not None:
-        return cached
+        return None if cached == _NEG_SENTINEL else cached
 
-    async with session.get(f"/players/{player_id}") as resp:
-        data = await resp.json()
-        if not data or not data.get("data"):
-            return None
-        result = data["data"][0]
-        cache.set(cache_key, result, timeout=5)
-        return result
+    pending = _inflight.get(player_id)
+    if pending is not None:
+        return await pending
+
+    future = asyncio.get_running_loop().create_future()
+    _inflight[player_id] = future
+    try:
+        async with session.get(f"/players/{player_id}") as resp:
+            result = None
+            if resp.status == 200:
+                data = await resp.json()
+                if data and data.get("data"):
+                    result = data["data"][0]
+            if result is None:
+                await cache.aset(cache_key, _NEG_SENTINEL, timeout=5)
+            else:
+                await cache.aset(cache_key, result, timeout=5)
+            future.set_result(result)
+            return result
+    except Exception as exc:
+        if not future.done():
+            future.set_exception(exc)
+        raise
+    finally:
+        _inflight.pop(player_id, None)
 
 
 _MOD_PLAYERS_LIST_TTL = 2

@@ -1,8 +1,11 @@
 import re
 import logging
+from django.core.cache import cache
 from amc.mod_server import set_character_name
 
 logger = logging.getLogger(__name__)
+
+PUSHED_NAME_TTL = 3600  # 1 hour
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
@@ -28,6 +31,14 @@ def strip_all_tags(name: str) -> str:
     for pattern in TAG_PATTERNS:
         clean_name = pattern.sub("", clean_name)
     return clean_name.strip()
+
+
+def name_has_mod_tag(name: str) -> bool:
+    """Return True if the name currently carries a mod-parts tag."""
+    return bool(
+        re.search(r"\[MODS?\]", name, re.IGNORECASE)
+        or re.search(r"\[[CGPW0-9₀-₉]*M[CGPW0-9₀-₉]*\]", name)
+    )
 
 
 def build_display_name(
@@ -101,10 +112,7 @@ async def refresh_player_name(
     if has_custom_parts is None:
         # Preserve existing state — check for both legacy [MODS]/[MOD] and new [M]
         current_name = character.custom_name or character.name
-        has_custom_parts = bool(
-            re.search(r"\[MODS?\]", current_name, re.IGNORECASE)
-            or re.search(r"\[[CGPW0-9₀-₉]*M[CGPW0-9₀-₉]*\]", current_name)
-        )
+        has_custom_parts = name_has_mod_tag(current_name)
 
     # Determine GOV state
     gov_level = 0
@@ -171,7 +179,13 @@ async def refresh_player_name(
 
     # Push to game server if GUID exists
     if session and character.guid:
+        cache_key = f"pushed_name:{character.guid}"
+        last_pushed = await cache.aget(cache_key)
+        if last_pushed == new_name:
+            return  # already correct on game server
+
         try:
             await set_character_name(session, character.guid, new_name)
+            await cache.aset(cache_key, new_name, timeout=PUSHED_NAME_TTL)
         except Exception as e:
             logger.warning(f"Failed to set character name for {character.name}: {e}")

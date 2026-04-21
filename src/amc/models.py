@@ -239,10 +239,12 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
                     await character.asave(update_fields=["name"])
                     character_created = False
                 else:
-                    character = await self.get_queryset().acreate(
-                        name=player_name, player=player, guid=None
-                    )
-                    character_created = True
+                    # Player has no characters at all and we have no GUID.
+                    # Do NOT create a GUID-less character — it produces orphan
+                    # duplicates and breaks downstream logic that assumes every
+                    # character has a GUID.
+                    character = None
+                    character_created = False
 
         return (character, player, character_created, player_created)
 

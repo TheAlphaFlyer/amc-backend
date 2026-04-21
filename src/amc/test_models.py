@@ -133,13 +133,18 @@ class CharacterMangerTestCase(TestCase):
         self.assertEqual(character1.id, character2.id)
 
     async def test_add_guid(self):
-        character1, *_ = await Character.objects.aget_or_create_character_player(
-            "test", 123
-        )
-        character2, *_ = await Character.objects.aget_or_create_character_player(
+        # Create a legacy GUID-less character directly (bypassing the manager)
+        from amc.models import Player
+
+        player, _ = await Player.objects.aget_or_create(unique_id=123)
+        legacy = await Character.objects.acreate(name="test", player=player, guid=None)
+
+        # Now provide a GUID — the legacy character should be claimed
+        character, *_ = await Character.objects.aget_or_create_character_player(
             "test", 123, character_guid=234
         )
-        self.assertEqual(character1.id, character2.id)
+        self.assertEqual(legacy.id, character.id)
+        self.assertEqual(character.guid, "234")
 
     async def test_missing_guid(self):
         character1, *_ = await Character.objects.aget_or_create_character_player(
@@ -167,15 +172,14 @@ class CharacterMangerTestCase(TestCase):
         await found.arefresh_from_db()
         self.assertEqual(found.name, "NewName")
 
-    async def test_no_guid_creates_new_when_player_has_no_characters(self):
+    async def test_no_guid_returns_none_when_player_has_no_characters(self):
         """When no GUID is provided and the player has no characters at all,
-        a new GUID-less character should be created."""
+        no character is created (to avoid orphan GUID-less duplicates)."""
         found, player, created, _ = await Character.objects.aget_or_create_character_player(
             "BrandNewPlayer", 999
         )
-        self.assertTrue(created)
-        self.assertIsNone(found.guid)
-        self.assertEqual(found.name, "BrandNewPlayer")
+        self.assertFalse(created)
+        self.assertIsNone(found)
 
     async def test_new_alt(self):
         character1, *_ = await Character.objects.aget_or_create_character_player(

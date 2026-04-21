@@ -159,7 +159,7 @@ class PlayerAdmin(admin.ModelAdmin):
         )
 
     def character_names(self, player):
-        return ", ".join(n for n in player.character_names if n)
+        return ", ".join(n for n in (player.character_names or []) if n)
 
     @admin.display(ordering="characters_count")
     def characters_count(self, player):

@@ -236,23 +236,24 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
 
         self.assertEqual(character.guid, VALID_GUID)
 
-    async def test_creates_character_without_guid_when_both_fail(self):
-        """Creates a character with no GUID when both APIs fail to return one."""
+    async def test_returns_none_when_both_fail(self):
+        """When both APIs fail to return a GUID, no character is created."""
         with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
             with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
                 character, player, created, player_info = await aget_or_create_character(
                     "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
                 )
 
-        self.assertIsNone(character.guid)
-        self.assertTrue(created)
+        self.assertIsNone(character)
+        self.assertFalse(created)
 
-    async def test_no_http_client_still_works(self):
-        """aget_or_create_character works with no http clients at all."""
+    async def test_no_http_client_returns_none(self):
+        """aget_or_create_character returns no character when no http clients are available."""
         character, player, created, player_info = await aget_or_create_character(
             "TestPlayer", PLAYER_ID
         )
-        self.assertIsNone(character.guid)
+        self.assertIsNone(character)
+        self.assertFalse(created)
         self.assertIsNone(player_info)
 
 
