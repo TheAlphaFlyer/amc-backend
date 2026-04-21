@@ -467,7 +467,7 @@ class CommandsTestCase(TestCase):
 
     async def test_cmd_coords(self):
         with patch(
-            "amc.commands.general.get_player",
+            "amc.commands.general.get_player_info",
             new=AsyncMock(
                 return_value={"Location": {"X": 100.5, "Y": 200.5, "Z": 300.5}}
             ),

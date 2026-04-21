@@ -4,7 +4,7 @@ from amc.models import BotInvocationLog, SongRequestLog
 from amc.mod_server import set_character_name, show_popup
 from django.conf import settings
 from django.core.cache import cache
-from amc.mod_server import get_player
+from amc.game_server import get_player_info
 from amc.auth import verify_player
 from amc.utils import add_discord_verified_role
 from django.utils.translation import gettext as _, gettext_lazy
@@ -107,8 +107,8 @@ async def cmd_credits(ctx: CommandContext):
     category="General",
 )
 async def cmd_coords(ctx: CommandContext):
-    player_info = await get_player(ctx.http_client_mod, str(ctx.player.unique_id))
-    if player_info:
+    player_info = await get_player_info(ctx.http_client, str(ctx.player.unique_id))
+    if player_info and player_info.get("Location"):
         loc = player_info["Location"]
         await ctx.announce(
             f"{int(float(loc['X']))}, {int(float(loc['Y']))}, {int(float(loc['Z']))}"

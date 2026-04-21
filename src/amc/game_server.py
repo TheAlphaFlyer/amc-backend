@@ -1,9 +1,14 @@
 import asyncio
+import logging
 from typing import Any, cast
 import urllib.parse
 import aiohttp
 from yarl import URL
 from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
+
+_NEG_SENTINEL = "__none__"
 
 
 async def game_api_request(
@@ -101,6 +106,85 @@ async def get_players_with_location(session):
         })
 
     cache.set(cache_key, result, timeout=1)
+    return result
+
+
+async def get_admins(session, password=""):
+    """Fetch the current admin list from the game server.
+
+    Returns a set of unique_id strings.  Cached for 60s since admin
+    changes are infrequent.
+    """
+    cache_key = "game_admin_list"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        data = await game_api_request(session, "/player/role/list", params={"role": "admin"})
+    except Exception:
+        logger.warning("Failed to fetch admin list from game server", exc_info=True)
+        return set()
+
+    admin_set = set()
+    if data and (data.get("succeeded") or "data" in data):
+        admin_dict = data.get("data", {}).get("admin", {})
+        for entry in admin_dict.values():
+            if entry and entry.get("unique_id"):
+                admin_set.add(entry["unique_id"])
+
+    cache.set(cache_key, admin_set, timeout=60)
+    return admin_set
+
+
+async def get_player_info(session, unique_id, password="", force_refresh=False):
+    """Return normalized player info from the native game API.
+
+    The returned dict mirrors the shape of ``mod_server.get_player``:
+      CharacterGuid, PlayerName, Location, VehicleKey, bIsAdmin, unique_id
+
+    Cached with a 2s TTL to avoid hammering the game server.
+    """
+    cache_key = f"game_player_info:{unique_id}"
+    if not force_refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return None if cached == _NEG_SENTINEL else cached
+
+    data = await game_api_request(session, "/player/list")
+    if not data or not (data.get("succeeded") or "data" in data):
+        return None
+
+    player = None
+    for p in data.get("data", {}).values():
+        if p is not None and str(p.get("unique_id")) == str(unique_id):
+            player = p
+            break
+
+    if player is None:
+        cache.set(cache_key, _NEG_SENTINEL, timeout=2)
+        return None
+
+    from amc.enums import VehicleKeyByLabel
+
+    loc_str = player.get("location", "")
+    location = _parse_location_string(loc_str) if loc_str else None
+
+    vehicle_info = player.get("vehicle")
+    vehicle_name = vehicle_info["name"] if vehicle_info else None
+    vehicle_key = VehicleKeyByLabel.get(vehicle_name, vehicle_name) if vehicle_name else "None"
+
+    admin_set = await get_admins(session, password=password)
+    result = {
+        "CharacterGuid": player["character_guid"].upper(),
+        "PlayerName": player["name"],
+        "Location": location,
+        "VehicleKey": vehicle_key,
+        "bIsAdmin": player["unique_id"] in admin_set,
+        "unique_id": player["unique_id"],
+    }
+
+    cache.set(cache_key, result, timeout=2)
     return result
 
 

@@ -7,12 +7,12 @@ from amc.mod_server import (
     list_player_vehicles,
     send_system_message,
 )
+from amc.game_server import get_player_info
 from amc.vehicles import format_key_string
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
 from django.utils.translation import gettext as _, gettext_lazy
-from amc.mod_server import get_player
 
 
 @registry.register(
@@ -58,8 +58,8 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
 
     # 2. Create DB Entry
     location = None
-    player_info = await get_player(ctx.http_client_mod, str(ctx.player.unique_id))
-    if player_info and "Location" in player_info:
+    player_info = await get_player_info(ctx.http_client, str(ctx.player.unique_id))
+    if player_info and player_info.get("Location"):
         loc = player_info["Location"]
         location = Point(loc["X"], loc["Y"], loc["Z"], srid=0)
 

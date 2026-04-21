@@ -13,6 +13,7 @@ FAST_TIMEOUT = aiohttp.ClientTimeout(total=5)
 
 
 async def show_popup(session, message, player_id=None, character_guid=None):
+    await _write_limiter.acquire()
     params = {"message": message}
     if player_id is not None:
         params["playerId"] = str(player_id)
@@ -22,17 +23,20 @@ async def show_popup(session, message, player_id=None, character_guid=None):
 
 
 async def send_system_message(session, message, character_guid=None):
+    await _write_limiter.acquire()
     params = {"message": message}
     params["characterGuid"] = str(character_guid)
     await session.post("/messages/system", json=params)
 
 
 async def set_config(session, max_vehicles_per_player=12):
+    await _write_limiter.acquire()
     params = {"MaxVehiclePerPlayer": max_vehicles_per_player}
     await session.post("/config", json=params)
 
 
 async def set_character_name(session, character_guid, name):
+    await _write_limiter.acquire()
     transfer = {
         "name": name,
     }
@@ -45,6 +49,7 @@ async def set_character_name(session, character_guid, name):
 
 
 async def transfer_money(session, amount, message, player_id):
+    await _write_limiter.acquire()
     transfer = {
         "Amount": amount,
         "Message": message,
@@ -55,6 +60,7 @@ async def transfer_money(session, amount, message, player_id):
 
 
 async def toggle_rp_session(session, player_guid, despawn=False):
+    await _write_limiter.acquire()
     data = {"despawn": despawn}
     async with session.post(f"/rp_sessions/{player_guid}/toggle", json=data) as resp:
         if resp.status != 200:
@@ -62,6 +68,7 @@ async def toggle_rp_session(session, player_guid, despawn=False):
 
 
 async def join_player_to_event(session, event_guid, player_id):
+    await _write_limiter.acquire()
     data = {
         "PlayerId": player_id,
     }
@@ -71,6 +78,7 @@ async def join_player_to_event(session, event_guid, player_id):
 
 
 async def kick_player_from_event(session, event_guid, player_id):
+    await _write_limiter.acquire()
     data = {
         "PlayerId": player_id,
     }
@@ -94,6 +102,7 @@ async def list_player_vehicles(session, player_id, active=None, complete=None):
 
 
 async def send_message_as_player(session, message, player_id):
+    await _write_limiter.acquire()
     data = {
         "Message": message,
     }
@@ -112,6 +121,7 @@ async def teleport_player(
     reset_carried_vehicles=None,
     force=False,
 ):
+    await _write_limiter.acquire()
     data = {
         "Location": location,
     }
@@ -131,6 +141,7 @@ async def teleport_player(
 
 
 async def spawn_dealership(session, vehicle_key, location, yaw):
+    await _write_limiter.acquire()
     data = {
         "Location": location,
         "Rotation": {"Roll": 0.0, "Pitch": 0.0, "Yaw": yaw},
@@ -280,6 +291,26 @@ _patrol_payments_cache: dict = {}
 _patrol_payments_cache_ts: float = 0
 
 
+class _WriteRateLimiter:
+    """Ensures a minimum gap between write (POST/PUT/DELETE) requests."""
+
+    def __init__(self, min_interval_ms: float = 500):
+        self._lock = asyncio.Lock()
+        self._min_interval = min_interval_ms / 1000
+        self._last_request_time = 0.0
+
+    async def acquire(self):
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_interval:
+                await asyncio.sleep(self._min_interval - elapsed)
+            self._last_request_time = asyncio.get_running_loop().time()
+
+
+_write_limiter = _WriteRateLimiter(min_interval_ms=500)
+
+
 async def get_patrol_point_payments(session, cache_ttl=300):
     """Fetch patrol point payment data from the mod server, cached for cache_ttl seconds."""
     import time
@@ -319,12 +350,14 @@ async def get_decal(session, player_id):
 
 
 async def set_decal(session, player_id, decal):
+    await _write_limiter.acquire()
     async with session.post(f"/player_vehicles/{player_id}/decal", json=decal) as resp:
         if resp.status != 200:
             raise Exception("Failed to set decal")
 
 
 async def despawn_player_vehicle(session, player_id, category="current"):
+    await _write_limiter.acquire()
     if category == "others":
         json = {"others": True}
     elif category == "all":
@@ -343,6 +376,7 @@ async def force_exit_vehicle(session, character_guid):
 
 
 async def enter_last_vehicle(session, character_guid):
+    await _write_limiter.acquire()
     async with session.post(f"/players/{character_guid}/enter_last_vehicle") as resp:
         data = await resp.json()
         if resp.status != 200:
@@ -351,6 +385,7 @@ async def enter_last_vehicle(session, character_guid):
 
 
 async def make_suspect(session, character_guid, duration_seconds=300):
+    await _write_limiter.acquire()
     async with session.post(
         f"/players/{character_guid}/suspect",
         json={"DurationSeconds": duration_seconds},
@@ -364,6 +399,7 @@ async def make_suspect(session, character_guid, duration_seconds=300):
 
 
 async def despawn_player_cargo(session, character_guid):
+    await _write_limiter.acquire()
     async with session.post(f"/players/{character_guid}/despawn_cargo") as resp:
         if resp.status != 200:
             raise Exception("Failed to despawn cargo")
@@ -392,6 +428,7 @@ async def set_world_vehicle_decal(
     decal=None,
     parts=None,
 ):
+    await _write_limiter.acquire()
     data = {}
     if customization:
         data["customization"] = customization
@@ -407,6 +444,7 @@ async def set_world_vehicle_decal(
 
 
 async def spawn_assets(session, assets):
+    await _write_limiter.acquire()
     data = assets
     async with session.post("/assets/spawn", json=data) as resp:
         if resp.status != 200:
@@ -414,6 +452,7 @@ async def spawn_assets(session, assets):
 
 
 async def despawn_by_tag(session, tag):
+    await _write_limiter.acquire()
     data = {"Tag": tag, "Tags": []}
     async with session.post("/assets/despawn", json=data) as resp:
         if resp.status != 204:
@@ -433,6 +472,7 @@ async def spawn_garage(
     location,
     rotation,
 ):
+    await _write_limiter.acquire()
     data = {"Location": location, "Rotation": rotation}
     async with session.post("/garages/spawn", json=data) as resp:
         if resp.status != 201:
@@ -453,6 +493,7 @@ async def spawn_vehicle(
     tag="amc",
     extra_data={},
 ):
+    await _write_limiter.acquire()
     try:
         vehicle_key = VehicleKeyByLabel.get(vehicle_label)
         if not vehicle_key:
@@ -489,6 +530,7 @@ async def spawn_vehicle(
 
 
 async def mute_player(session, player_id, mute_for=True, hard=True):
+    await _write_limiter.acquire()
     data = {
         "MuteFor": mute_for,
         "Hard": hard,
@@ -500,6 +542,7 @@ async def mute_player(session, player_id, mute_for=True, hard=True):
 
 
 async def unmute_player(session, player_id):
+    await _write_limiter.acquire()
     async with session.delete(f"/players/{player_id}/mute") as resp:
         if resp.status != 200:
             raise Exception("Failed to unmute player")

@@ -44,7 +44,7 @@ from amc.models import (
     FactionMembership,
     PoliceSession,
 )
-from amc.game_server import announce, get_players
+from amc.game_server import announce, get_players, get_player_info
 from amc.police import is_police_vehicle
 from amc.utils import forward_to_discord
 from amc.mod_server import (
@@ -246,14 +246,6 @@ async def _resolve_guid_from_game_server(http_client, player_id, force_refresh=F
                 # to match the mod server convention and what's stored in the DB.
                 return guid.upper()
     return None
-    for uid, pdata in players:
-        if str(uid) == str(player_id):
-            guid = pdata.get("character_guid")
-            if guid and guid != Character.INVALID_GUID:
-                # Native game API returns lowercase GUIDs; normalize to uppercase
-                # to match the mod server convention and what's stored in the DB.
-                return guid.upper()
-    return None
 
 
 async def _resolve_guid_for_login(http_client, http_client_mod, player_id, player_name, max_attempts=5):
@@ -320,19 +312,31 @@ async def aget_or_create_character(player_name, player_id, http_client_mod=None,
             except Exception as e:
                 logger.debug(f"Game server GUID lookup failed (non-blocking): {e}")
 
-    # Always fetch player_info from the mod server — it contains fields
-    # (bIsAdmin, Location, etc.) that the game server API doesn't provide,
-    # and the command framework depends on them.
-    if http_client_mod:
+    # Fetch player_info from the game server — it now provides all fields
+    # (bIsAdmin, Location, VehicleKey) that the command framework depends on.
+    if http_client:
         try:
-            player_info = await get_player(http_client_mod, player_id)
+            player_info = await get_player_info(http_client, player_id)
             if player_info and not character_guid:
                 character_guid = player_info.get("CharacterGuid")
-                # Mod server returns all-zeros GUID during early login — treat as absent
+                # Treat all-zeros GUID during early login as absent
                 if character_guid == Character.INVALID_GUID:
                     character_guid = None
         except Exception as e:
-            logger.debug(f"Player info fetch failed (non-blocking): {e}")
+            logger.debug(f"Game server player_info fetch failed (non-blocking): {e}")
+
+    # Fallback to mod server for GUID only when game server is unavailable
+    if not character_guid and http_client_mod:
+        try:
+            player_info_mod = await get_player(http_client_mod, player_id)
+            if player_info_mod:
+                character_guid = player_info_mod.get("CharacterGuid")
+                if character_guid == Character.INVALID_GUID:
+                    character_guid = None
+                if not player_info:
+                    player_info = player_info_mod
+        except Exception as e:
+            logger.debug(f"Mod server GUID lookup failed (non-blocking): {e}")
 
     (
         character,
@@ -387,7 +391,7 @@ async def _login_guid_dependent_actions(
 ):
     """Fire-and-forget: GUID-dependent login side-effects that must not block the arq worker."""
     try:
-        character_guid, player_info = await _resolve_guid(
+        character_guid, _ = await _resolve_guid(
             http_client_mod, player_id, player_name, http_client=http_client
         )
         if not character_guid:
@@ -444,6 +448,14 @@ async def _login_guid_dependent_actions(
                     await character.arefresh_from_db()
                     character.guid = character_guid
                     await character.asave(update_fields=["guid"])
+
+        # Fetch player_info from the game server (Location, VehicleKey, bIsAdmin, PlayerName)
+        player_info = None
+        if http_client:
+            try:
+                player_info = await get_player_info(http_client, player_id)
+            except Exception as e:
+                logger.debug(f"Game server player_info fetch failed (non-blocking): {e}")
 
         # --- Tag Enforcement ---
         # 1. Update the player's name based on current DB state

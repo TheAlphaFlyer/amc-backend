@@ -103,6 +103,18 @@ def _make_game_players(player_id, guid):
     ]
 
 
+def _make_player_info(player_id, guid, name="Test", is_admin=False):
+    """Build the normalized dict returned by game_server.get_player_info()."""
+    return {
+        "CharacterGuid": guid.upper(),
+        "PlayerName": name,
+        "Location": None,
+        "VehicleKey": "None",
+        "bIsAdmin": is_admin,
+        "unique_id": player_id,
+    }
+
+
 class ResolveGuidFromGameServerTests(SimpleTestCase):
     """Unit tests for _resolve_guid_from_game_server — no DB needed."""
 
@@ -160,12 +172,11 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
     async def test_game_server_guid_used_when_available(self):
         """When game server returns a good GUID, it is used for character creation."""
         game_players = _make_game_players(PLAYER_ID, VALID_GUID)
-        # get_player is always called for player_info (bIsAdmin, Location, etc.)
-        mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "TestPlayer"}
+        player_info = _make_player_info(PLAYER_ID, VALID_GUID, name="TestPlayer")
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
+            with patch("amc.tasks.get_player_info", AsyncMock(return_value=player_info)):
+                character, player, created, returned_info = await aget_or_create_character(
                     "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
                 )
 
@@ -175,12 +186,11 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
         """GUIDs from the native game API (lowercase) are uppercased before storage."""
         lowercase_guid = VALID_GUID.lower()
         game_players = _make_game_players(PLAYER_ID, lowercase_guid)
-        # get_player is always called for player_info (bIsAdmin, Location, etc.)
-        mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "TestPlayer"}
+        player_info = _make_player_info(PLAYER_ID, lowercase_guid, name="TestPlayer")
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
+            with patch("amc.tasks.get_player_info", AsyncMock(return_value=player_info)):
+                character, player, created, returned_info = await aget_or_create_character(
                     "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
                 )
 
@@ -191,10 +201,11 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
         mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "Test"}
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
-                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
-                )
+            with patch("amc.tasks.get_player_info", AsyncMock(return_value=None)):
+                with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                    character, player, created, returned_info = await aget_or_create_character(
+                        "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                    )
 
         self.assertEqual(character.guid, VALID_GUID)
 
@@ -204,10 +215,11 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
         mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "Test"}
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
-                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
-                )
+            with patch("amc.tasks.get_player_info", AsyncMock(return_value=None)):
+                with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                    character, player, created, returned_info = await aget_or_create_character(
+                        "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                    )
 
         self.assertEqual(character.guid, VALID_GUID)
 
@@ -217,10 +229,11 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
         mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "Test"}
 
         with patch("amc.tasks.get_players", AsyncMock(return_value=game_players)):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
-                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
-                )
+            with patch("amc.tasks.get_player_info", AsyncMock(return_value=None)):
+                with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                    character, player, created, returned_info = await aget_or_create_character(
+                        "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                    )
 
         self.assertEqual(character.guid, VALID_GUID)
 
@@ -229,20 +242,22 @@ class AgetOrCreateCharacterFallbackTests(TestCase):
         mod_player_info = {"CharacterGuid": VALID_GUID, "PlayerName": "Test"}
 
         with patch("amc.tasks.get_players", AsyncMock(side_effect=Exception("timeout"))):
-            with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
-                character, player, created, player_info = await aget_or_create_character(
-                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
-                )
+            with patch("amc.tasks.get_player_info", AsyncMock(side_effect=Exception("timeout"))):
+                with patch("amc.tasks.get_player", AsyncMock(return_value=mod_player_info)):
+                    character, player, created, returned_info = await aget_or_create_character(
+                        "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                    )
 
         self.assertEqual(character.guid, VALID_GUID)
 
     async def test_returns_none_when_both_fail(self):
         """When both APIs fail to return a GUID, no character is created."""
-        with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
-            with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
-                character, player, created, player_info = await aget_or_create_character(
-                    "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
-                )
+        with patch("amc.tasks.get_player_info", AsyncMock(return_value=None)):
+            with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
+                with patch("amc.tasks.get_players", AsyncMock(return_value=[])):
+                    character, player, created, returned_info = await aget_or_create_character(
+                        "TestPlayer", PLAYER_ID, http_client_mod=AsyncMock(), http_client=AsyncMock()
+                    )
 
         self.assertIsNone(character)
         self.assertFalse(created)

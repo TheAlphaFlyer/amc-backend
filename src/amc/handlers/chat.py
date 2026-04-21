@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from amc.handlers import register
 from amc.models import PlayerChatLog
-from amc.mod_server import get_player
+from amc.game_server import get_player_info
 
 logger = logging.getLogger("amc.webhook.handlers.chat")
 
@@ -50,9 +50,9 @@ async def handle_server_send_chat(event, player, character, ctx):
         from amc.command_framework import registry, CommandContext
 
         player_info = {}
-        if ctx.http_client_mod and unique_id:
+        if ctx.http_client and unique_id:
             try:
-                player_info = await get_player(ctx.http_client_mod, unique_id) or {}
+                player_info = await get_player_info(ctx.http_client, unique_id) or {}
             except Exception:
                 logger.debug("Failed to fetch player_info for chat command context")
 
