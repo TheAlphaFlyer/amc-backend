@@ -46,6 +46,7 @@ from .schema import (
     # Commands
     ServerCommandSchema,
     ShortcutZoneSchema,
+    DepotSchema,
 )
 from django.conf import settings
 from amc.models import (
@@ -107,6 +108,38 @@ def housing(request):
     return {
         **get_housings(get_world()),
     }
+
+
+@app_router.get("/depots/", response=list[DepotSchema])
+def depots(request, owner: bool = False):
+    world = get_world()
+    depots = world.get("depot", [])
+
+    if owner:
+        buildings = world.get("building", [])
+        building_map = {
+            b["guid"]: b["housingKey"]
+            for b in buildings
+            if "guid" in b and "housingKey" in b
+        }
+        return [
+            {
+                "name": d["name"],
+                "storage": d["storage"],
+                "taxiDispatchLevel": d["taxiDispatchLevel"],
+                "owner": building_map.get(d.get("buildingGuid")),
+            }
+            for d in depots
+        ]
+
+    return [
+        {
+            "name": d["name"],
+            "storage": d["storage"],
+            "taxiDispatchLevel": d["taxiDispatchLevel"],
+        }
+        for d in depots
+    ]
 
 
 @app_router.get("/subsidies/", response=dict)
