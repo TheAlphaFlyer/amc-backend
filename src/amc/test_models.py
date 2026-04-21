@@ -191,16 +191,17 @@ class CharacterMangerTestCase(TestCase):
         another character, the existing owner keeps its GUID and the orphan is deleted."""
         from unittest.mock import AsyncMock, patch
 
-        # Create the authoritative character with GUID
+        from amc.models import Player
+
+        # Create the authoritative character with GUID via the normal path
         original, *_ = await Character.objects.aget_or_create_character_player(
             "test", 123, character_guid="AAAA1111BBBB2222CCCC3333DDDD4444"
         )
         self.assertEqual(original.guid, "AAAA1111BBBB2222CCCC3333DDDD4444")
 
-        # Create a second character without GUID (simulates login without GUID)
-        impostor, *_ = await Character.objects.aget_or_create_character_player(
-            "test2", 123
-        )
+        # Create a GUID-less impostor directly (bypassing the rename-safe fallback)
+        player = await Player.objects.aget(unique_id=123)
+        impostor = await Character.objects.acreate(name="test2", player=player, guid=None)
         self.assertIsNone(impostor.guid)
         self.assertNotEqual(original.id, impostor.id)
         orphan_id = impostor.id
@@ -216,7 +217,7 @@ class CharacterMangerTestCase(TestCase):
             with patch("amc.tasks.refresh_player_name", new_callable=AsyncMock):
                 await _login_guid_dependent_actions(
                     impostor,
-                    impostor.player,
+                    player,
                     "test2",
                     123,
                     mock_http,
