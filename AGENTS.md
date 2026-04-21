@@ -173,6 +173,36 @@ This provides: `uv`, PostgreSQL with PostGIS, Redis, `gettext`, `ruff`, `pyrefly
 
 The shell sets `UV_NO_SYNC=1` and `UV_PYTHON` to prevent uv from managing Python downloads. The `PYTHONPATH` is unset in the shell hook — the editable virtualenv handles imports via `REPO_ROOT`.
 
+## Game Save Data (`get_world()`)
+
+`amc.save_file.get_world()` decrypts and parses the MotorTown world save file. It returns a dict with the following relevant keys:
+
+```python
+{
+    "building": [
+        {
+            "guid": str,           # Unique building identifier
+            "housingKey": str,     # Housing / owner key
+            # ... other fields
+        }
+    ],
+    "depot": [
+        {
+            "buildingGuid": str,   # Links to building.guid
+            "name": str,
+            "storage": int,
+            "taxiDispatchLevel": int,
+        }
+    ],
+    "housings": {
+        # housingKey -> { rentLeftTimeSeconds: int, ... }
+    },
+    # ... many other world keys
+}
+```
+
+**Guideline:** when cross-referencing `depot.buildingGuid` with `building.guid`, filter the `building` array into a single dict/map once rather than scanning it per depot.
+
 ## Deployment
 
 Deployed to the `amc-backend` NixOS container on `asean-mt-server`:
