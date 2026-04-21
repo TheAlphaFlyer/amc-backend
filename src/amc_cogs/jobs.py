@@ -494,6 +494,8 @@ class JobsCog(commands.Cog):
         treasury_mult = calculate_treasury_multiplier(
             float(treasury_balance),
             equilibrium=float(config.treasury_equilibrium),
+            sensitivity=float(config.treasury_sensitivity),
+            cap_ratio=float(config.treasury_cap_ratio),
         )
 
         quantity_requested = tmpl.default_quantity
@@ -501,10 +503,9 @@ class JobsCog(commands.Cog):
             round(tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2) * treasury_mult
         )
         base_bonus = tmpl.completion_bonus
-        # Treasury health × random variance, clamped to [0.5x, 2.0x]
-        scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
+        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
         completion_bonus = int(base_bonus * scaling_factor)
-        duration_hours = tmpl.duration_hours * max(0.5, min(2.0, treasury_mult))
+        duration_hours = tmpl.duration_hours
 
         active_term = await MinistryTerm.objects.filter(is_active=True).afirst()
 

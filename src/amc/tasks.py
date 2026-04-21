@@ -72,7 +72,7 @@ from amc.mod_detection import (
     detect_incompatible_parts,
     POLICE_DUTY_WHITELIST,
 )
-from amc.player_tags import refresh_player_name
+from amc.player_tags import refresh_player_name, name_has_mod_tag
 from amc.webhook import on_player_profit
 from amc.enums import VehicleKeyByLabel, VEHICLE_DATA
 from amc.vehicles import spawn_registered_vehicle
@@ -229,9 +229,13 @@ def get_welcome_message(player_name, is_new, last_online=None):
     return None, False
 
 
-async def _resolve_guid_from_game_server(http_client, player_id):
-    """Single attempt to resolve GUID from the game server player list (authoritative, cached)."""
-    players = await get_players(http_client)
+async def _resolve_guid_from_game_server(http_client, player_id, force_refresh=False):
+    """Single attempt of resolve GUID from the game server player list (authoritative, cached).
+
+    When force_refresh is True, bypasses the Redis cache so that a player who
+    just logged in is visible even if the cache was populated moments before.
+    """
+    players = await get_players(http_client, force_refresh=force_refresh)
     if not players:
         return None
     for uid, pdata in players:
@@ -242,19 +246,79 @@ async def _resolve_guid_from_game_server(http_client, player_id):
                 # to match the mod server convention and what's stored in the DB.
                 return guid.upper()
     return None
+    for uid, pdata in players:
+        if str(uid) == str(player_id):
+            guid = pdata.get("character_guid")
+            if guid and guid != Character.INVALID_GUID:
+                # Native game API returns lowercase GUIDs; normalize to uppercase
+                # to match the mod server convention and what's stored in the DB.
+                return guid.upper()
+    return None
 
 
-async def aget_or_create_character(player_name, player_id, http_client_mod=None, http_client=None):
-    character_guid = None
-    player_info = None
+async def _resolve_guid_for_login(http_client, http_client_mod, player_id, player_name, max_attempts=5):
+    """Retry GUID resolution specifically for login events.
 
-    # Try the native game server first — it's cached (1s TTL) and doesn't
-    # touch the game thread, so it's the cheapest source for GUID resolution.
+    Login log lines arrive before the game server has fully loaded the player,
+    so the first (cached) attempt often misses them.  This method:
+    1. Bypasses the cache on the first attempt.
+    2. Retries up to *max_attempts* times with a short sleep between each.
+    3. Falls back to the mod server if the game server keeps returning nothing.
+
+    Returns (character_guid, player_info) — player_info may be None.
+    """
+    # Attempt 1: game server, cache-busting
     if http_client:
         try:
-            character_guid = await _resolve_guid_from_game_server(http_client, player_id)
-        except Exception as e:
-            logger.debug(f"Game server GUID lookup failed (non-blocking): {e}")
+            guid = await _resolve_guid_from_game_server(http_client, player_id, force_refresh=True)
+            if guid:
+                return guid, None
+        except Exception:
+            logger.debug(f"Game server GUID lookup (force-refresh) failed for {player_name}")
+
+    # Retry loop: alternate between game server (with cache) and mod server
+    for i in range(max_attempts):
+        await asyncio.sleep(min(0.5 + i * 0.3, 3))
+
+        # Try game server (with cache, which may now contain the player)
+        if http_client:
+            try:
+                guid = await _resolve_guid_from_game_server(http_client, player_id)
+                if guid:
+                    return guid, None
+            except Exception:
+                logger.debug(f"Game server GUID lookup retry {i+1} failed for {player_name}")
+
+        # Try mod server
+        if http_client_mod:
+            try:
+                player_info = await get_player(http_client_mod, player_id)
+                if player_info:
+                    guid = player_info.get("CharacterGuid")
+                    if guid and guid != Character.INVALID_GUID:
+                        return guid, player_info
+            except Exception as e:
+                logger.debug(f"Mod server GUID lookup retry {i+1} failed for {player_name}: {e}")
+
+    logger.warning(
+        f"GUID not resolved after {max_attempts} retries for login of {player_name} ({player_id})"
+    )
+    return None, None
+
+
+async def aget_or_create_character(player_name, player_id, http_client_mod=None, http_client=None, character_guid=None):
+    player_info = None
+
+    # Only resolve GUID ourselves if the caller didn't already provide one
+    # (e.g. login events pre-resolve with retries via _resolve_guid_for_login).
+    if character_guid is None:
+        # Try the native game server first — it's cached (1s TTL) and doesn't
+        # touch the game thread, so it's the cheapest source for GUID resolution.
+        if http_client:
+            try:
+                character_guid = await _resolve_guid_from_game_server(http_client, player_id)
+            except Exception as e:
+                logger.debug(f"Game server GUID lookup failed (non-blocking): {e}")
 
     # Always fetch player_info from the mod server — it contains fields
     # (bIsAdmin, Location, etc.) that the game server API doesn't provide,
@@ -336,8 +400,12 @@ async def _login_guid_dependent_actions(
         if not character.guid or character.guid != character_guid:
             character.guid = character_guid
             try:
-                async with transaction.atomic():
-                    await character.asave(update_fields=["guid"])
+
+                def _save_guid():
+                    with transaction.atomic():
+                        character.save(update_fields=["guid"])
+
+                await sync_to_async(_save_guid, thread_sensitive=True)()
             except IntegrityError:
                 # GUID already belongs to another character — that character
                 # is the authoritative one (it has the real data). Switch to
@@ -348,11 +416,27 @@ async def _login_guid_dependent_actions(
                     .afirst()
                 )
                 if existing:
+                    orphan_id = character.id
                     logger.info(
                         f"GUID {character_guid} already belongs to character "
                         f"{existing.id} ({existing.name}); switching from "
-                        f"character {character.id} ({character.name})"
+                        f"orphan character {orphan_id} ({character.name})"
                     )
+                    # Reassign any rows already attached to the orphan
+                    # (e.g. PlayerStatusLog from process_login_event) before
+                    # deleting it so we don't lose data.
+                    from amc.models import PlayerStatusLog
+
+                    reassigned = await PlayerStatusLog.objects.filter(
+                        character_id=orphan_id
+                    ).aupdate(character_id=existing.id)
+                    if reassigned:
+                        logger.info(
+                            f"Reassigned {reassigned} PlayerStatusLog rows "
+                            f"from orphan {orphan_id} to character {existing.id}"
+                        )
+                    # Delete the orphan (CASCADE will remove other related rows)
+                    await Character.objects.filter(id=orphan_id).adelete()
                     character = existing
                 else:
                     # Edge case: the conflicting row vanished between the
@@ -484,9 +568,13 @@ async def handle_player_vehicle_mod_check(
     character, player, session, action: PlayerVehicleLog.Action
 ):
     """Check modded parts when entering a vehicle, or remove MOD tag when exiting."""
+    current_name = character.custom_name or character.name
+    currently_has_mod = name_has_mod_tag(current_name)
+
     # When exiting, we just clear the [MODS] tag
     if action == PlayerVehicleLog.Action.EXITED:
-        await refresh_player_name(character, session, has_custom_parts=False)
+        if currently_has_mod:
+            await refresh_player_name(character, session, has_custom_parts=False)
         return
 
     # When entering, we must fetch their active vehicle to see if it has custom parts
@@ -502,7 +590,8 @@ async def handle_player_vehicle_mod_check(
         if not player_vehicles:
             # They entered a vehicle but list_player_vehicles returned empty?
             # Fallback: remove the tag
-            await refresh_player_name(character, session, has_custom_parts=False)
+            if currently_has_mod:
+                await refresh_player_name(character, session, has_custom_parts=False)
             return
 
         # Check the first (main) active vehicle
@@ -517,7 +606,8 @@ async def handle_player_vehicle_mod_check(
 
         if not main_vehicle:
             # Fallback: remove the tag
-            await refresh_player_name(character, session, has_custom_parts=False)
+            if currently_has_mod:
+                await refresh_player_name(character, session, has_custom_parts=False)
             return
 
         parts = main_vehicle.get("parts", [])
@@ -531,11 +621,13 @@ async def handle_player_vehicle_mod_check(
         custom_parts = detect_custom_parts(parts, whitelist=whitelist)
         incompatible_parts = detect_incompatible_parts(parts, main_vehicle["fullName"])
 
-        await refresh_player_name(
-            character,
-            session,
-            has_custom_parts=bool(custom_parts or incompatible_parts),
-        )
+        should_have_mod = bool(custom_parts or incompatible_parts)
+        if should_have_mod != currently_has_mod:
+            await refresh_player_name(
+                character,
+                session,
+                has_custom_parts=should_have_mod,
+            )
 
 
 async def process_login_event(character_id, timestamp):
@@ -658,13 +750,17 @@ async def process_log_event(
                 character_created,
                 player_info,
             ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
+            if not character:
+                logger.warning(
+                    f"Skipping chat event for {player_name} — character could not be resolved"
+                )
+                return
             await PlayerChatLog.objects.acreate(
                 timestamp=timestamp,
                 character=character,
                 text=message,
             )
 
-            # --- New Command Framework ---
             from amc.command_framework import registry, CommandContext
 
             cmd_ctx = CommandContext(
@@ -674,15 +770,12 @@ async def process_log_event(
                 http_client=http_client,
                 http_client_mod=http_client_mod,
                 discord_client=discord_client,
-                player_info=player_info or {},  # Ensure dict
+                player_info=player_info or {},
                 is_current_event=bool(is_current_event),
             )
 
-            # Fire-and-forget: don't block event processing on command execution
             asyncio.create_task(registry.execute(message, cmd_ctx))
 
-            # Emit SSE event for all chat messages (allows bot to build conversation history)
-            # Fire-and-forget to avoid blocking event processing
             if is_current_event:
                 from amc.api.bot_events import emit_bot_event
 
@@ -732,6 +825,11 @@ async def process_log_event(
             character, player, *_ = await aget_or_create_character(
                 player_name, player_id, http_client_mod, http_client
             )
+            if not character:
+                logger.warning(
+                    f"Skipping vehicle event for {player_name} — character could not be resolved"
+                )
+                return
             await PlayerVehicleLog.objects.acreate(
                 timestamp=timestamp,
                 character=character,
@@ -777,12 +875,28 @@ async def process_log_event(
                 )
 
         case PlayerLoginLogEvent(timestamp, player_name, player_id):
+            # For login events, resolve GUID with retries *before* creating the
+            # character.  Login log lines arrive before the game server has fully
+            # loaded the player, so the single-attempt lookup in
+            # aget_or_create_character often returns None.  The retry loop
+            # bypasses the cache on the first attempt and retries with short
+            # sleeps, giving the game server time to populate the player data.
+            login_guid, login_player_info = await _resolve_guid_for_login(
+                http_client, http_client_mod, player_id, player_name,
+            )
             (
                 character,
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
+            ) = await aget_or_create_character(
+                player_name, player_id, http_client_mod, http_client,
+                character_guid=login_guid,
+            )
+            # Merge player_info from the login resolver if aget_or_create_character
+            # didn't already obtain it from the mod server.
+            if not player_info and login_player_info:
+                player_info = login_player_info
             is_current_event = ctx.get("startup_time") and timestamp > ctx.get(
                 "startup_time"
             )
@@ -902,6 +1016,11 @@ async def process_log_event(
             character, *_ = await aget_or_create_character(
                 owner_name, owner_id, http_client_mod, http_client
             )
+            if not character:
+                logger.warning(
+                    f"Skipping company event for {owner_name} — character could not be resolved"
+                )
+                return
             company, company_created = await Company.objects.aget_or_create(
                 name=company_name,
                 owner=character,
@@ -1008,9 +1127,10 @@ async def process_log_event(
                         extra_data=extra_data,
                         tags=tags,
                     )
+                    await asyncio.sleep(0.5)
 
             async def spawn_world_vehicles():
-                async for v in CharacterVehicle.objects.filter(pk=2367):
+                async for v in CharacterVehicle.objects.filter(is_world_vehicle=True):
                     await set_world_vehicle_decal(
                         http_client_mod,
                         f"{v.config['VehicleName']}_C",
@@ -1042,6 +1162,8 @@ async def process_log_event(
             asyncio.create_task(delay(spawn_dealerships(), 15))
             asyncio.create_task(delay(_spawn_assets(), 20))
             asyncio.create_task(delay(spawn_garages(), 25))
+            asyncio.create_task(delay(spawn_world_vehicles(), 30))
+            asyncio.create_task(delay(spawn_player_vehicles(), 35))
 
         case UnknownLogEntry():
             logger.warning("Unknown log entry: %s", event)

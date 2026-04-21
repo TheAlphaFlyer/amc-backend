@@ -233,7 +233,7 @@ class WorkerSettings:
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_deliverypoints, second=set(range(0, 60, 30))),
         # pyrefly: ignore [bad-argument-type]
-        cron(monitor_jobs, second=37),
+        cron(monitor_jobs, minute=set(range(0, 60, 5)), second=37),
         # cron(monitor_corporations, second=23),
         # pyrefly: ignore [bad-argument-type]
         cron(monitor_server_status, second=set(range(3, 60, 10))),

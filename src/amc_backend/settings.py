@@ -256,6 +256,12 @@ EVENT_MOD_SERVER_API_URL = os.environ.get(
     "EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011"
 )
 
+CHAT_VIA_WEBHOOK = os.environ.get("CHAT_VIA_WEBHOOK", "0").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 REDIS_SETTINGS = {}
 if redis_port := os.environ.get("REDIS_PORT"):
     REDIS_SETTINGS["port"] = int(redis_port)
@@ -428,3 +434,4 @@ TP_VEHICLE_USE_TELEPORT_FALLBACK = bool(
     os.environ.get("TP_VEHICLE_USE_TELEPORT_FALLBACK", "1")
 )
 
+IS_TEST_SERVER = bool(os.environ.get("IS_TEST_SERVER", ""))

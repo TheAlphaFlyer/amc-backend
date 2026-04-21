@@ -16,6 +16,7 @@ from amc.api.routes import (
     championships_router,
     results_router,
     deliveryjobs_router,
+    deliverypoints_router,
 )
 from amc.factories import (
     PlayerFactory,
@@ -35,6 +36,8 @@ from amc.models import (
     PlayerRestockDepotLog,
     CharacterLocation,
     LapSectionTime,
+    DeliveryPoint,
+    DeliveryPointStorage,
 )
 
 
@@ -430,3 +433,113 @@ class DeliveryJobsAPITest(TestCase):
         response = await cast(Any, self.api_client.get("/"))
         data = response.json()
         self.assertEqual(len(data), 1)
+
+
+class DeliveryPointsAPITest(TestCase):
+    def setUp(self):
+        self.api_client = TestAsyncClient(deliverypoints_router)
+
+    async def test_list_deliverypoints(self):
+        await sync_to_async(DeliveryPointFactory)()
+        await sync_to_async(DeliveryPointFactory)()
+
+        response = await cast(Any, self.api_client.get("/"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        for dp in data:
+            self.assertIn("guid", dp)
+            self.assertIn("name", dp)
+            self.assertIn("type", dp)
+            self.assertIn("last_updated", dp)
+
+    async def test_get_deliverypoint_detail_includes_data(self):
+        dp = await DeliveryPoint.objects.acreate(
+            guid="test-dp-001",
+            name="Test Depot",
+            type="Mine",
+            coord=Point(100, 200, 300, srid=3857),
+            data={
+                "inputInventory": [
+                    {"cargoKey": "C::Stone", "amount": 50, "cargo": {"name": "Stone"}},
+                ],
+                "outputInventory": [
+                    {"cargoKey": "C::Iron", "amount": 30, "cargo": {"name": "Iron"}},
+                ],
+                "deliveries": [],
+            },
+        )
+
+        response = await cast(Any, self.api_client.get(f"/{dp.guid}/"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["guid"], "test-dp-001")
+        self.assertEqual(data["name"], "Test Depot")
+        self.assertIn(
+            "data", data, "data field must be present for frontend compatibility"
+        )
+        self.assertIn("inputInventory", data["data"])
+        self.assertIn("outputInventory", data["data"])
+        self.assertEqual(len(data["data"]["inputInventory"]), 1)
+        self.assertEqual(data["data"]["inputInventory"][0]["cargoKey"], "C::Stone")
+        self.assertEqual(data["data"]["inputInventory"][0]["amount"], 50)
+        self.assertEqual(len(data["data"]["outputInventory"]), 1)
+        self.assertEqual(data["data"]["outputInventory"][0]["cargoKey"], "C::Iron")
+        self.assertEqual(data["data"]["outputInventory"][0]["amount"], 30)
+
+    async def test_get_deliverypoint_without_data(self):
+        dp = await DeliveryPoint.objects.acreate(
+            guid="test-dp-002",
+            name="Empty Depot",
+            type="Factory",
+            coord=Point(400, 500, 600, srid=3857),
+        )
+
+        response = await cast(Any, self.api_client.get(f"/{dp.guid}/"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn(
+            "data", data, "data field must be present for frontend compatibility"
+        )
+        self.assertIn("inputInventory", data["data"])
+        self.assertIn("outputInventory", data["data"])
+        self.assertEqual(data["data"]["inputInventory"], [])
+        self.assertEqual(data["data"]["outputInventory"], [])
+
+    async def test_get_deliverypoint_null_data_falls_back_to_storage(self):
+        dp = await DeliveryPoint.objects.acreate(
+            guid="test-dp-003",
+            name="Storage Depot",
+            type="Factory",
+            coord=Point(500, 600, 700, srid=3857),
+        )
+        cargo = await sync_to_async(CargoFactory)(key="C::Wood", label="Wood")
+        await DeliveryPointStorage.objects.acreate(
+            delivery_point=dp,
+            kind=DeliveryPointStorage.Kind.INPUT,
+            cargo_key="C::Wood",
+            cargo=cargo,
+            amount=25,
+            capacity=100,
+        )
+        await DeliveryPointStorage.objects.acreate(
+            delivery_point=dp,
+            kind=DeliveryPointStorage.Kind.OUTPUT,
+            cargo_key="C::Planks",
+            cargo=cargo,
+            amount=10,
+            capacity=50,
+        )
+
+        response = await cast(Any, self.api_client.get(f"/{dp.guid}/"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("data", data)
+        self.assertIn("inputInventory", data["data"])
+        self.assertIn("outputInventory", data["data"])
+        self.assertEqual(len(data["data"]["inputInventory"]), 1)
+        self.assertEqual(data["data"]["inputInventory"][0]["cargoKey"], "C::Wood")
+        self.assertEqual(data["data"]["inputInventory"][0]["amount"], 25)
+        self.assertEqual(len(data["data"]["outputInventory"]), 1)
+        self.assertEqual(data["data"]["outputInventory"][0]["cargoKey"], "C::Planks")
+        self.assertEqual(data["data"]["outputInventory"][0]["amount"], 10)

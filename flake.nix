@@ -656,8 +656,10 @@
             # Run pytest
             python -m pytest src/ --tb=short -q
 
-            # Cleanup
-            pg_ctl -D $PGDATA stop > /dev/null
+            # Cleanup: terminate lingering connections to test databases so
+            # pytest-django teardown can drop them, then stop postgres.
+            psql -h $PGHOST postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname LIKE 'test_%';" > /dev/null 2>&1 || true
+            pg_ctl -D $PGDATA stop -m fast > /dev/null 2>&1 || true
 
             touch $out
           '';

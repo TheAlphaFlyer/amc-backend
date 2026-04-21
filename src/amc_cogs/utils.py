@@ -47,6 +47,25 @@ def create_player_autocomplete(session, max_num=25):
     return player_autocomplete
 
 
+def create_character_autocomplete(max_num=25):
+    async def character_autocomplete(interaction: discord.Interaction, current: str):
+        characters = (
+            Character.objects.filter(name__icontains=current, guid__isnull=False)
+            .select_related("player")
+            .order_by("name")
+        )
+        choices = [
+            app_commands.Choice(
+                name=f"{c.name} ({c.player.unique_id})",
+                value=str(c.id),
+            )
+            async for c in characters[:max_num]
+        ]
+        return choices
+
+    return character_autocomplete
+
+
 def is_code_block_open(text):
     """Return True if there's an unclosed code block in the text."""
     return text.count("```") % 2 == 1

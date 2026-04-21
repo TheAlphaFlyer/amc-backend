@@ -100,6 +100,7 @@ class CargoKey(models.TextChoices):
     GanjaPallet = "GanjaPallet", "Ganja Pallet"
     Cocaine = "Cocaine", "Cocaine Pack"
     MoneyPallet = "MoneyPallet", "Money Pallet"
+    Moonshine = "Moonshine", "Moonshine Jug"
 
 
 class VehicleKey(models.TextChoices):

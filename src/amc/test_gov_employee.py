@@ -209,10 +209,10 @@ class WebhookPipelineTests(TestCase):
     @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     @patch("amc.pipeline.profit.transfer_money", new_callable=AsyncMock)
     @patch("amc.gov_employee.player_donation", new_callable=AsyncMock)
-    async def test_on_player_profit_gov_contract_burned(
+    async def test_on_player_profit_gov_contract_redirected(
         self, mock_donation, mock_transfer, mock_subsidy
     ):
-        """Contract payment is burned: confiscated from wallet but not deposited to treasury."""
+        """Contract payment is redirected to treasury like base payment."""
         from amc.webhook import on_player_profit
 
         player = await sync_to_async(PlayerFactory)()
@@ -228,22 +228,27 @@ class WebhookPipelineTests(TestCase):
         await on_player_profit(character, 5000, 10000, session, contract_payment=3000)
 
         # transfer_money calls:
-        # 1. Wallet confiscation = base_payment + contract = 10000 + 3000 = 13000
-        # 2. Subsidy confiscation = 5000
+        # 1. Confiscate base_payment + contract (10000 + 3000) from wallet
+        # 2. Confiscate subsidy (5000) back after subsidise_player deposits it
         self.assertEqual(mock_transfer.await_count, 2)
         self.assertEqual(mock_transfer.call_args_list[0][0][1], -13000)
         self.assertEqual(mock_transfer.call_args_list[1][0][1], -5000)
 
-        # Ledger: player_donation called twice:
-        # 1. redirect_income_to_treasury(10000) for base_payment confiscation
-        # 2. redirect_income_to_treasury(0, contribution=5000) for subsidy
-        self.assertEqual(mock_donation.await_count, 2)
-        self.assertEqual(mock_donation.call_args_list[0][0][0], 10000)
-        self.assertEqual(mock_donation.call_args_list[1][0][0], 0)
+        # subsidise_player should be called with the subsidy amount
+        mock_subsidy.assert_awaited_once()
 
-        # Contribution tracks base_payment + subsidy (15000), excludes contract
+        # Ledger: player_donation called three times:
+        # 1. redirect_income_to_treasury(10000) for base_payment
+        # 2. redirect_income_to_treasury(3000) for contract_payment
+        # 3. redirect_income_to_treasury(0, contribution=5000) for subsidy
+        self.assertEqual(mock_donation.await_count, 3)
+        self.assertEqual(mock_donation.call_args_list[0][0][0], 10000)
+        self.assertEqual(mock_donation.call_args_list[1][0][0], 3000)
+        self.assertEqual(mock_donation.call_args_list[2][0][0], 0)
+
+        # Contribution tracks base_payment + contract + subsidy (18000)
         await character.arefresh_from_db()
-        self.assertEqual(character.gov_employee_contributions, 15000)
+        self.assertEqual(character.gov_employee_contributions, 18000)
 
     @patch("amc.pipeline.profit.subsidise_player", new_callable=AsyncMock)
     @patch("amc.pipeline.profit.repay_loan_for_profit", new_callable=AsyncMock)

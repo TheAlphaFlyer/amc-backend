@@ -8,6 +8,7 @@ from amc.mod_server import (
     show_popup,
     despawn_by_tag,
     spawn_garage,
+    get_garages,
     spawn_assets,
     spawn_vehicle,
     force_exit_vehicle,
@@ -15,8 +16,11 @@ from amc.mod_server import (
     teleport_player,
     transfer_money,
     get_vehicle_cargos,
+    set_world_vehicle_decal,
+    mute_player,
+    unmute_player,
 )
-from amc.game_server import get_players
+from amc.game_server import get_players, add_player_role, remove_player_role
 from amc.vehicles import spawn_registered_vehicle
 from amc.models import (
     Character,
@@ -33,6 +37,25 @@ from django.utils.translation import gettext as _, gettext_lazy
 from amc.utils import fuzzy_find_player
 from amc.player_tags import strip_all_tags
 from amc_finance.services import player_donation
+
+
+@registry.register(
+    "/apply_world_vehicles",
+    description=gettext_lazy("Apply decals/parts to world vehicles"),
+    category="Admin",
+)
+async def cmd_apply_world_vehicles(ctx: CommandContext):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        return
+    async for v in CharacterVehicle.objects.filter(is_world_vehicle=True):
+        await set_world_vehicle_decal(
+            ctx.http_client_mod,
+            f"{v.config['VehicleName']}_C",
+            customization=v.config["Customization"],
+            decal=v.config["Decal"],
+            parts=[{**p, "partKey": p["Key"]} for p in v.config["Parts"]],
+        )
+    await ctx.reply(_("World vehicle decals and parts applied."))
 
 
 @registry.register(
@@ -111,20 +134,23 @@ async def cmd_spawn_garages(ctx: CommandContext):
 async def cmd_spawn_garage_single(ctx: CommandContext, name: str):
     if ctx.player_info and ctx.player_info.get("bIsAdmin"):
         await ctx.announce("spawning garage")
-        loc = ctx.player_info["Location"]
+        loc = {**ctx.player_info["Location"]}
         loc["Z"] -= 100
         rot = ctx.player_info.get("Rotation", {})
         resp = await spawn_garage(ctx.http_client_mod, loc, rot)
         tag = resp.get("tag")
         await ctx.announce(_("Garage spawned! Tag: {tag}").format(tag=tag))
         await Garage.objects.acreate(
-            config={"Location": loc, "Rotation": rot}, notes=name.strip(), tag=tag
+            config={"Location": loc, "Rotation": rot},
+            notes=name.strip(),
+            tag=tag,
+            hostname="asean-mt-server",
         )
 
 
 @registry.register(
     "/remove_garage",
-    description=gettext_lazy("Remove nearby garages (within 100 units)"),
+    description=gettext_lazy("Remove nearby garages (within 10m)"),
     category="Admin",
 )
 async def cmd_remove_garage(ctx: CommandContext):
@@ -134,32 +160,47 @@ async def cmd_remove_garage(ctx: CommandContext):
     player_loc = ctx.player_info["Location"]
     player_x, player_y, player_z = player_loc["X"], player_loc["Y"], player_loc["Z"]
 
-    removed_count = 0
-    no_tag_count = 0
-    async for garage in Garage.objects.all():
-        if garage.config is None:
-            continue
+    RADIUS = 1000
 
-        garage_loc = garage.config.get("Location", {})
-        gx, gy, gz = (
-            garage_loc.get("X", 0),
-            garage_loc.get("Y", 0),
-            garage_loc.get("Z", 0),
-        )
+    live_garages = await get_garages(ctx.http_client_mod)
 
-        # Calculate 3D distance
+    nearby_live = []
+    for lg in live_garages:
+        loc = lg.get("Location", {})
+        gx, gy, gz = loc.get("X", 0), loc.get("Y", 0), loc.get("Z", 0)
         distance = (
             (player_x - gx) ** 2 + (player_y - gy) ** 2 + (player_z - gz) ** 2
         ) ** 0.5
+        if distance <= RADIUS:
+            nearby_live.append(lg)
 
-        if distance <= 100:  # 100 units = 1m
-            # Despawn from game world
-            if garage.tag:
-                await despawn_by_tag(ctx.http_client_mod, garage.tag)
+    removed_count = 0
+    no_tag_count = 0
+
+    for lg in nearby_live:
+        loc = lg.get("Location", {})
+        lx, ly, lz = loc["X"], loc["Y"], loc["Z"]
+
+        best_garage = None
+        best_dist = float("inf")
+        async for garage in Garage.objects.all():
+            if garage.config is None:
+                continue
+            garage_loc = garage.config.get("Location")
+            if not garage_loc:
+                continue
+            gx, gy, gz = garage_loc["X"], garage_loc["Y"], garage_loc["Z"]
+            d = ((lx - gx) ** 2 + (ly - gy) ** 2 + (lz - gz) ** 2) ** 0.5
+            if d < best_dist:
+                best_dist = d
+                best_garage = garage
+
+        if best_garage and best_dist < RADIUS:
+            if best_garage.tag:
+                await despawn_by_tag(ctx.http_client_mod, best_garage.tag)
             else:
                 no_tag_count += 1
-            # Delete from database
-            await garage.adelete()
+            await best_garage.adelete()
             removed_count += 1
 
     if removed_count > 0:
@@ -174,7 +215,7 @@ async def cmd_remove_garage(ctx: CommandContext):
     else:
         await ctx.reply(
             _(
-                "<Title>No Garages Found</>\n\nNo garages within 100 units of your location."
+                "<Title>No Garages Found</>\n\nNo garages within 10m of your location."
             )
         )
 
@@ -524,3 +565,134 @@ async def cmd_cargo(ctx: CommandContext, target_player_name: Optional[str] = Non
         lines.append(_("\nNo cargo loaded."))
 
     await ctx.reply("\n".join(lines))
+
+
+@registry.register(
+    "/mute",
+    description=gettext_lazy("Mute a player (Admin)"),
+    category="Admin",
+)
+async def cmd_mute(ctx: CommandContext, target_player_name: str, duration: Optional[str] = None):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    players = await get_players_mod(ctx.http_client_mod)
+    if players is None:
+        await ctx.reply(_("Could not fetch player list."))
+        return
+    target = next(
+        (
+            p
+            for p in players
+            if p.get("PlayerName") == target_player_name
+            or strip_all_tags(p.get("PlayerName", "")) == target_player_name
+        ),
+        None,
+    )
+    if not target:
+        await ctx.reply(_("Player '{name}' not found.").format(name=target_player_name))
+        return
+
+    target_unique_id = target.get("UniqueID")
+    display_name = target.get("PlayerName", target_player_name)
+
+    if not target_unique_id:
+        await ctx.reply(_("Could not resolve player ID."))
+        return
+
+    if duration is None:
+        mute_for = True
+    elif duration.isdigit():
+        mute_for = int(duration)
+    else:
+        await ctx.reply(_("Invalid duration. Use a number of seconds or omit for permanent."))
+        return
+
+    try:
+        await mute_player(ctx.http_client_mod, target_unique_id, mute_for=mute_for)
+    except Exception as e:
+        await ctx.reply(_("Failed to mute player: {error}").format(error=str(e)))
+        return
+
+    if mute_for is True:
+        duration_text = _("permanently")
+    else:
+        duration_text = _("for {seconds}s").format(seconds=mute_for)
+
+    await ctx.reply(
+        _("<Title>Player Muted</>\n\n{name} has been muted {duration}.").format(
+            name=display_name, duration=duration_text
+        )
+    )
+
+
+@registry.register(
+    "/unmute",
+    description=gettext_lazy("Unmute a player (Admin)"),
+    category="Admin",
+)
+async def cmd_unmute(ctx: CommandContext, target_player_name: str):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    players = await get_players_mod(ctx.http_client_mod)
+    if players is None:
+        await ctx.reply(_("Could not fetch player list."))
+        return
+    target = next(
+        (
+            p
+            for p in players
+            if p.get("PlayerName") == target_player_name
+            or strip_all_tags(p.get("PlayerName", "")) == target_player_name
+        ),
+        None,
+    )
+    if not target:
+        await ctx.reply(_("Player '{name}' not found.").format(name=target_player_name))
+        return
+
+    target_unique_id = target.get("UniqueID")
+    display_name = target.get("PlayerName", target_player_name)
+
+    if not target_unique_id:
+        await ctx.reply(_("Could not resolve player ID."))
+        return
+
+    try:
+        await unmute_player(ctx.http_client_mod, target_unique_id)
+    except Exception as e:
+        await ctx.reply(_("Failed to unmute player: {error}").format(error=str(e)))
+        return
+
+    await ctx.reply(
+        _("<Title>Player Unmuted</>\n\n{name} has been unmuted.").format(name=display_name)
+    )
+
+
+@registry.register(
+    "/admin",
+    description=gettext_lazy("Toggle admin status (test server only)"),
+    category="Admin",
+)
+async def cmd_admin(ctx: CommandContext):
+    from django.conf import settings
+
+    if not settings.IS_TEST_SERVER:
+        return
+
+    is_admin = ctx.player_info and ctx.player_info.get("bIsAdmin", False)
+    unique_id = str(ctx.player.unique_id)
+
+    if is_admin:
+        await remove_player_role(ctx.http_client, unique_id, "admin")
+        await ctx.reply(
+            _("<Title>Admin Removed</>\n\nYou are no longer an admin.")
+        )
+    else:
+        await add_player_role(ctx.http_client, unique_id, "admin")
+        await ctx.reply(
+            _("<Title>Admin Granted</>\n\nYou are now an admin.")
+        )

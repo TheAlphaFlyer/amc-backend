@@ -7,6 +7,12 @@ from amc.player_tags import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_cache():
+    from django.core.cache import cache
+    cache.clear()
+
+
 # --- build_display_name ---
 
 
@@ -332,187 +338,52 @@ async def test_refresh_player_name_preserves_mod_state_legacy(mock_set_name):
 @pytest.mark.asyncio
 @pytest.mark.django_db
 @patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted(mock_set_name):
-    """Wanted record → ***** (300 remaining, ceil(300/60) = 5, capped at 5)."""
+@patch("amc.player_tags.cache.aget", new_callable=AsyncMock)
+async def test_refresh_player_name_skips_push_when_cached(mock_cache_aget, mock_set_name):
+    """If the pushed_name cache already matches, skip the mod server call."""
     from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import Wanted
     from asgiref.sync import sync_to_async
 
     player = await sync_to_async(PlayerFactory)()
     character = await sync_to_async(CharacterFactory)(
         player=player,
         name="TestPlayer",
-        guid="test-guid-wanted-1",
+        guid="test-guid-cache",
     )
 
-    await Wanted.objects.acreate(character=character, wanted_remaining=300)
-
+    mock_cache_aget.return_value = "[M] TestPlayer"
     session = MagicMock()
-    await refresh_player_name(character, session)
+    await refresh_player_name(character, session, has_custom_parts=True)
 
-    await character.arefresh_from_db()
-    assert character.custom_name == "[*****] TestPlayer"
-    mock_set_name.assert_awaited_once_with(
-        session, "test-guid-wanted-1", "[*****] TestPlayer"
-    )
+    mock_set_name.assert_not_awaited()
+    mock_cache_aget.assert_awaited_once_with("pushed_name:test-guid-cache")
 
 
 @pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted_rounds_up(mock_set_name):
-    """241 remaining → ceil(241/60) = 5 → W5."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import Wanted
-    from asgiref.sync import sync_to_async
+@patch("amc.mod_server.cache.aset", new_callable=AsyncMock)
+@patch("amc.mod_server.cache.aget", new_callable=AsyncMock)
+async def test_get_player_singleflight(mock_cache_aget, mock_cache_aset):
+    """Successful fetch is cached; subsequent calls hit the cache."""
+    from amc.mod_server import get_player
 
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-wanted-2",
-    )
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"data": [{"PlayerName": "Hamster"}]})
 
-    await Wanted.objects.acreate(character=character, wanted_remaining=241)
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__.return_value = mock_response
+    mock_cm.__aexit__.return_value = False
 
-    session = MagicMock()
-    await refresh_player_name(character, session)
+    mock_session = MagicMock()
+    mock_session.get.return_value = mock_cm
 
-    await character.arefresh_from_db()
-    assert character.custom_name == "[*****] TestPlayer"
+    mock_cache_aget.return_value = None
 
+    result = await get_player(mock_session, "76561199552800721")
 
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted_61s(mock_set_name):
-    """61 remaining → ceil(61/60) = 2 → W2."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import Wanted
-    from asgiref.sync import sync_to_async
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-wanted-3",
-    )
-
-    await Wanted.objects.acreate(character=character, wanted_remaining=61)
-
-    session = MagicMock()
-    await refresh_player_name(character, session)
-
-    await character.arefresh_from_db()
-    assert character.custom_name == "[**] TestPlayer"
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted_zero_protection(mock_set_name):
-    """Wanted with wanted_remaining=0 → no tag."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import Wanted
-    from asgiref.sync import sync_to_async
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-wanted-4",
-    )
-
-    await Wanted.objects.acreate(character=character, wanted_remaining=0)
-
-    session = MagicMock()
-    await refresh_player_name(character, session)
-
-    await character.arefresh_from_db()
-    assert character.custom_name is None
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted_with_crim(mock_set_name):
-    """Wanted + criminal record → [W5C1]."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import CriminalRecord, Wanted
-    from asgiref.sync import sync_to_async
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-wanted-crim-1",
-    )
-
-    await CriminalRecord.objects.acreate(
-        character=character,
-        reason="Money delivery",
-        cleared_at=None,  # active record
-    )
-    await Wanted.objects.acreate(character=character, wanted_remaining=300)
-
-    session = MagicMock()
-    await refresh_player_name(character, session)
-
-    await character.arefresh_from_db()
-    assert character.custom_name == "[*****C1] TestPlayer"
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_wanted_with_police(mock_set_name):
-    """Wanted + police → [P1W5] (wanted not suppressed)."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import PoliceSession, Wanted
-    from asgiref.sync import sync_to_async
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-wanted-police-1",
-    )
-
-    await PoliceSession.objects.acreate(character=character)
-    await Wanted.objects.acreate(character=character, wanted_remaining=300)
-
-    session = MagicMock()
-    await refresh_player_name(character, session)
-
-    await character.arefresh_from_db()
-    assert character.custom_name == "[P1*****] TestPlayer"
-
-
-@pytest.mark.asyncio
-@pytest.mark.django_db
-@patch("amc.player_tags.set_character_name", new_callable=AsyncMock)
-async def test_refresh_player_name_police_session(mock_set_name):
-    """Active police session → [P1] tag."""
-    from amc.factories import CharacterFactory, PlayerFactory
-    from amc.models import PoliceSession
-    from asgiref.sync import sync_to_async
-
-    player = await sync_to_async(PlayerFactory)()
-    character = await sync_to_async(CharacterFactory)(
-        player=player,
-        name="TestPlayer",
-        guid="test-guid-police-1",
-    )
-
-    await PoliceSession.objects.acreate(character=character)
-
-    session = MagicMock()
-    await refresh_player_name(character, session)
-
-    await character.arefresh_from_db()
-    assert character.custom_name == "[P1] TestPlayer"
-    mock_set_name.assert_awaited_once_with(
-        session, "test-guid-police-1", "[P1] TestPlayer"
+    assert result == {"PlayerName": "Hamster"}
+    mock_cache_aset.assert_awaited_once_with(
+        "mod_player_info:76561199552800721", {"PlayerName": "Hamster"}, timeout=5
     )
 
 

@@ -32,7 +32,7 @@ from amc.models import (
     ServerTowRequestArrivedLog,
     Delivery,
 )
-from .utils import create_player_autocomplete
+from .utils import create_player_autocomplete, create_character_autocomplete
 from amc.utils import get_timespan
 from amc_finance.services import send_fund_to_player
 from amc_finance.models import Account, LedgerEntry
@@ -105,6 +105,7 @@ class EconomyCog(commands.Cog):
             settings.DISCORD_DECRYPT_SAVE_FILE_CHANNEL_ID
         )
         self.player_autocomplete = create_player_autocomplete(self.bot.http_client_game)
+        self.character_autocomplete = create_character_autocomplete()
 
     async def cog_load(self):
         self.daily_top_haulers_task.start()
@@ -351,6 +352,9 @@ class EconomyCog(commands.Cog):
     async def player_autocomplete(self, interaction, current):
         return await self.player_autocomplete(interaction, current)
 
+    async def character_autocomplete(self, interaction, current):
+        return await self.character_autocomplete(interaction, current)
+
     @app_commands.command(name="calculate_gdp", description="Calculate the GDP figure")
     async def calculate_gdp(self, interaction, num_days: int = 1):
         await interaction.response.defer()
@@ -505,25 +509,22 @@ Tow Requests: {tow_requests_aggregates["total_payments"]:,}
         name="government_funding", description="Send government funding to player"
     )
     @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.autocomplete(discord_user_id=player_autocomplete)
+    @app_commands.describe(character_id="Character name")
+    @app_commands.autocomplete(discord_user_id=player_autocomplete, character_id=character_autocomplete)
     async def government_funding(
         self,
         interaction,
         discord_user_id: str,
-        character_name: str,
+        character_id: int,
         amount: int,
         reason: str,
     ):
         await interaction.response.defer()
         try:
-            character = await Character.objects.aget(
-                Q(player__discord_user_id=int(discord_user_id))
-                | Q(player__unique_id=int(discord_user_id)),
-                name=character_name,
-            )
+            character = await Character.objects.aget(id=character_id)
             await send_fund_to_player(amount, character, reason)
             await interaction.followup.send(
-                f"Government funding deposited into {character_name}'s bank account.\nAmount: {amount:,}\nReason: {reason}"
+                f"Government funding deposited into {character.name}'s bank account.\nAmount: {amount:,}\nReason: {reason}"
             )
         except Exception as e:
             await interaction.followup.send(f"Failed to send government funding: {e}")

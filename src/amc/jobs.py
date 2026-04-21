@@ -113,20 +113,23 @@ async def cleanup_expired_jobs():
 
 def calculate_treasury_multiplier(
     balance: float,
-    equilibrium: float = 50_000_000,
-    sensitivity: float = 2.0,
+    equilibrium: float = 100_000_000,
+    sensitivity: float = 1.5,
+    cap_ratio: float = 4.0,
 ) -> float:
     """
-    Power curve treasury multiplier for aggressive spending control.
-    Returns 0.0–2.0:
+    Asymmetric treasury multiplier for self-correcting spending control.
+    Returns 0.0+:
     - At equilibrium balance: 1.0 (normal spending)
-    - Below equilibrium: < 1.0 (tightens spending aggressively)
-    - Above equilibrium: > 1.0 (increases spending)
+    - Below equilibrium: ratio^sensitivity (steep pullback, preserves money)
+    - Above equilibrium: 1 + log(ratio)/log(cap_ratio) (gentle growth, no hard stall)
     """
     if balance <= 0:
         return 0.0
     ratio = balance / max(equilibrium, 1)
-    return min(2.0, ratio ** sensitivity)
+    if ratio <= 1.0:
+        return ratio ** sensitivity
+    return 1.0 + math.log(ratio) / math.log(max(cap_ratio, 1.01))
 
 
 def weighted_shuffle(templates: list, weight_fn) -> list:
@@ -164,6 +167,8 @@ async def monitor_jobs(ctx):
     treasury_mult = calculate_treasury_multiplier(
         float(treasury_balance),
         equilibrium=float(config.treasury_equilibrium),
+        sensitivity=float(config.treasury_sensitivity),
+        cap_ratio=float(config.treasury_cap_ratio),
     )
 
     # Get adaptive multiplier from recent history
@@ -178,7 +183,7 @@ async def monitor_jobs(ctx):
     # Base formula: log2 curve — generous at low player counts, flattens at high
     # e.g. 0→1, 6→4, 10→4, 20→5, 30→6
     base_max_jobs = config.min_base_jobs + round(math.log2(1 + num_players))
-    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult * treasury_mult))
+    max_active_jobs = max(1, int(base_max_jobs * adaptive_mult))
 
     slots_to_fill = max_active_jobs - num_active_jobs
     if slots_to_fill <= 0:
@@ -186,6 +191,15 @@ async def monitor_jobs(ctx):
 
     # Rate-limit: don't post more than max_posts_per_tick per cron cycle
     slots_to_fill = min(slots_to_fill, config.max_posts_per_tick)
+
+    # Probabilistic posting: each slot has posting_chance to actually post.
+    # treasury_mult + posting_rate_multiplier control the rate.
+    posting_chance = min(1.0, treasury_mult * config.posting_rate_multiplier)
+    slots_to_fill = sum(
+        1 for _ in range(slots_to_fill) if random.random() < posting_chance
+    )
+    if slots_to_fill <= 0:
+        return
 
     job_templates = (
         DeliveryJobTemplate.objects.exclude_has_conflicting_active_job()
@@ -332,8 +346,7 @@ async def monitor_jobs(ctx):
         base_bonus = int(
             template.completion_bonus * quantity_requested / template.default_quantity
         )
-        # Treasury health × random variance, clamped to [0.5x, 2.0x]
-        scaling_factor = max(0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
+        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
         completion_bonus = int(base_bonus * scaling_factor)
 
         if active_term:
@@ -341,8 +354,7 @@ async def monitor_jobs(ctx):
             if active_term.current_budget < completion_bonus:
                 continue  # Skip this job if budget is exhausted
 
-        # Treasury multiplier influences job duration
-        duration_hours = template.duration_hours * max(0.5, min(2.0, treasury_mult))
+        duration_hours = template.duration_hours
 
         new_job = await DeliveryJob.objects.acreate(
             name=template.name,

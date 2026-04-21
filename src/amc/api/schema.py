@@ -1,6 +1,6 @@
 from typing import Optional, List, TypeVar, Generic
 from pydantic import AwareDatetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from ninja import Schema, ModelSchema, Field
 from ..models import (
     Player,
@@ -213,9 +213,13 @@ class DeliveryPointSchema(ModelSchema):
         ]
 
 
-class DeliveryPointDetailSchema(DeliveryPointSchema):
-    class Meta(DeliveryPointSchema.Meta):
-        fields = DeliveryPointSchema.Meta.fields + ["data"]
+class DeliveryPointDetailSchema(Schema):
+    guid: Optional[str] = None
+    name: str
+    type: Optional[str] = ""
+    coord: PositionSchema
+    data: Optional[dict] = None
+    last_updated: Optional[datetime] = None
 
 
 class CargoSchema(ModelSchema):

@@ -14,6 +14,8 @@ from amc.server_logs import (
     PlayerLevelChangedLogEvent,
     CompanyAddedLogEvent,
     AnnouncementLogEvent,
+    ServerStartedLogEvent,
+    AFKChangedLogEvent,
     UnknownLogEntry,
 )
 from amc.tasks import process_log_event
@@ -201,6 +203,42 @@ class LogParserTestCase(SimpleTestCase):
         self.assertEqual(result.original_line, log_line)
         # The timestamp will be timezone.now(), so we just check it exists
         self.assertIsInstance(result.timestamp, datetime)
+
+    async def test_parse_server_started(self):
+        log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] DedicatedServer is started. version: 0.7.18+1(B1031)"
+        expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
+            tzinfo=ZoneInfo("Asia/Bangkok")
+        )
+
+        _log, result = parse_log_line(log_line)
+
+        self.assertIsInstance(result, ServerStartedLogEvent)
+        self.assertEqual(result.timestamp, expected_timestamp)
+        self.assertEqual(result.version, "0.7.18+1(B1031)")
+
+    async def test_parse_afk_changed_on(self):
+        log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] AFK Changed freeman (76561198378447512)(On)"
+        expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
+            tzinfo=ZoneInfo("Asia/Bangkok")
+        )
+
+        _log, result = parse_log_line(log_line)
+
+        self.assertIsInstance(result, AFKChangedLogEvent)
+        self.assertEqual(result.timestamp, expected_timestamp)
+        self.assertEqual(result.player_name, "freeman")
+        self.assertEqual(result.player_id, 76561198378447512)
+        self.assertTrue(result.is_afk)
+
+    async def test_parse_afk_changed_off(self):
+        log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] AFK Changed Tobs (76561198097444309)(Off)"
+
+        _log, result = parse_log_line(log_line)
+
+        self.assertIsInstance(result, AFKChangedLogEvent)
+        self.assertEqual(result.player_name, "Tobs")
+        self.assertEqual(result.player_id, 76561198097444309)
+        self.assertFalse(result.is_afk)
 
 
 class ProcessLogEventTestCase(TestCase):

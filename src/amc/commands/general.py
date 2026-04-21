@@ -3,6 +3,7 @@ from amc.command_framework import registry, CommandContext
 from amc.models import BotInvocationLog, SongRequestLog
 from amc.mod_server import set_character_name, show_popup
 from django.conf import settings
+from django.core.cache import cache
 from amc.mod_server import get_player
 from amc.auth import verify_player
 from amc.utils import add_discord_verified_role
@@ -168,6 +169,7 @@ async def cmd_rename(ctx: CommandContext, name: str):
     ctx.character.custom_name = name
     await ctx.character.asave()
     await set_character_name(ctx.http_client_mod, ctx.character.guid, name)
+    await cache.aset(f"pushed_name:{ctx.character.guid}", name, timeout=3600)
 
 
 @registry.register(

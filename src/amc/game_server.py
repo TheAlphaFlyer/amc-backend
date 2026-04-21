@@ -27,11 +27,12 @@ async def game_api_request(
         return resp_json
 
 
-async def get_players(session, password=""):
+async def get_players(session, password="", force_refresh=False):
     cache_key = "game_online_players_list"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if not force_refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
 
     data = await game_api_request(session, "/player/list")
     if "data" not in data:
@@ -169,3 +170,17 @@ async def ban_player(session, unique_id, hours=None, reason=None):
     if reason:
         params["reason"] = reason
     return await game_api_request(session, "/player/ban", method="post", params=params)
+
+
+async def add_player_role(session, unique_id, role):
+    params = {"unique_id": unique_id, "role": role}
+    return await game_api_request(
+        session, "/player/role/add", method="post", params=params
+    )
+
+
+async def remove_player_role(session, unique_id, role):
+    params = {"unique_id": unique_id, "role": role}
+    return await game_api_request(
+        session, "/player/role/remove", method="post", params=params
+    )

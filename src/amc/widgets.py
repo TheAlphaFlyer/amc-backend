@@ -1,4 +1,5 @@
 from django.contrib.gis.forms.widgets import OSMWidget
+from django.contrib.gis.geos import Point, Polygon
 from django import forms
 
 
@@ -50,8 +51,6 @@ class AMCOpenLayersWidget(OSMWidget):
 
             scaled_coords = transform_coords(value.coords)
 
-            from django.contrib.gis.geos import Polygon
-
             try:
                 if isinstance(value, Polygon):
                     value = type(value)(*scaled_coords, srid=value.srid)
@@ -86,7 +85,6 @@ class AMCOpenLayersWidget(OSMWidget):
                     return tuple(transform_coords(item) for item in coords)
 
             scaled_coords = transform_coords(geom.coords)
-            from django.contrib.gis.geos import Polygon
 
             try:
                 if isinstance(geom, Polygon):
@@ -117,3 +115,34 @@ class AMCOpenLayersWidget(OSMWidget):
                 "amc/js/OLMapWidget.js",
             ),
         )
+
+
+class AMCPointOpenLayersWidget(AMCOpenLayersWidget):
+    template_name = "amc/openlayers_point.html"
+    default_zoom = 4
+
+    def serialize(self, value):
+        if value:
+            MAP_REAL_X_LEFT = -1280000
+            MAP_REAL_Y_TOP = -320000
+            MAP_REAL_SIZE = 2200000
+
+            x, y = value.coords[0], value.coords[1]
+            new_x = x - MAP_REAL_X_LEFT
+            new_y = -(y - MAP_REAL_Y_TOP) + MAP_REAL_SIZE
+            value = Point(new_x, new_y, srid=value.srid)
+
+        return super(AMCOpenLayersWidget, self).serialize(value)
+
+    def deserialize(self, value):
+        geom = super(AMCOpenLayersWidget, self).deserialize(value)
+        if geom:
+            MAP_REAL_X_LEFT = -1280000
+            MAP_REAL_Y_TOP = -320000
+            MAP_REAL_SIZE = 2200000
+
+            x, y = geom.coords[0], geom.coords[1]
+            new_x = x + MAP_REAL_X_LEFT
+            new_y = -(y - MAP_REAL_SIZE) + MAP_REAL_Y_TOP
+            geom = Point(new_x, new_y, srid=geom.srid)
+        return geom

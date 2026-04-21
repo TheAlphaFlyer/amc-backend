@@ -24,6 +24,7 @@ from .schema import (
     PersonalStandingSchema,
     TeamStandingSchema,
     DeliveryPointSchema,
+    DeliveryPointDetailSchema,
     DeliveryJobSchema,
     DeliveryJobSummarySchema,
     LapSectionTimeSchema,
@@ -59,6 +60,7 @@ from amc.models import (
     Championship,
     Delivery,
     DeliveryPoint,
+    DeliveryPointStorage,
     LapSectionTime,
     DeliveryJob,
     # Phase 1
@@ -553,9 +555,31 @@ async def list_deliverypoints(request):
     return [dp async for dp in DeliveryPoint.objects.all()]
 
 
-@deliverypoints_router.get("/{guid}/", response=DeliveryPointSchema)
+@deliverypoints_router.get("/{guid}/", response=DeliveryPointDetailSchema)
 async def get_deliverypoint(request, guid):
-    return await DeliveryPoint.objects.aget(guid=guid)
+    dp = await DeliveryPoint.objects.aget(guid=guid)
+    if dp.data is None:
+        storages = DeliveryPointStorage.objects.filter(
+            delivery_point=dp
+        ).select_related("cargo")
+        input_inventory = []
+        output_inventory = []
+        async for s in storages:
+            entry = {
+                "cargoKey": s.cargo_key,
+                "amount": s.amount,
+                "cargo": {"name": s.cargo.label} if s.cargo else None,
+            }
+            if s.kind == DeliveryPointStorage.Kind.INPUT:
+                input_inventory.append(entry)
+            else:
+                output_inventory.append(entry)
+        dp.data = {
+            "inputInventory": input_inventory,
+            "outputInventory": output_inventory,
+            "deliveries": [],
+        }
+    return dp
 
 
 deliveryjobs_router = Router()
@@ -588,40 +612,42 @@ async def list_webui_deliveryjobs(request):
         "cargos",
         "source_points",
         "destination_points",
-        Prefetch(
-            "deliveries", queryset=Delivery.objects.select_related("character")
-        ),
+        Prefetch("deliveries", queryset=Delivery.objects.select_related("character")),
     ).filter_active():
-        jobs.append({
-            "id": job.id,
-            "name": job.name,
-            "quantity_requested": job.quantity_requested,
-            "quantity_fulfilled": job.quantity_fulfilled,
-            "requested_at": job.requested_at,
-            "fulfilled_at": job.fulfilled_at,
-            "expired_at": job.expired_at,
-            "bonus_multiplier": job.bonus_multiplier,
-            "completion_bonus": job.completion_bonus,
-            "description": job.description,
-            "fulfilled": job.fulfilled,
-            "cargos": [c.key async for c in job.cargos.all()],
-            "source_points": [dp.guid async for dp in job.source_points.all()],
-            "destination_points": [dp.guid async for dp in job.destination_points.all()],
-            "deliveries": [
-                {
-                    "timestamp": d.timestamp,
-                    "character": {
-                        "player_id": str(d.character.player_id),
-                        "name": d.character.name,
-                    },
-                    "cargo_key": d.cargo_key,
-                    "quantity": d.quantity,
-                    "payment": d.payment,
-                    "subsidy": d.subsidy,
-                }
-                async for d in job.deliveries.all()
-            ],
-        })
+        jobs.append(
+            {
+                "id": job.id,
+                "name": job.name,
+                "quantity_requested": job.quantity_requested,
+                "quantity_fulfilled": job.quantity_fulfilled,
+                "requested_at": job.requested_at,
+                "fulfilled_at": job.fulfilled_at,
+                "expired_at": job.expired_at,
+                "bonus_multiplier": job.bonus_multiplier,
+                "completion_bonus": job.completion_bonus,
+                "description": job.description,
+                "fulfilled": job.fulfilled,
+                "cargos": [c.key async for c in job.cargos.all()],
+                "source_points": [dp.guid async for dp in job.source_points.all()],
+                "destination_points": [
+                    dp.guid async for dp in job.destination_points.all()
+                ],
+                "deliveries": [
+                    {
+                        "timestamp": d.timestamp,
+                        "character": {
+                            "player_id": str(d.character.player_id),
+                            "name": d.character.name,
+                        },
+                        "cargo_key": d.cargo_key,
+                        "quantity": d.quantity,
+                        "payment": d.payment,
+                        "subsidy": d.subsidy,
+                    }
+                    async for d in job.deliveries.all()
+                ],
+            }
+        )
     return jobs
 
 
@@ -1028,9 +1054,7 @@ async def list_shortcut_zones(request):
     zones = ShortcutZone.objects.filter(active=True)
     result = []
     async for zone in zones:
-        coords = [
-            [x, y] for x, y in zone.polygon.coords[0]
-        ]
+        coords = [[x, y] for x, y in zone.polygon.coords[0]]
         result.append(
             {
                 "id": zone.id,
