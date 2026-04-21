@@ -8,7 +8,7 @@ from django.urls import path
 from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.conf import settings
-from django.db.models import F, Count, Window
+from django.db.models import F, Count, Q, Window
 from django.db.models.functions import RowNumber
 from django.contrib.postgres.aggregates import ArrayAgg
 from django.template.response import TemplateResponse
@@ -154,12 +154,12 @@ class PlayerAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.annotate(
-            character_names=ArrayAgg("characters__name"),
+            character_names=ArrayAgg("characters__name", filter=Q(characters__name__isnull=False)),
             characters_count=Count("characters"),
         )
 
     def character_names(self, player):
-        return ", ".join(player.character_names)
+        return ", ".join(n for n in player.character_names if n)
 
     @admin.display(ordering="characters_count")
     def characters_count(self, player):
