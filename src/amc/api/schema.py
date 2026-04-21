@@ -510,6 +510,7 @@ class ServerCommandSchema(Schema):
 class DepotSchema(Schema):
     """Depot information with optional owner"""
 
+    guid: str
     name: str
     storage: int
     taxiDispatchLevel: int

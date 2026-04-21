@@ -437,7 +437,6 @@ class DeliveryJobsAPITest(TestCase):
         self.assertEqual(len(data), 1)
 
 
-<<<<<<< HEAD
 class DeliveryPointsAPITest(TestCase):
     def setUp(self):
         self.api_client = TestAsyncClient(deliverypoints_router)
@@ -559,8 +558,8 @@ class DepotsAPITest(TestCase):
         """Test GET /depots/ without owner query param"""
         mock_get_world.return_value = {
             "depot": [
-                {"name": "Depot A", "storage": 100, "taxiDispatchLevel": 1},
-                {"name": "Depot B", "storage": 200, "taxiDispatchLevel": 2},
+                {"name": "Depot A", "storage": 100, "taxiDispatchLevel": 1, "buildingGuid": "guid-a"},
+                {"name": "Depot B", "storage": 200, "taxiDispatchLevel": 2, "buildingGuid": "guid-b"},
             ],
         }
 
@@ -569,10 +568,12 @@ class DepotsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 2)
+        self.assertEqual(data[0]["guid"], "guid-a")
         self.assertEqual(data[0]["name"], "Depot A")
         self.assertEqual(data[0]["storage"], 100)
         self.assertEqual(data[0]["taxiDispatchLevel"], 1)
         self.assertNotIn("owner", data[0])
+        self.assertEqual(data[1]["guid"], "guid-b")
         self.assertEqual(data[1]["name"], "Depot B")
         self.assertEqual(data[1]["storage"], 200)
         self.assertEqual(data[1]["taxiDispatchLevel"], 2)
@@ -583,7 +584,7 @@ class DepotsAPITest(TestCase):
         """Test GET /depots/?owner=false does not include owner"""
         mock_get_world.return_value = {
             "depot": [
-                {"name": "Depot A", "storage": 100, "taxiDispatchLevel": 1},
+                {"name": "Depot A", "storage": 100, "taxiDispatchLevel": 1, "buildingGuid": "guid-a"},
             ],
         }
 
@@ -592,6 +593,7 @@ class DepotsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["guid"], "guid-a")
         self.assertNotIn("owner", data[0])
 
     @patch("amc.api.routes.get_world")
@@ -630,10 +632,13 @@ class DepotsAPITest(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 3)
+        self.assertEqual(data[0]["guid"], "guid-1")
         self.assertEqual(data[0]["name"], "Depot A")
         self.assertEqual(data[0]["owner"], "House1")
+        self.assertEqual(data[1]["guid"], "guid-2")
         self.assertEqual(data[1]["name"], "Depot B")
         self.assertEqual(data[1]["owner"], "House2")
+        self.assertEqual(data[2]["guid"], "guid-missing")
         self.assertEqual(data[2]["name"], "Depot C")
         self.assertIsNone(data[2]["owner"])
 
@@ -646,3 +651,49 @@ class DepotsAPITest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
+
+    @patch("amc.api.routes.get_world_last_modified")
+    async def test_list_depots_unchanged_since_last_fetch(self, mock_get_mtime):
+        """Test GET /depots/ with If-Modified-Since returns 304 when world unchanged"""
+        mock_get_mtime.return_value = 946684800.0
+
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/depots/",
+                headers={"If-Modified-Since": "Sat, 01 Jan 2000 00:00:00 GMT"},
+            ),
+        )
+
+        self.assertEqual(response.status_code, 304)
+
+    @patch("amc.api.routes.get_world_last_modified")
+    @patch("amc.api.routes.get_world")
+    async def test_list_depots_changed_since_last_fetch(
+        self, mock_get_world, mock_get_mtime
+    ):
+        """Test GET /depots/ with If-Modified-Since returns data when world changed"""
+        mock_get_mtime.return_value = 946684801.0
+        mock_get_world.return_value = {
+            "depot": [
+                {"name": "Depot A", "storage": 100, "taxiDispatchLevel": 1, "buildingGuid": "guid-a"}
+            ],
+        }
+
+        response = await cast(
+            Any,
+            self.api_client.get(
+                "/depots/",
+                headers={"If-Modified-Since": "Sat, 01 Jan 2000 00:00:00 GMT"},
+            ),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Last-Modified"),
+            "Sat, 01 Jan 2000 00:00:01 GMT",
+        )
+        data = response.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["guid"], "guid-a")
+        self.assertEqual(data[0]["name"], "Depot A")
