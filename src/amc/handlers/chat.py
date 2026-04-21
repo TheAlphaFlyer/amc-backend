@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from django.conf import settings
 from django.utils import timezone
 
 from amc.handlers import register
@@ -69,16 +68,6 @@ async def handle_server_send_chat(event, player, character, ctx):
         )
 
         asyncio.create_task(registry.execute(message, cmd_ctx))
-
-    if ctx.discord_client:
-        from amc.tasks import enqueue_discord_message
-
-        player_name = character.name if character else "Unknown"
-        enqueue_discord_message(
-            settings.DISCORD_GAME_CHAT_CHANNEL_ID,
-            f"**{player_name}:** {message}",
-            timezone.now(),
-        )
 
     from amc.api.bot_events import emit_bot_event
 
