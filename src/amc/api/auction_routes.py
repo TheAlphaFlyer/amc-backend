@@ -203,12 +203,15 @@ async def escrow_funds(request: HttpRequest, payload: EscrowRequest):
     checking = await _get_or_create_checking(character)
     amount = Decimal(str(payload.amount))
 
+    # Refresh to ensure balance is current before checking sufficiency.
+    # aget_or_create may return a cached object if the account already existed.
+    await checking.arefresh_from_db()
     if checking.balance < amount:
         return 409, {"error": f"Insufficient funds. Balance: {checking.balance}"}
 
     escrow = await _get_or_create_auction_escrow()
 
-    await sync_to_async(create_journal_entry)(
+    await sync_to_async(create_journal_entry, thread_sensitive=True)(
         timezone.now(),
         f"Auction Escrow - {character.name}",
         character,
@@ -251,7 +254,7 @@ async def refund_funds(request: HttpRequest, payload: RefundRequest):
     if escrow.balance < amount:
         return 409, {"error": f"Escrow insufficient. Escrow balance: {escrow.balance}"}
 
-    await sync_to_async(create_journal_entry)(
+    await sync_to_async(create_journal_entry, thread_sensitive=True)(
         timezone.now(),
         f"Auction Refund - {character.name}",
         character,
@@ -294,7 +297,7 @@ async def settle_funds(request: HttpRequest, payload: SettleRequest):
     if payload.seller_type == "treasury":
         revenue = await _get_or_create_auction_revenue()
 
-        await sync_to_async(create_journal_entry)(
+        await sync_to_async(create_journal_entry, thread_sensitive=True)(
             timezone.now(),
             f"Auction Settlement - {winner_character.name} to Treasury",
             None,
@@ -321,7 +324,7 @@ async def settle_funds(request: HttpRequest, payload: SettleRequest):
 
         seller_checking = await _get_or_create_checking(seller_character)
 
-        await sync_to_async(create_journal_entry)(
+        await sync_to_async(create_journal_entry, thread_sensitive=True)(
             timezone.now(),
             f"Auction Settlement - {winner_character.name} to {seller_character.name}",
             None,
