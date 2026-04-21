@@ -150,6 +150,33 @@ class CharacterMangerTestCase(TestCase):
         )
         self.assertEqual(character1.id, character2.id)
 
+    async def test_no_guid_falls_back_to_existing_guidful_character_on_rename(self):
+        """When no GUID is provided and the name doesn't match, reuse the
+        player's existing GUID-ful character instead of creating a duplicate."""
+        original, *_ = await Character.objects.aget_or_create_character_player(
+            "OldName", 123, character_guid="AAAA1111BBBB2222CCCC3333DDDD4444"
+        )
+        # Player logs in with a new name but GUID resolution failed
+        found, *_ = await Character.objects.aget_or_create_character_player(
+            "NewName", 123
+        )
+        # Should reuse the existing character, not create a new one
+        self.assertEqual(found.id, original.id)
+        self.assertEqual(found.guid, "AAAA1111BBBB2222CCCC3333DDDD4444")
+        # Name should be updated to the new name
+        await found.arefresh_from_db()
+        self.assertEqual(found.name, "NewName")
+
+    async def test_no_guid_creates_new_when_player_has_no_characters(self):
+        """When no GUID is provided and the player has no characters at all,
+        a new GUID-less character should be created."""
+        found, player, created, _ = await Character.objects.aget_or_create_character_player(
+            "BrandNewPlayer", 999
+        )
+        self.assertTrue(created)
+        self.assertIsNone(found.guid)
+        self.assertEqual(found.name, "BrandNewPlayer")
+
     async def test_new_alt(self):
         character1, *_ = await Character.objects.aget_or_create_character_player(
             "test", 123, character_guid=234
@@ -159,9 +186,9 @@ class CharacterMangerTestCase(TestCase):
         )
         self.assertNotEqual(character1.id, character2.id)
 
-    async def test_guid_conflict_preserves_existing(self):
+    async def test_guid_conflict_preserves_existing_and_deletes_orphan(self):
         """When a second character tries to save a GUID that already belongs to
-        another character, the existing owner must keep its GUID."""
+        another character, the existing owner keeps its GUID and the orphan is deleted."""
         from unittest.mock import AsyncMock, patch
 
         # Create the authoritative character with GUID
@@ -176,6 +203,7 @@ class CharacterMangerTestCase(TestCase):
         )
         self.assertIsNone(impostor.guid)
         self.assertNotEqual(original.id, impostor.id)
+        orphan_id = impostor.id
 
         # Simulate _login_guid_dependent_actions trying to assign the same GUID
         from amc.tasks import _login_guid_dependent_actions
@@ -200,6 +228,8 @@ class CharacterMangerTestCase(TestCase):
         await original.arefresh_from_db()
         self.assertEqual(original.guid, "AAAA1111BBBB2222CCCC3333DDDD4444")
 
-        # Impostor should NOT have stolen the GUID
-        await impostor.arefresh_from_db()
-        self.assertIsNone(impostor.guid)
+        # Orphan character should be deleted
+        self.assertFalse(
+            await Character.objects.filter(id=orphan_id).aexists(),
+            f"Orphan character {orphan_id} should have been deleted",
+        )

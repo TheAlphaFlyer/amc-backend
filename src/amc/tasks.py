@@ -229,9 +229,13 @@ def get_welcome_message(player_name, is_new, last_online=None):
     return None, False
 
 
-async def _resolve_guid_from_game_server(http_client, player_id):
-    """Single attempt to resolve GUID from the game server player list (authoritative, cached)."""
-    players = await get_players(http_client)
+async def _resolve_guid_from_game_server(http_client, player_id, force_refresh=False):
+    """Single attempt of resolve GUID from the game server player list (authoritative, cached).
+
+    When force_refresh is True, bypasses the Redis cache so that a player who
+    just logged in is visible even if the cache was populated moments before.
+    """
+    players = await get_players(http_client, force_refresh=force_refresh)
     if not players:
         return None
     for uid, pdata in players:
@@ -242,6 +246,64 @@ async def _resolve_guid_from_game_server(http_client, player_id):
                 # to match the mod server convention and what's stored in the DB.
                 return guid.upper()
     return None
+    for uid, pdata in players:
+        if str(uid) == str(player_id):
+            guid = pdata.get("character_guid")
+            if guid and guid != Character.INVALID_GUID:
+                # Native game API returns lowercase GUIDs; normalize to uppercase
+                # to match the mod server convention and what's stored in the DB.
+                return guid.upper()
+    return None
+
+
+async def _resolve_guid_for_login(http_client, http_client_mod, player_id, player_name, max_attempts=5):
+    """Retry GUID resolution specifically for login events.
+
+    Login log lines arrive before the game server has fully loaded the player,
+    so the first (cached) attempt often misses them.  This method:
+    1. Bypasses the cache on the first attempt.
+    2. Retries up to *max_attempts* times with a short sleep between each.
+    3. Falls back to the mod server if the game server keeps returning nothing.
+
+    Returns (character_guid, player_info) — player_info may be None.
+    """
+    # Attempt 1: game server, cache-busting
+    if http_client:
+        try:
+            guid = await _resolve_guid_from_game_server(http_client, player_id, force_refresh=True)
+            if guid:
+                return guid, None
+        except Exception:
+            logger.debug(f"Game server GUID lookup (force-refresh) failed for {player_name}")
+
+    # Retry loop: alternate between game server (with cache) and mod server
+    for i in range(max_attempts):
+        await asyncio.sleep(min(0.5 + i * 0.3, 3))
+
+        # Try game server (with cache, which may now contain the player)
+        if http_client:
+            try:
+                guid = await _resolve_guid_from_game_server(http_client, player_id)
+                if guid:
+                    return guid, None
+            except Exception:
+                logger.debug(f"Game server GUID lookup retry {i+1} failed for {player_name}")
+
+        # Try mod server
+        if http_client_mod:
+            try:
+                player_info = await get_player(http_client_mod, player_id)
+                if player_info:
+                    guid = player_info.get("CharacterGuid")
+                    if guid and guid != Character.INVALID_GUID:
+                        return guid, player_info
+            except Exception as e:
+                logger.debug(f"Mod server GUID lookup retry {i+1} failed for {player_name}: {e}")
+
+    logger.warning(
+        f"GUID not resolved after {max_attempts} retries for login of {player_name} ({player_id})"
+    )
+    return None, None
 
 
 async def aget_or_create_character(player_name, player_id, http_client_mod=None, http_client=None):
@@ -348,11 +410,27 @@ async def _login_guid_dependent_actions(
                     .afirst()
                 )
                 if existing:
+                    orphan_id = character.id
                     logger.info(
                         f"GUID {character_guid} already belongs to character "
                         f"{existing.id} ({existing.name}); switching from "
-                        f"character {character.id} ({character.name})"
+                        f"orphan character {orphan_id} ({character.name})"
                     )
+                    # Reassign any rows already attached to the orphan
+                    # (e.g. PlayerStatusLog from process_login_event) before
+                    # deleting it so we don't lose data.
+                    from amc.models import PlayerStatusLog
+
+                    reassigned = await PlayerStatusLog.objects.filter(
+                        character_id=orphan_id
+                    ).aupdate(character_id=existing.id)
+                    if reassigned:
+                        logger.info(
+                            f"Reassigned {reassigned} PlayerStatusLog rows "
+                            f"from orphan {orphan_id} to character {existing.id}"
+                        )
+                    # Delete the orphan (CASCADE will remove other related rows)
+                    await Character.objects.filter(id=orphan_id).adelete()
                     character = existing
                 else:
                     # Edge case: the conflicting row vanished between the
@@ -773,12 +851,28 @@ async def process_log_event(
                 )
 
         case PlayerLoginLogEvent(timestamp, player_name, player_id):
+            # For login events, resolve GUID with retries *before* creating the
+            # character.  Login log lines arrive before the game server has fully
+            # loaded the player, so the single-attempt lookup in
+            # aget_or_create_character often returns None.  The retry loop
+            # bypasses the cache on the first attempt and retries with short
+            # sleeps, giving the game server time to populate the player data.
+            login_guid, login_player_info = await _resolve_guid_for_login(
+                http_client, http_client_mod, player_id, player_name,
+            )
             (
                 character,
                 player,
                 character_created,
                 player_info,
-            ) = await aget_or_create_character(player_name, player_id, http_client_mod, http_client)
+            ) = await aget_or_create_character(
+                player_name, player_id, http_client_mod, http_client,
+                character_guid=login_guid,
+            )
+            # Merge player_info from the login resolver if aget_or_create_character
+            # didn't already obtain it from the mod server.
+            if not player_info and login_player_info:
+                player_info = login_player_info
             is_current_event = ctx.get("startup_time") and timestamp > ctx.get(
                 "startup_time"
             )

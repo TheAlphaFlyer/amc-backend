@@ -7,6 +7,7 @@ from django.utils import timezone
 from amc.models import Character
 from amc.tasks import (
     _resolve_guid,
+    _resolve_guid_for_login,
     _resolve_guid_from_game_server,
     aget_or_create_character,
     get_welcome_message,
@@ -323,3 +324,123 @@ class ResolveGuidRetryTests(SimpleTestCase):
 
         mock_game.assert_not_called()
         self.assertEqual(guid, VALID_GUID)
+
+
+class ResolveGuidForLoginTests(SimpleTestCase):
+    """Tests for _resolve_guid_for_login — login-specific retry with cache busting."""
+
+    async def test_cache_bust_on_first_attempt(self):
+        """First attempt should use force_refresh=True to bypass cache."""
+        mock_http = AsyncMock()
+
+        with patch(
+            "amc.tasks._resolve_guid_from_game_server",
+            AsyncMock(return_value=VALID_GUID),
+        ) as mock_resolve:
+            guid, player_info = await _resolve_guid_for_login(
+                http_client=mock_http,
+                http_client_mod=AsyncMock(),
+                player_id=PLAYER_ID,
+                player_name="Test",
+            )
+
+        self.assertEqual(guid, VALID_GUID)
+        self.assertIsNone(player_info)
+        mock_resolve.assert_called_once_with(mock_http, PLAYER_ID, force_refresh=True)
+
+    async def test_retries_on_failure_then_succeeds(self):
+        """Retries game + mod server until GUID is found."""
+        with patch(
+            "amc.tasks._resolve_guid_from_game_server",
+            AsyncMock(return_value=None),
+        ):
+            with patch("amc.tasks.get_player", AsyncMock(return_value={"CharacterGuid": VALID_GUID})):
+                with patch("amc.tasks.asyncio.sleep", new_callable=AsyncMock):
+                    guid, player_info = await _resolve_guid_for_login(
+                        http_client=AsyncMock(),
+                        http_client_mod=AsyncMock(),
+                        player_id=PLAYER_ID,
+                        player_name="Test",
+                        max_attempts=3,
+                    )
+
+        self.assertEqual(guid, VALID_GUID)
+        self.assertIsNotNone(player_info)
+
+    async def test_returns_none_when_all_retries_exhausted(self):
+        """Returns (None, None) after all retries fail."""
+        with patch(
+            "amc.tasks._resolve_guid_from_game_server",
+            AsyncMock(return_value=None),
+        ):
+            with patch("amc.tasks.get_player", AsyncMock(return_value=None)):
+                with patch("amc.tasks.asyncio.sleep", new_callable=AsyncMock):
+                    guid, player_info = await _resolve_guid_for_login(
+                        http_client=AsyncMock(),
+                        http_client_mod=AsyncMock(),
+                        player_id=PLAYER_ID,
+                        player_name="Test",
+                        max_attempts=2,
+                    )
+
+        self.assertIsNone(guid)
+        self.assertIsNone(player_info)
+
+    async def test_no_http_client_skips_game_server(self):
+        """When http_client is None, skips game server and goes to mod retry."""
+        with patch("amc.tasks.get_player", AsyncMock(return_value={"CharacterGuid": VALID_GUID})):
+            with patch("amc.tasks.asyncio.sleep", new_callable=AsyncMock):
+                guid, player_info = await _resolve_guid_for_login(
+                    http_client=None,
+                    http_client_mod=AsyncMock(),
+                    player_id=PLAYER_ID,
+                    player_name="Test",
+                    max_attempts=1,
+                )
+
+        self.assertEqual(guid, VALID_GUID)
+
+    async def test_game_server_succeeds_on_cache_busted_attempt(self):
+        """If the cache-busted game server call finds the player, return immediately."""
+        mock_http = AsyncMock()
+        with patch(
+            "amc.tasks._resolve_guid_from_game_server",
+            AsyncMock(return_value=VALID_GUID),
+        ) as mock_resolve:
+            guid, player_info = await _resolve_guid_for_login(
+                http_client=mock_http,
+                http_client_mod=AsyncMock(),
+                player_id=PLAYER_ID,
+                player_name="Test",
+            )
+
+        self.assertEqual(guid, VALID_GUID)
+        mock_resolve.assert_called_once_with(mock_http, PLAYER_ID, force_refresh=True)
+
+
+class ResolveGuidFromGameServerForceRefreshTests(SimpleTestCase):
+    """Tests for _resolve_guid_from_game_server force_refresh parameter."""
+
+    async def test_force_refresh_passed_to_get_players(self):
+        """force_refresh=True is forwarded to get_players."""
+        mock_http = AsyncMock()
+        players = _make_game_players(PLAYER_ID, VALID_GUID)
+
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)) as mock_get:
+            result = await _resolve_guid_from_game_server(
+                mock_http, PLAYER_ID, force_refresh=True
+            )
+
+        self.assertEqual(result, VALID_GUID)
+        mock_get.assert_called_once_with(mock_http, force_refresh=True)
+
+    async def test_default_no_force_refresh(self):
+        """Default force_refresh=False is forwarded to get_players."""
+        mock_http = AsyncMock()
+        players = _make_game_players(PLAYER_ID, VALID_GUID)
+
+        with patch("amc.tasks.get_players", AsyncMock(return_value=players)) as mock_get:
+            result = await _resolve_guid_from_game_server(mock_http, PLAYER_ID)
+
+        self.assertEqual(result, VALID_GUID)
+        mock_get.assert_called_once_with(mock_http, force_refresh=False)

@@ -212,7 +212,7 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
                     f"A GUID-less character may already exist."
                 )
         else:
-            # No GUID provided. We look up by name.
+            # No GUID provided. We look up by name first.
             # Use filter instead of aget_or_create to handle potential duplicates.
             # Prefer characters with GUIDs (more authoritative).
             character = await (
@@ -224,10 +224,25 @@ class CharacterManager(models.Manager.from_queryset(CharacterQuerySet)):  # type
             if character:
                 character_created = False
             else:
-                character = await self.get_queryset().acreate(
-                    name=player_name, player=player, guid=None
+                # No name match. Fall back to the player's most recent GUID-ful
+                # character — the player may have renamed in-game.  Creating a
+                # brand-new GUID-less character for a known player_id is almost
+                # always wrong (it produces orphan duplicates).
+                character = await (
+                    self.get_queryset()
+                    .filter(player=player, guid__isnull=False)
+                    .order_by("-id")
+                    .afirst()
                 )
-                character_created = True
+                if character:
+                    character.name = player_name
+                    await character.asave(update_fields=["name"])
+                    character_created = False
+                else:
+                    character = await self.get_queryset().acreate(
+                        name=player_name, player=player, guid=None
+                    )
+                    character_created = True
 
         return (character, player, character_created, player_created)
 
