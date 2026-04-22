@@ -594,7 +594,7 @@ async def handle_player_vehicle_mod_check(
             last_vehicle, parts_data = await asyncio.gather(
                 get_player_last_vehicle(session, str(character.guid)),
                 get_player_last_vehicle_parts(
-                    session, str(character.guid), complete=True
+                    session, str(character.guid), complete=False
                 ),
             )
         except Exception as e:

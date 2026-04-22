@@ -68,7 +68,7 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
     try:
         last_vehicle, parts_data = await asyncio.gather(
             get_player_last_vehicle(ctx.http_client_mod, target_character_guid),
-            get_player_last_vehicle_parts(ctx.http_client_mod, target_character_guid, complete=True),
+            get_player_last_vehicle_parts(ctx.http_client_mod, target_character_guid, complete=False),
         )
     except Exception:
         await ctx.reply(

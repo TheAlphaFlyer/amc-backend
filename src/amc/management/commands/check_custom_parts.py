@@ -79,7 +79,7 @@ class Command(BaseCommand):
         try:
             last_vehicle, parts_data = await asyncio.gather(
                 get_player_last_vehicle(http_mod, character_guid),
-                get_player_last_vehicle_parts(http_mod, character_guid, complete=True),
+                get_player_last_vehicle_parts(http_mod, character_guid, complete=False),
             )
         except Exception:
             self.stdout.write(f"Player {player_id} has no spawned vehicles")
@@ -142,7 +142,7 @@ class Command(BaseCommand):
             try:
                 last_vehicle, parts_data = await asyncio.gather(
                     get_player_last_vehicle(http_mod, character_guid),
-                    get_player_last_vehicle_parts(http_mod, character_guid, complete=True),
+                    get_player_last_vehicle_parts(http_mod, character_guid, complete=False),
                 )
             except Exception:
                 self.stderr.write(f"  ✗ Failed to get vehicles for {player_name}")

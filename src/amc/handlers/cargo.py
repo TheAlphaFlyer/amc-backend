@@ -343,7 +343,7 @@ async def _apply_modded_vehicle_penalty(
         last_vehicle, parts_data = await asyncio.gather(
             get_player_last_vehicle(http_client_mod, str(character.guid)),
             get_player_last_vehicle_parts(
-                http_client_mod, str(character.guid), complete=True
+                http_client_mod, str(character.guid), complete=False
             ),
         )
         main_vehicle = last_vehicle.get("vehicle")
