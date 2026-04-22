@@ -87,7 +87,7 @@ async def cmd_tp_vehicle(ctx: CommandContext):
         # Temporary fallback: find police vehicle via last vehicle endpoint
         try:
             last_vehicle = await get_player_last_vehicle(
-                ctx.http_client_mod, ctx.player.unique_id
+                ctx.http_client_mod, str(ctx.character.guid)
             )
         except Exception:
             await ctx.reply(_("Could not fetch vehicles"))
@@ -175,7 +175,7 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
     current_vehicle = None
     try:
         last_vehicle = await get_player_last_vehicle(
-            ctx.http_client_mod, ctx.player.unique_id
+            ctx.http_client_mod, str(ctx.character.guid)
         )
         current_vehicle = last_vehicle.get("vehicle")
     except Exception:

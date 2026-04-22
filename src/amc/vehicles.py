@@ -139,9 +139,9 @@ async def register_player_vehicles(http_client_mod, character, player, active=No
     # Fetch last vehicle data from new lightweight endpoints
     try:
         last_vehicle, decals_data, parts_data = await asyncio.gather(
-            get_player_last_vehicle(http_client_mod, player.unique_id),
-            get_player_last_vehicle_decals(http_client_mod, player.unique_id),
-            get_player_last_vehicle_parts(http_client_mod, player.unique_id, complete=True),
+            get_player_last_vehicle(http_client_mod, str(character.guid)),
+            get_player_last_vehicle_decals(http_client_mod, str(character.guid)),
+            get_player_last_vehicle_parts(http_client_mod, str(character.guid), complete=True),
         )
     except Exception:
         return

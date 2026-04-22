@@ -13,7 +13,11 @@ import aiohttp
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
+from amc.mod_server import (
+    get_player_last_vehicle,
+    get_player_last_vehicle_parts,
+    get_players as get_mod_players,
+)
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
 from amc.mod_detection import (
@@ -58,10 +62,24 @@ class Command(BaseCommand):
                 await self._check_all(http_mod, http_game)
 
     async def _check_player(self, http_mod, player_id: str):
+        # Resolve character GUID: if player_id is a numeric player ID,
+        # look it up via the mod server's player list.
+        character_guid = player_id
+        if len(player_id) != 32:
+            players = await get_mod_players(http_mod)
+            character_guid = None
+            for p in players:
+                if str(p.get("PlayerId")) == player_id or p.get("CharacterGuid") == player_id:
+                    character_guid = p.get("CharacterGuid")
+                    break
+            if not character_guid:
+                self.stdout.write(f"Could not resolve character GUID for player {player_id}")
+                return
+
         try:
             last_vehicle, parts_data = await asyncio.gather(
-                get_player_last_vehicle(http_mod, player_id),
-                get_player_last_vehicle_parts(http_mod, player_id, complete=True),
+                get_player_last_vehicle(http_mod, character_guid),
+                get_player_last_vehicle_parts(http_mod, character_guid, complete=True),
             )
         except Exception:
             self.stdout.write(f"Player {player_id} has no spawned vehicles")
@@ -116,11 +134,15 @@ class Command(BaseCommand):
 
         for player_id, player_data in players:
             player_name = player_data.get("name", player_id)
+            character_guid = player_data.get("character_guid")
+            if not character_guid:
+                self.stderr.write(f"  ✗ No character GUID for {player_name}")
+                continue
 
             try:
                 last_vehicle, parts_data = await asyncio.gather(
-                    get_player_last_vehicle(http_mod, player_id),
-                    get_player_last_vehicle_parts(http_mod, player_id, complete=True),
+                    get_player_last_vehicle(http_mod, character_guid),
+                    get_player_last_vehicle_parts(http_mod, character_guid, complete=True),
                 )
             except Exception:
                 self.stderr.write(f"  ✗ Failed to get vehicles for {player_name}")

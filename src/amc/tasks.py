@@ -569,7 +569,7 @@ async def _login_guid_dependent_actions(
 
 async def register_player_vehicles(session, character, player):
     try:
-        await get_player_last_vehicle(session, str(player.unique_id))
+        await get_player_last_vehicle(session, str(character.guid))
         # TODO save to db?
     except Exception as e:
         logger.error(f"Failed to register player vehicles for {character.name}: {e}")
@@ -592,9 +592,9 @@ async def handle_player_vehicle_mod_check(
     if action == PlayerVehicleLog.Action.ENTERED:
         try:
             last_vehicle, parts_data = await asyncio.gather(
-                get_player_last_vehicle(session, str(player.unique_id)),
+                get_player_last_vehicle(session, str(character.guid)),
                 get_player_last_vehicle_parts(
-                    session, str(player.unique_id), complete=True
+                    session, str(character.guid), complete=True
                 ),
             )
         except Exception as e:

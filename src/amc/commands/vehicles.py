@@ -54,15 +54,21 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
                 )
             )
             return
+        # Look up the target character GUID from the player data
+        target_character_guid = None
+        for pid, p_data in players:
+            if pid == target_pid:
+                target_character_guid = p_data.get("character_guid")
+                break
     else:
-        target_pid = str(ctx.player.unique_id)
+        target_character_guid = str(ctx.character.guid)
         target_player_name = ctx.character.name
 
     # Fetch last vehicle and parts via new lightweight endpoints
     try:
         last_vehicle, parts_data = await asyncio.gather(
-            get_player_last_vehicle(ctx.http_client_mod, target_pid),
-            get_player_last_vehicle_parts(ctx.http_client_mod, target_pid, complete=True),
+            get_player_last_vehicle(ctx.http_client_mod, target_character_guid),
+            get_player_last_vehicle_parts(ctx.http_client_mod, target_character_guid, complete=True),
         )
     except Exception:
         await ctx.reply(

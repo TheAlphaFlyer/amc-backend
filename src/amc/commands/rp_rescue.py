@@ -32,7 +32,7 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
     players = await get_players_mod(ctx.http_client_mod)
     try:
         last_vehicle = await get_player_last_vehicle(
-            ctx.http_client_mod, ctx.player.unique_id
+            ctx.http_client_mod, str(ctx.character.guid)
         )
         vehicle = last_vehicle.get("vehicle")
     except Exception:

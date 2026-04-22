@@ -357,26 +357,26 @@ async def set_decal(session, player_id, decal):
             raise Exception("Failed to set decal")
 
 
-async def get_player_last_vehicle(session, player_id):
+async def get_player_last_vehicle(session, character_guid):
     async with session.get(
-        f"/player_vehicles/{player_id}/last", timeout=FAST_TIMEOUT
+        f"/player_vehicles/{character_guid}/last", timeout=FAST_TIMEOUT
     ) as resp:
         if resp.status != 200:
             raise Exception("Failed to get player last vehicle")
         return await resp.json()
 
 
-async def get_player_last_vehicle_decals(session, player_id):
+async def get_player_last_vehicle_decals(session, character_guid):
     async with session.get(
-        f"/player_vehicles/{player_id}/last/decals", timeout=FAST_TIMEOUT
+        f"/player_vehicles/{character_guid}/last/decals", timeout=FAST_TIMEOUT
     ) as resp:
         if resp.status != 200:
             raise Exception("Failed to get player last vehicle decals")
         return await resp.json()
 
 
-async def get_player_last_vehicle_parts(session, player_id, complete=False):
-    url = f"/player_vehicles/{player_id}/last/parts"
+async def get_player_last_vehicle_parts(session, character_guid, complete=False):
+    url = f"/player_vehicles/{character_guid}/last/parts"
     if complete:
         url += "?complete=1"
     async with session.get(url, timeout=FAST_TIMEOUT) as resp:

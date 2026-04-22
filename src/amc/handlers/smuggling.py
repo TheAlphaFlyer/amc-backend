@@ -52,9 +52,9 @@ async def handle_load_cargo(event, player, character, ctx):
 
     try:
         last_vehicle, parts_data = await asyncio.gather(
-            get_player_last_vehicle(ctx.http_client_mod, str(player.unique_id)),
+            get_player_last_vehicle(ctx.http_client_mod, str(character.guid)),
             get_player_last_vehicle_parts(
-                ctx.http_client_mod, str(player.unique_id), complete=True
+                ctx.http_client_mod, str(character.guid), complete=True
             ),
         )
         main_vehicle = last_vehicle.get("vehicle")
