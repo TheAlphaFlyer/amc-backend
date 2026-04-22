@@ -7,7 +7,7 @@ from amc.command_framework import registry, CommandContext
 from amc.models import TeleportPoint, RescueRequest, PoliceSession, Wanted
 from amc.mod_server import (
     teleport_player,
-    list_player_vehicles,
+    get_player_last_vehicle,
     show_popup,
     enter_last_vehicle,
 )
@@ -84,33 +84,26 @@ async def cmd_tp_vehicle(ctx: CommandContext):
         return
 
     if settings.TP_VEHICLE_USE_TELEPORT_FALLBACK:
-        # Temporary fallback: find police vehicle via list_player_vehicles and teleport
+        # Temporary fallback: find police vehicle via last vehicle endpoint
         try:
-            player_vehicles = await list_player_vehicles(
+            last_vehicle = await get_player_last_vehicle(
                 ctx.http_client_mod, ctx.player.unique_id
             )
         except Exception:
             await ctx.reply(_("Could not fetch vehicles"))
             return
 
-        if not player_vehicles:
+        vehicle = last_vehicle.get("vehicle")
+        if not vehicle:
             await ctx.reply(_("No vehicles found"))
             return
 
-        # Find a police vehicle (same pattern as tasks.py line 681)
-        police_vehicle = next(
-            (
-                v
-                for v in player_vehicles.values()
-                if is_police_vehicle(v.get("VehicleName"))
-            ),
-            None,
-        )
-        if not police_vehicle:
+        vehicle_name = vehicle.get("fullName", "").split(" ")[0].replace("_C", "")
+        if not is_police_vehicle(vehicle_name):
             await ctx.reply(_("No police vehicle found"))
             return
 
-        position = police_vehicle.get("position")
+        position = vehicle.get("position")
         if not position:
             await ctx.reply(_("Could not determine vehicle location"))
             return
@@ -181,13 +174,10 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
 
     current_vehicle = None
     try:
-        player_vehicles = await list_player_vehicles(
-            ctx.http_client_mod, ctx.player.unique_id, active=True
+        last_vehicle = await get_player_last_vehicle(
+            ctx.http_client_mod, ctx.player.unique_id
         )
-        if isinstance(player_vehicles, dict):
-            for vehicle_id, vehicle in player_vehicles.items():
-                if vehicle.get("index") == 0:
-                    current_vehicle = vehicle
+        current_vehicle = last_vehicle.get("vehicle")
     except Exception:
         pass
 

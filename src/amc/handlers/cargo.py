@@ -32,7 +32,8 @@ from amc.special_cargo import (
 )
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.mod_server import (
-    list_player_vehicles,
+    get_player_last_vehicle,
+    get_player_last_vehicle_parts,
     show_popup,
     transfer_money,
 )
@@ -339,19 +340,13 @@ async def _apply_modded_vehicle_penalty(
     False otherwise.
     """
     try:
-        vehicles = await list_player_vehicles(
-            http_client_mod, str(character.player.unique_id), active=True, complete=True
-        )
-        if not vehicles:
-            return False
-        main_vehicle = next(
-            (
-                v
-                for v in vehicles.values()
-                if v.get("isLastVehicle") and v.get("index", -1) == 0
+        last_vehicle, parts_data = await asyncio.gather(
+            get_player_last_vehicle(http_client_mod, str(character.player.unique_id)),
+            get_player_last_vehicle_parts(
+                http_client_mod, str(character.player.unique_id), complete=True
             ),
-            None,
         )
+        main_vehicle = last_vehicle.get("vehicle")
         if not main_vehicle:
             return False
 
@@ -362,7 +357,7 @@ async def _apply_modded_vehicle_penalty(
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
         custom_parts = detect_custom_parts(
-            main_vehicle.get("parts", []), whitelist=whitelist
+            parts_data.get("parts", []), whitelist=whitelist
         )
         if custom_parts:
             penalty = payment * quantity

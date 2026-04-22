@@ -51,7 +51,8 @@ from amc.mod_server import (
     show_popup,
     teleport_player,
     get_player,
-    list_player_vehicles,
+    get_player_last_vehicle,
+    get_player_last_vehicle_parts,
     set_world_vehicle_decal,
     spawn_assets,
     spawn_garage,
@@ -568,9 +569,7 @@ async def _login_guid_dependent_actions(
 
 async def register_player_vehicles(session, character, player):
     try:
-        await list_player_vehicles(
-            session, str(player.unique_id), active=True, complete=True
-        )
+        await get_player_last_vehicle(session, str(player.unique_id))
         # TODO save to db?
     except Exception as e:
         logger.error(f"Failed to register player vehicles for {character.name}: {e}")
@@ -592,37 +591,25 @@ async def handle_player_vehicle_mod_check(
     # When entering, we must fetch their active vehicle to see if it has custom parts
     if action == PlayerVehicleLog.Action.ENTERED:
         try:
-            player_vehicles = await list_player_vehicles(
-                session, str(player.unique_id), active=True, complete=True
+            last_vehicle, parts_data = await asyncio.gather(
+                get_player_last_vehicle(session, str(player.unique_id)),
+                get_player_last_vehicle_parts(
+                    session, str(player.unique_id), complete=True
+                ),
             )
         except Exception as e:
             logger.error(f"Failed to fetch vehicle parts for {character.name}: {e}")
             return
 
-        if not player_vehicles:
-            # They entered a vehicle but list_player_vehicles returned empty?
-            # Fallback: remove the tag
-            if currently_has_mod:
-                await refresh_player_name(character, session, has_custom_parts=False)
-            return
-
-        # Check the first (main) active vehicle
-        main_vehicle = next(
-            (
-                v
-                for v in player_vehicles.values()
-                if v.get("isLastVehicle") and v.get("index", -1) == 0
-            ),
-            None,
-        )
-
+        main_vehicle = last_vehicle.get("vehicle")
         if not main_vehicle:
+            # They entered a vehicle but endpoint returned empty?
             # Fallback: remove the tag
             if currently_has_mod:
                 await refresh_player_name(character, session, has_custom_parts=False)
             return
 
-        parts = main_vehicle.get("parts", [])
+        parts = parts_data.get("parts", [])
         # Whitelist police parts for officers on active duty
         whitelist = None
         is_on_duty = await PoliceSession.objects.filter(

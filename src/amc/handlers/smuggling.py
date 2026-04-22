@@ -13,7 +13,7 @@ from django.core.cache import cache
 
 from amc.handlers import register
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
-from amc.mod_server import list_player_vehicles, show_popup
+from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts, show_popup
 from amc.game_server import announce
 from amc.models import PoliceSession
 
@@ -51,20 +51,13 @@ async def handle_load_cargo(event, player, character, ctx):
             )
 
     try:
-        vehicles = await list_player_vehicles(
-            ctx.http_client_mod, str(player.unique_id), active=True, complete=True
-        )
-        if not vehicles:
-            return 0, 0, 0, 0
-
-        main_vehicle = next(
-            (
-                v
-                for v in vehicles.values()
-                if v.get("isLastVehicle") and v.get("index", -1) == 0
+        last_vehicle, parts_data = await asyncio.gather(
+            get_player_last_vehicle(ctx.http_client_mod, str(player.unique_id)),
+            get_player_last_vehicle_parts(
+                ctx.http_client_mod, str(player.unique_id), complete=True
             ),
-            None,
         )
+        main_vehicle = last_vehicle.get("vehicle")
         if not main_vehicle:
             return 0, 0, 0, 0
 
@@ -76,7 +69,7 @@ async def handle_load_cargo(event, player, character, ctx):
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
         custom_parts = detect_custom_parts(
-            main_vehicle.get("parts", []), whitelist=whitelist
+            parts_data.get("parts", []), whitelist=whitelist
         )
         if custom_parts:
             asyncio.create_task(

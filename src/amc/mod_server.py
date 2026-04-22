@@ -36,6 +36,7 @@ async def set_config(session, max_vehicles_per_player=12):
 
 
 async def set_character_name(session, character_guid, name):
+    return
     await _write_limiter.acquire()
     transfer = {
         "name": name,
@@ -354,6 +355,34 @@ async def set_decal(session, player_id, decal):
     async with session.post(f"/player_vehicles/{player_id}/decal", json=decal) as resp:
         if resp.status != 200:
             raise Exception("Failed to set decal")
+
+
+async def get_player_last_vehicle(session, player_id):
+    async with session.get(
+        f"/player_vehicles/{player_id}/last", timeout=FAST_TIMEOUT
+    ) as resp:
+        if resp.status != 200:
+            raise Exception("Failed to get player last vehicle")
+        return await resp.json()
+
+
+async def get_player_last_vehicle_decals(session, player_id):
+    async with session.get(
+        f"/player_vehicles/{player_id}/last/decals", timeout=FAST_TIMEOUT
+    ) as resp:
+        if resp.status != 200:
+            raise Exception("Failed to get player last vehicle decals")
+        return await resp.json()
+
+
+async def get_player_last_vehicle_parts(session, player_id, complete=False):
+    url = f"/player_vehicles/{player_id}/last/parts"
+    if complete:
+        url += "?complete=1"
+    async with session.get(url, timeout=FAST_TIMEOUT) as resp:
+        if resp.status != 200:
+            raise Exception("Failed to get player last vehicle parts")
+        return await resp.json()
 
 
 async def despawn_player_vehicle(session, player_id, category="current"):

@@ -727,8 +727,8 @@ class CommandsTestCase(TestCase):
                 "amc.commands.rp_rescue.get_players_mod", new=AsyncMock(return_value=[])
             ),
             patch(
-                "amc.commands.rp_rescue.list_player_vehicles",
-                new=AsyncMock(return_value={}),
+                "amc.commands.rp_rescue.get_player_last_vehicle",
+                new=AsyncMock(return_value={"vehicle": None}),
             ),
             patch(
                 "amc.models.RescueRequest.objects.acreate",
@@ -1526,23 +1526,29 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_self(self):
         """When no target name is given, checks the caller's own vehicle."""
 
-        mock_vehicles = {
-            "1001": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 1001,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [
-                    {"Key": "StockEngine", "Slot": 0},
-                    {"Key": "CustomTurbo_XYZ", "Slot": 5},
-                ],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 1001,
+            "parts": [
+                {"Key": "StockEngine", "Slot": 0},
+                {"Key": "CustomTurbo_XYZ", "Slot": 5},
+            ],
         }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1567,14 +1573,16 @@ class CommandsTestCase(TestCase):
         self.ctx.player_info["bIsAdmin"] = True
 
         mock_players = [("pid-99", {"name": "SomePlayer"})]
-        mock_vehicles = {
-            "2002": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 2002,
                 "fullName": "Miramar_C Default__Miramar",
                 "classFullName": "Class /Game/Vehicles/Miramar",
-                "parts": [{"Key": "StockBrake", "Slot": 1}],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 2002,
+            "parts": [{"Key": "StockBrake", "Slot": 1}],
         }
 
         with (
@@ -1583,8 +1591,12 @@ class CommandsTestCase(TestCase):
                 new=AsyncMock(return_value=mock_players),
             ),
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1604,9 +1616,15 @@ class CommandsTestCase(TestCase):
 
     async def test_cmd_check_mods_no_vehicle(self):
         """When player has no active vehicle, shows appropriate message."""
-        with patch(
-            "amc.commands.vehicles.list_player_vehicles",
-            new=AsyncMock(return_value={}),
+        with (
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value={"vehicle": None}),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value={"parts": []}),
+            ),
         ):
             await cmd_check_mods(self.ctx)
 
@@ -1619,20 +1637,26 @@ class CommandsTestCase(TestCase):
         """Non-admin users can also use check_mods."""
         self.ctx.player_info["bIsAdmin"] = False
 
-        mock_vehicles = {
-            "3003": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 3003,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [{"Key": "StockEngine", "Slot": 0}],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 3003,
+            "parts": [{"Key": "StockEngine", "Slot": 0}],
         }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1651,22 +1675,28 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_self_applies_mod_tag(self):
         """When custom parts are found on caller's own vehicle, refresh_player_name is called with has_custom_parts=True."""
 
-        mock_vehicles = {
-            "1001": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 1001,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [
-                    {"Key": "CustomTurbo_XYZ", "Slot": 5},
-                ],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 1001,
+            "parts": [
+                {"Key": "CustomTurbo_XYZ", "Slot": 5},
+            ],
         }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1691,20 +1721,26 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_self_removes_mod_tag(self):
         """When no custom parts are found on caller's own vehicle, refresh_player_name is called with has_custom_parts=False."""
 
-        mock_vehicles = {
-            "3003": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 3003,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [{"Key": "StockEngine", "Slot": 0}],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 3003,
+            "parts": [{"Key": "StockEngine", "Slot": 0}],
         }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1827,22 +1863,28 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_shows_incompatible(self):
         """check_mods should show incompatible parts section."""
 
-        mock_vehicles = {
-            "1001": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 1001,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [
-                    {"Key": "Bike_I2_30HP", "Slot": 0},
-                ],
-                "isLastVehicle": True,
-                "index": 0,
             }
+        }
+        mock_parts = {
+            "vehicleId": 1001,
+            "parts": [
+                {"Key": "Bike_I2_30HP", "Slot": 0},
+            ],
         }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",
@@ -1871,13 +1913,11 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_shows_drive_info(self):
         """DriveInfo from the mod server should appear in the output."""
 
-        mock_vehicles = {
-            "4004": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 4004,
                 "fullName": "Jemusi_C Default__Jemusi",
                 "classFullName": "Class /Game/Vehicles/Jemusi",
-                "parts": [{"Key": "StockEngine", "Slot": 0}],
-                "isLastVehicle": True,
-                "index": 0,
                 "DriveInfo": {
                     "drive_type": "RWD",
                     "effective_drive_type": "RWD",
@@ -1889,11 +1929,19 @@ class CommandsTestCase(TestCase):
                 },
             }
         }
+        mock_parts = {
+            "vehicleId": 4004,
+            "parts": [{"Key": "StockEngine", "Slot": 0}],
+        }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch("amc.commands.vehicles.detect_custom_parts", return_value=[]),
             patch("amc.commands.vehicles.detect_incompatible_parts", return_value=[]),
@@ -1909,13 +1957,11 @@ class CommandsTestCase(TestCase):
     async def test_cmd_check_mods_shows_parttime_awd(self):
         """Part-time AWD should show the effective drive type in parentheses."""
 
-        mock_vehicles = {
-            "5005": {
+        mock_last_vehicle = {
+            "vehicle": {
+                "vehicleId": 5005,
                 "fullName": "Longhorn_C Default__Longhorn",
                 "classFullName": "Class /Game/Vehicles/Longhorn",
-                "parts": [{"Key": "CustomTurbo_XYZ", "Slot": 5}],
-                "isLastVehicle": True,
-                "index": 0,
                 "DriveInfo": {
                     "drive_type": "AWD",
                     "effective_drive_type": "Part-time",
@@ -1928,11 +1974,19 @@ class CommandsTestCase(TestCase):
                 },
             }
         }
+        mock_parts = {
+            "vehicleId": 5005,
+            "parts": [{"Key": "CustomTurbo_XYZ", "Slot": 5}],
+        }
 
         with (
             patch(
-                "amc.commands.vehicles.list_player_vehicles",
-                new=AsyncMock(return_value=mock_vehicles),
+                "amc.commands.vehicles.get_player_last_vehicle",
+                new=AsyncMock(return_value=mock_last_vehicle),
+            ),
+            patch(
+                "amc.commands.vehicles.get_player_last_vehicle_parts",
+                new=AsyncMock(return_value=mock_parts),
             ),
             patch(
                 "amc.commands.vehicles.detect_custom_parts",

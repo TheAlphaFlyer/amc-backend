@@ -13,7 +13,7 @@ import aiohttp
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from amc.mod_server import list_player_vehicles
+from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
 from amc.mod_detection import (
@@ -58,47 +58,45 @@ class Command(BaseCommand):
                 await self._check_all(http_mod, http_game)
 
     async def _check_player(self, http_mod, player_id: str):
-        player_vehicles = await list_player_vehicles(
-            http_mod, player_id, active=True, complete=True
-        )
-        if not player_vehicles:
+        try:
+            last_vehicle, parts_data = await asyncio.gather(
+                get_player_last_vehicle(http_mod, player_id),
+                get_player_last_vehicle_parts(http_mod, player_id, complete=True),
+            )
+        except Exception:
             self.stdout.write(f"Player {player_id} has no spawned vehicles")
             return
 
-        found_any = False
-        for v_id, vehicle in player_vehicles.items():
-            vehicle_name = format_vehicle_name(vehicle["fullName"])
-            parts = vehicle.get("parts", [])
-            custom = detect_custom_parts(parts)
+        vehicle = last_vehicle.get("vehicle")
+        if not vehicle:
+            self.stdout.write(f"Player {player_id} has no spawned vehicles")
+            return
 
+        vehicle_name = format_vehicle_name(vehicle["fullName"])
+        parts = parts_data.get("parts", [])
+        custom = detect_custom_parts(parts)
+        incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
+
+        self.stdout.write(
+            f"\n{vehicle_name} (#{vehicle.get('vehicleId')}) — "
+            f"{len(parts)} parts total"
+        )
+        if custom:
             self.stdout.write(
-                f"\n{vehicle_name} (#{vehicle.get('vehicleId', v_id)}) — "
-                f"{len(parts)} parts total"
+                self.style.WARNING(
+                    f"  ⚠ {len(custom)} custom part(s):\n"
+                    f"{format_custom_parts_plain(custom)}"
+                )
             )
-            if custom:
-                found_any = True
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  ⚠ {len(custom)} custom part(s):\n"
-                        f"{format_custom_parts_plain(custom)}"
-                    )
+        if incompatible:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  ⚠ {len(incompatible)} incompatible part(s):\n"
+                    f"{format_incompatible_parts_plain(incompatible)}"
                 )
-
-            incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
-            if incompatible:
-                found_any = True
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  ⚠ {len(incompatible)} incompatible part(s):\n"
-                        f"{format_incompatible_parts_plain(incompatible)}"
-                    )
-                )
-
-            if not custom and not incompatible:
-                self.stdout.write(self.style.SUCCESS("  ✓ All stock parts"))
-
-        if not found_any:
-            self.stdout.write(self.style.SUCCESS("\nNo custom parts detected"))
+            )
+        if not custom and not incompatible:
+            self.stdout.write(self.style.SUCCESS("  ✓ All stock parts"))
 
     async def _check_all(self, http_mod, http_game):
         try:
@@ -120,47 +118,47 @@ class Command(BaseCommand):
             player_name = player_data.get("name", player_id)
 
             try:
-                player_vehicles = await list_player_vehicles(
-                    http_mod, player_id, active=True, complete=True
+                last_vehicle, parts_data = await asyncio.gather(
+                    get_player_last_vehicle(http_mod, player_id),
+                    get_player_last_vehicle_parts(http_mod, player_id, complete=True),
                 )
             except Exception:
                 self.stderr.write(f"  ✗ Failed to get vehicles for {player_name}")
                 continue
 
-            if not player_vehicles:
+            vehicle = last_vehicle.get("vehicle")
+            if not vehicle:
                 continue
 
-            for v_id, vehicle in player_vehicles.items():
-                checked += 1
-                vehicle_name = format_vehicle_name(vehicle["fullName"])
-                custom = detect_custom_parts(vehicle.get("parts", []))
-                incompatible = detect_incompatible_parts(
-                    vehicle.get("parts", []), vehicle["fullName"]
-                )
+            checked += 1
+            vehicle_name = format_vehicle_name(vehicle["fullName"])
+            parts = parts_data.get("parts", [])
+            custom = detect_custom_parts(parts)
+            incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
 
-                if custom:
+            if custom:
+                flagged += 1
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"⚠ {player_name} ({player_id}) — "
+                        f"{vehicle_name}: {len(custom)} custom part(s)"
+                    )
+                )
+                self.stdout.write(format_custom_parts_plain(custom))
+            if incompatible:
+                if not custom:
                     flagged += 1
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"⚠ {player_name} ({player_id}) — "
-                            f"{vehicle_name}: {len(custom)} custom part(s)"
-                        )
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"⚠ {player_name} ({player_id}) — "
+                        f"{vehicle_name}: {len(incompatible)} incompatible part(s)"
                     )
-                    self.stdout.write(format_custom_parts_plain(custom))
-                if incompatible:
-                    if not custom:
-                        flagged += 1
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f"⚠ {player_name} ({player_id}) — "
-                            f"{vehicle_name}: {len(incompatible)} incompatible part(s)"
-                        )
-                    )
-                    self.stdout.write(format_incompatible_parts_plain(incompatible))
-                if not custom and not incompatible:
-                    self.stdout.write(
-                        f"  ✓ {player_name} ({player_id}) — {vehicle_name}"
-                    )
+                )
+                self.stdout.write(format_incompatible_parts_plain(incompatible))
+            if not custom and not incompatible:
+                self.stdout.write(
+                    f"  ✓ {player_name} ({player_id}) — {vehicle_name}"
+                )
 
         self.stdout.write(
             f"\nDone: {checked} vehicle(s) checked, {flagged} with custom parts"

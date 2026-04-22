@@ -77,7 +77,6 @@ from amc_finance.services import (
 )
 from amc.mod_server import send_system_message, despawn_player_cargo  # noqa: F401
 from amc.mod_detection import detect_custom_parts  # noqa: F401
-from amc.mod_server import list_player_vehicles  # noqa: F401
 from amc.jobs import on_delivery_job_fulfilled  # noqa: F401
 from amc.models import Character, Player, MinistryTerm
 from amc.utils import skip_if_running

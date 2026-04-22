@@ -4,7 +4,13 @@ import re
 import logging
 from django.contrib.gis.geos import Point
 from amc.models import CharacterVehicle, PoliceSession
-from amc.mod_server import list_player_vehicles, spawn_vehicle, show_popup
+from amc.mod_server import (
+    get_player_last_vehicle,
+    get_player_last_vehicle_decals,
+    get_player_last_vehicle_parts,
+    spawn_vehicle,
+    show_popup,
+)
 from amc.enums import VehiclePartSlot
 from amc.mod_detection import (
     detect_custom_parts,
@@ -130,14 +136,23 @@ def workshop_export_to_db_config(json_data: dict) -> dict:
 
 
 async def register_player_vehicles(http_client_mod, character, player, active=None):
-    player_vehicles = await list_player_vehicles(
-        http_client_mod, player.unique_id, active=active, complete=True
-    )
-    if not player_vehicles:
+    # Fetch last vehicle data from new lightweight endpoints
+    try:
+        last_vehicle, decals_data, parts_data = await asyncio.gather(
+            get_player_last_vehicle(http_client_mod, player.unique_id),
+            get_player_last_vehicle_decals(http_client_mod, player.unique_id),
+            get_player_last_vehicle_parts(http_client_mod, player.unique_id, complete=True),
+        )
+    except Exception:
         return
 
-    if not isinstance(player_vehicles, dict):
-        return []
+    vehicle = last_vehicle.get("vehicle")
+    if not vehicle:
+        return
+
+    vehicle_id = vehicle.get("vehicleId")
+    if not vehicle_id or int(vehicle_id) < 0:
+        return
 
     # Whitelist police parts for officers on active duty
     whitelist = None
@@ -147,73 +162,68 @@ async def register_player_vehicles(http_client_mod, character, player, active=No
     if is_on_duty:
         whitelist = POLICE_DUTY_WHITELIST
 
-    results = []
-    for vehicle_id, vehicle in player_vehicles.items():
-        if int(vehicle_id) < 0:
-            continue
-        owner = character
-        if len(vehicle["companyName"]) > 0:
-            owner = None
+    owner = character
+    if len(vehicle.get("companyName", "")) > 0:
+        owner = None
 
-        config = {
-            "CompanyGuid": vehicle["companyGuid"],
-            "CompanyName": vehicle["companyName"],
-            "Customization": vehicle["customization"],
-            "Decal": vehicle["decal"],
-            "Parts": vehicle["parts"],
-            "Location": vehicle["position"],
-            "Rotation": vehicle["rotation"],
-            "Net_VehicleOwnerSetting": vehicle.get("Net_VehicleOwnerSetting", None),
-        }
-        vehicle_name = vehicle["fullName"].split(" ")[0].replace("_C", "")
-        config["VehicleName"] = vehicle_name
-        asset_path = vehicle["classFullName"].split(" ")[1]
-        config["AssetPath"] = asset_path
+    config = {
+        "CompanyGuid": vehicle.get("companyGuid"),
+        "CompanyName": vehicle.get("companyName", ""),
+        "Customization": decals_data.get("customization"),
+        "Decal": decals_data.get("decal"),
+        "Parts": parts_data.get("parts", []),
+        "Location": vehicle.get("position"),
+        "Rotation": vehicle.get("rotation"),
+        "Net_VehicleOwnerSetting": vehicle.get("Net_VehicleOwnerSetting"),
+    }
+    vehicle_name = vehicle["fullName"].split(" ")[0].replace("_C", "")
+    config["VehicleName"] = vehicle_name
+    asset_path = vehicle["classFullName"].split(" ")[1]
+    config["AssetPath"] = asset_path
 
-        position = vehicle["position"]
-        loc = (
-            Point(position["X"], position["Y"], position.get("Z", 0), srid=0)
-            if "X" in position
-            else None
+    position = vehicle.get("position", {})
+    loc = (
+        Point(position["X"], position["Y"], position.get("Z", 0), srid=0)
+        if "X" in position
+        else None
+    )
+    defaults = {"config": config}
+    if loc:
+        defaults["location"] = loc
+
+    if owner:
+        v, _ = await CharacterVehicle.objects.aupdate_or_create(
+            character=owner, vehicle_id=int(vehicle_id), defaults=defaults
         )
-        defaults = {"config": config}
-        if loc:
-            defaults["location"] = loc
+    else:
+        company_guid = vehicle.get("companyGuid") or "00000000000000000000000000000000"
+        v, _ = await CharacterVehicle.objects.aupdate_or_create(
+            company_guid=company_guid,
+            vehicle_id=int(vehicle_id),
+            defaults=defaults,
+        )
+    results = [v]
 
-        if owner:
-            v, _ = await CharacterVehicle.objects.aupdate_or_create(
-                character=owner, vehicle_id=int(vehicle_id), defaults=defaults
-            )
-        else:
-            v, _ = await CharacterVehicle.objects.aupdate_or_create(
-                company_guid=vehicle["companyGuid"],
-                vehicle_id=int(vehicle_id),
-                defaults=defaults,
-            )
-        results.append(v)
-
-        # Check main vehicle for custom/modded parts
-        if vehicle.get("isLastVehicle") and vehicle.get("index", -1) == 0:
-            custom = detect_custom_parts(vehicle.get("parts", []), whitelist=whitelist)
-            if custom:
-                logger.warning(
-                    "Custom parts detected on %s's %s (#%s):\n%s",
-                    character.name,
-                    vehicle_name,
-                    vehicle_id,
-                    format_custom_parts_plain(custom),
-                )
-            incompatible = detect_incompatible_parts(
-                vehicle.get("parts", []), vehicle["fullName"]
-            )
-            if incompatible:
-                logger.warning(
-                    "Incompatible parts detected on %s's %s (#%s):\n%s",
-                    character.name,
-                    vehicle_name,
-                    vehicle_id,
-                    format_incompatible_parts_plain(incompatible),
-                )
+    # Check main vehicle for custom/modded parts
+    parts = parts_data.get("parts", [])
+    custom = detect_custom_parts(parts, whitelist=whitelist)
+    if custom:
+        logger.warning(
+            "Custom parts detected on %s's %s (#%s):\n%s",
+            character.name,
+            vehicle_name,
+            vehicle_id,
+            format_custom_parts_plain(custom),
+        )
+    incompatible = detect_incompatible_parts(parts, vehicle["fullName"])
+    if incompatible:
+        logger.warning(
+            "Incompatible parts detected on %s's %s (#%s):\n%s",
+            character.name,
+            vehicle_name,
+            vehicle_id,
+            format_incompatible_parts_plain(incompatible),
+        )
 
     return results
 

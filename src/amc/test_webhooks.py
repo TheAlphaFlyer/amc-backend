@@ -648,14 +648,16 @@ class ProcessEventTests(TestCase):
     @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
     @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.detect_custom_parts")
-    @patch("amc.handlers.cargo.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.show_popup", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.transfer_money", new_callable=AsyncMock)
     async def test_cargo_arrived_money_modded(
         self,
         mock_transfer,
         mock_show_popup,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_detect,
         mock_refresh,
         mock_send_sys_msg,
@@ -665,8 +667,10 @@ class ProcessEventTests(TestCase):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
 
-        mock_list_vehicles.return_value = {
-            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        mock_get_last_vehicle.return_value = {"vehicle": {"vehicleId": 123}}
+        mock_get_parts.return_value = {
+            "vehicleId": 123,
+            "parts": [{"Key": "Damper_200"}],
         }
         mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
 
@@ -714,12 +718,14 @@ class ProcessEventTests(TestCase):
     @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
     @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.detect_custom_parts")
-    @patch("amc.handlers.smuggling.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.show_popup", new_callable=AsyncMock)
     async def test_load_cargo_money_modded(
         self,
         mock_show_popup,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_detect,
         mock_refresh,
         mock_send_sys_msg,
@@ -729,8 +735,10 @@ class ProcessEventTests(TestCase):
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
 
-        mock_list_vehicles.return_value = {
-            "123": {"isLastVehicle": True, "index": 0, "parts": [{"Key": "Damper_200"}]}
+        mock_get_last_vehicle.return_value = {"vehicle": {"vehicleId": 123}}
+        mock_get_parts.return_value = {
+            "vehicleId": 123,
+            "parts": [{"Key": "Damper_200"}],
         }
         mock_detect.return_value = [{"key": "Damper_200", "slot": "Damper"}]
 
@@ -763,10 +771,12 @@ class ProcessEventTests(TestCase):
         new_callable=AsyncMock,
     )
     @patch("amc.mod_detection.detect_custom_parts")
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_detect,
         mock_announce_tipoff,
         mock_get_treasury,
@@ -775,7 +785,8 @@ class ProcessEventTests(TestCase):
         """First Money load triggers a smuggling tip-off announcement."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
         mock_detect.return_value = []
 
         player = await sync_to_async(PlayerFactory)()
@@ -811,10 +822,12 @@ class ProcessEventTests(TestCase):
         new_callable=AsyncMock,
     )
     @patch("amc.mod_detection.detect_custom_parts")
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_load_cargo_money_smuggling_tipoff_throttled(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_detect,
         mock_announce_tipoff,
         mock_get_treasury,
@@ -823,7 +836,8 @@ class ProcessEventTests(TestCase):
         """Second Money load within 60s cooldown does NOT trigger another tip-off."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
         mock_detect.return_value = []
 
         player = await sync_to_async(PlayerFactory)()
@@ -2526,17 +2540,20 @@ class SecurityBonusTests(TestCase):
             },
         }
 
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_money_delivery_no_police_no_bonus(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
     ):
         """0 police on duty → 0% risk premium."""
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
@@ -2559,17 +2576,20 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(subsidy, 0)
         mock_subsidise.assert_not_called()
 
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_money_delivery_one_police_20pct_bonus(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
     ):
         """1 police on duty and online → 50% risk premium."""
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
 
         from amc.models import PoliceSession
 
@@ -2604,17 +2624,20 @@ class SecurityBonusTests(TestCase):
             5_000, character, http_client_mod, message="Risk Premium"
         )
 
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_money_delivery_offline_police_no_bonus(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
 
         from amc.models import PoliceSession
 
@@ -2646,17 +2669,20 @@ class SecurityBonusTests(TestCase):
         self.assertEqual(subsidy, 0)
         mock_subsidise.assert_not_called()
 
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_money_delivery_two_police_40pct_bonus(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
     ):
         """2 police on duty and online → 100% risk premium."""
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
 
         from amc.models import PoliceSession
 
@@ -2690,17 +2716,20 @@ class SecurityBonusTests(TestCase):
             10_000, character, http_client_mod, message="Risk Premium"
         )
 
-    @patch("amc.mod_server.list_player_vehicles", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     async def test_money_delivery_bonus_capped_at_100pct(
         self,
-        mock_list_vehicles,
+        mock_get_last_vehicle,
+        mock_get_parts,
         mock_subsidise,
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
     ):
         """6 police → would be 300%, but capped at 250%."""
-        mock_list_vehicles.return_value = {}
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
 
         from amc.models import PoliceSession
 

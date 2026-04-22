@@ -4,11 +4,11 @@ from amc.models import RescueRequest
 from django.contrib.gis.geos import Point
 from amc.mod_server import (
     get_players as get_players_mod,
-    list_player_vehicles,
+    get_player_last_vehicle,
     send_system_message,
 )
 from amc.game_server import get_player_info
-from amc.vehicles import format_key_string
+from amc.vehicles import format_vehicle_name
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
@@ -30,16 +30,14 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
 
     # 1. Notify In-Game Rescuers
     players = await get_players_mod(ctx.http_client_mod)
-    vehicles = await list_player_vehicles(
-        ctx.http_client_mod, ctx.player.unique_id, active=True
-    )
-    vehicle_names = (
-        "+".join(
-            [format_key_string(v.get("VehicleName", "?")) for v in vehicles.values()]
+    try:
+        last_vehicle = await get_player_last_vehicle(
+            ctx.http_client_mod, ctx.player.unique_id
         )
-        if vehicles
-        else _("Vehicles")
-    )
+        vehicle = last_vehicle.get("vehicle")
+    except Exception:
+        vehicle = None
+    vehicle_name = format_vehicle_name(vehicle["fullName"]) if vehicle else _("Vehicles")
 
     sent = False
     if players:
@@ -70,10 +68,10 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
     if ctx.is_current_event:
         await ctx.announce(
             _(
-                "{name} needs a rescue! {vehicle_names}. Respond with /respond {request_id}"
+                "{name} needs a rescue! {vehicle_name}. Respond with /respond {request_id}"
             ).format(
                 name=ctx.character.name,
-                vehicle_names=vehicle_names,
+                vehicle_name=vehicle_name,
                 request_id=rescue_request.id,
             )
         )

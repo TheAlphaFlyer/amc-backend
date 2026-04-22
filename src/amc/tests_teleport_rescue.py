@@ -49,8 +49,8 @@ class TeleportRescueTestCase(TestCase):
 
         with (
             patch(
-                "amc.commands.teleport.list_player_vehicles",
-                new=AsyncMock(return_value={}),
+                "amc.commands.teleport.get_player_last_vehicle",
+                new=AsyncMock(return_value={"vehicle": None}),
             ),
             patch("amc.commands.teleport.teleport_player", new=AsyncMock()) as mock_tp,
         ):

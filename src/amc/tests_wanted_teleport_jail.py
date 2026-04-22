@@ -119,7 +119,7 @@ class TpCommandWantedJailTests(TestCase):
         mocks = _faction_patches()
         with patch.multiple("amc.commands.faction", **{k.split("amc.commands.faction.")[1]: v for k, v in mocks.items() if "faction" in k}), \
              patch("asyncio.sleep", new_callable=AsyncMock), \
-             patch("amc.commands.teleport.list_player_vehicles", new_callable=AsyncMock, return_value={}):
+             patch("amc.commands.teleport.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": None}):
             await cmd_tp_name(ctx, "someplace")
 
         mock_tp = mocks["amc.commands.faction.teleport_player"]
@@ -158,7 +158,7 @@ class TpCommandWantedJailTests(TestCase):
         ctx.http_client_mod = _make_http_client_mod()
         ctx.reply = AsyncMock()
 
-        with patch("amc.commands.teleport.list_player_vehicles", new_callable=AsyncMock, return_value={}), \
+        with patch("amc.commands.teleport.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": None}), \
              patch("amc.commands.teleport.teleport_player", new_callable=AsyncMock) as mock_cmd_tp, \
              patch("amc.commands.teleport.PoliceSession") as mock_ps:
             mock_ps.objects.filter.return_value.aexists = AsyncMock(return_value=False)
@@ -193,7 +193,7 @@ class TpCommandWantedJailTests(TestCase):
 
         faction_tp_mock = AsyncMock()
         with patch("amc.commands.faction.teleport_player", faction_tp_mock), \
-             patch("amc.commands.teleport.list_player_vehicles", new_callable=AsyncMock, return_value={}), \
+             patch("amc.commands.teleport.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": None}), \
              patch("amc.commands.teleport.teleport_player", new_callable=AsyncMock) as mock_cmd_tp, \
              patch("amc.commands.teleport.PoliceSession") as mock_ps:
             mock_ps.objects.filter.return_value.aexists = AsyncMock(return_value=False)

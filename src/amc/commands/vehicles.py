@@ -1,6 +1,7 @@
 from typing import Optional
 from amc.command_framework import registry, CommandContext
-from amc.mod_server import list_player_vehicles
+import asyncio
+from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
 from amc.game_server import get_players
 from amc.vehicles import format_vehicle_name
 from amc.mod_detection import (
@@ -57,10 +58,11 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         target_pid = str(ctx.player.unique_id)
         target_player_name = ctx.character.name
 
-    # Fetch only the active (main) vehicle
+    # Fetch last vehicle and parts via new lightweight endpoints
     try:
-        player_vehicles = await list_player_vehicles(
-            ctx.http_client_mod, target_pid, active=True, complete=True
+        last_vehicle, parts_data = await asyncio.gather(
+            get_player_last_vehicle(ctx.http_client_mod, target_pid),
+            get_player_last_vehicle_parts(ctx.http_client_mod, target_pid, complete=True),
         )
     except Exception:
         await ctx.reply(
@@ -68,7 +70,8 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         )
         return
 
-    if not player_vehicles:
+    vehicle = last_vehicle.get("vehicle")
+    if not vehicle:
         await ctx.reply(
             _("<Title>No Vehicle</>\n\n{name} has no active vehicle.").format(
                 name=target_player_name
@@ -76,26 +79,8 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
         )
         return
 
-    # Check the first (main) vehicle
-    vehicle = next(
-        (
-            v
-            for v in player_vehicles.values()
-            if v.get("isLastVehicle") and v.get("index", -1) == 0
-        ),
-        None,
-    )
-
-    if not vehicle:
-        await ctx.reply(
-            _(
-                "<Title>No Main Vehicle</>"
-                "\n\nCould not identify the main vehicle among active vehicles."
-            )
-        )
-        return
     vehicle_name = format_vehicle_name(vehicle["fullName"])
-    parts = vehicle.get("parts", [])
+    parts = parts_data.get("parts", [])
     # Whitelist police parts for officers on active duty
     whitelist = None
     is_on_duty = await PoliceSession.objects.filter(
