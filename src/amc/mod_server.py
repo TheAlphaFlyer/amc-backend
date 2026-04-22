@@ -36,7 +36,6 @@ async def set_config(session, max_vehicles_per_player=12):
 
 
 async def set_character_name(session, character_guid, name):
-    return
     await _write_limiter.acquire()
     transfer = {
         "name": name,
