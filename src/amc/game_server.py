@@ -56,7 +56,7 @@ def _parse_location_string(loc_str):
     result = {}
     for part in loc_str.split():
         axis, _, value = part.partition("=")
-        result[axis.lower()] = float(value)
+        result[axis] = float(value)
     return result
 
 

@@ -135,7 +135,7 @@ class GetPlayerInfoTests(SimpleTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["CharacterGuid"], "ABCD1234")
         self.assertEqual(result["PlayerName"], "TestPlayer")
-        self.assertEqual(result["Location"], {"x": 100.0, "y": 200.0, "z": 300.0})
+        self.assertEqual(result["Location"], {"X": 100.0, "Y": 200.0, "Z": 300.0})
         self.assertEqual(result["VehicleKey"], "Scooty")
         self.assertTrue(result["bIsAdmin"])
         self.assertEqual(result["unique_id"], "12345")

@@ -59,7 +59,7 @@ async def cmd_rescue(ctx: CommandContext, message: str = ""):
     player_info = await get_player_info(ctx.http_client, str(ctx.player.unique_id))
     if player_info and player_info.get("Location"):
         loc = player_info["Location"]
-        location = Point(loc["X"], loc["Y"], loc["Z"], srid=0)
+        location = Point(loc["X"], loc["Y"], loc.get("Z", 0), srid=0)
 
     rescue_request = await RescueRequest.objects.acreate(
         character=ctx.character, message=message, location=location, last_reminded_at=timezone.now()

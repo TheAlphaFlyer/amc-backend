@@ -379,7 +379,9 @@ async def monitor_locations(ctx):
             continue
 
         location_data = player_info["Location"]
-        new_point = Point(**location_data)
+        new_point = Point(
+            location_data["X"], location_data["Y"], location_data.get("Z", 0)
+        )
         vehicle_key = player_info["VehicleKey"]
 
         # Use cached last_location instead of querying 175M-row table
