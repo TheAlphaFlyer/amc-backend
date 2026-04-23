@@ -89,6 +89,7 @@ from .player_positions_common import (
     POSITION_UPDATE_SLEEP,
     HEARTBEAT_INTERVAL,
     get_players_mod,
+    build_player_positions,
 )
 
 app_router = Router()
@@ -321,15 +322,15 @@ async def streaming_player_positions(request):
         while True:
             players = await get_players_mod(session)
             player_positions = {
-                player["PlayerName"]: {
-                    **{
-                        axis.lower(): value
-                        for axis, value in player["Location"].items()
-                    },
-                    "vehicle_key": player["VehicleKey"],
-                    "unique_id": player["UniqueID"],
+                p["player_name"]: {
+                    "x": p["x"],
+                    "y": p["y"],
+                    "z": p["z"],
+                    "vehicle_key": p["vehicle_key"],
+                    "unique_id": p["unique_id"],
+                    "hidden": p["hidden"],
                 }
-                for player in players
+                for p in build_player_positions(players)
             }
 
             yield f"data: {json.dumps(player_positions)}\n\n"

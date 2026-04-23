@@ -4,7 +4,11 @@ import logging
 import aiohttp
 from django.conf import settings
 
-from amc.api.player_positions_common import POSITION_UPDATE_SLEEP, get_players_mod
+from amc.api.player_positions_common import (
+    POSITION_UPDATE_SLEEP,
+    get_players_mod,
+    build_player_positions,
+)
 from amc.api.player_positions_pb2 import PlayerPositions, VehicleKey
 
 logger = logging.getLogger(__name__)
@@ -19,16 +23,16 @@ _VEHICLE_KEY_MAP: dict[str, int] = {
 
 def serialize_players(players: list[dict]) -> bytes:
     positions = PlayerPositions()
-    for p in players:
-        loc = p.get("Location", {})
+    for p in build_player_positions(players):
         pos = positions.players.add()
-        pos.unique_id = int(p.get("UniqueID", 0))
-        pos.player_name = str(p.get("PlayerName", ""))
-        pos.x = float(loc.get("X", 0))
-        pos.y = float(loc.get("Y", 0))
-        pos.z = float(loc.get("Z", 0))
+        pos.unique_id = int(p["unique_id"])
+        pos.player_name = p["player_name"]
+        pos.hidden = p["hidden"]
+        pos.x = float(p["x"])
+        pos.y = float(p["y"])
+        pos.z = float(p["z"])
 
-        raw_key = str(p.get("VehicleKey", ""))
+        raw_key = str(p["vehicle_key"])
         enum_val = _VEHICLE_KEY_MAP.get(raw_key)
         if enum_val is not None:
             pos.vehicle_key_enum = enum_val
