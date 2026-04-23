@@ -139,7 +139,6 @@ async def cmd_spawn_garages(ctx: CommandContext):
 )
 async def cmd_spawn_garage_single(ctx: CommandContext, name: str):
     if ctx.player_info and ctx.player_info.get("bIsAdmin"):
-        await ctx.announce("spawning garage")
         loc = {**ctx.player_info["Location"]}
         loc["Z"] -= 100
         player_data = await get_player(
@@ -148,7 +147,6 @@ async def cmd_spawn_garage_single(ctx: CommandContext, name: str):
         rot = player_data.get("Rotation", {}) if player_data else {}
         resp = await spawn_garage(ctx.http_client_mod, loc, rot)
         tag = resp.get("tag")
-        await ctx.announce(_("Garage spawned! Tag: {tag}").format(tag=tag))
         await Garage.objects.acreate(
             config={"Location": loc, "Rotation": rot},
             notes=name.strip(),
