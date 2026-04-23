@@ -355,6 +355,8 @@ async def spawn_registered_vehicle(
     else:
         extra_data["forSale"] = vehicle.for_sale
 
+    parts = [{**p, "partKey": p["Key"]} for p in vehicle.config["Parts"]]
+
     for attempt in range(3):
         try:
             await spawn_vehicle(
@@ -364,12 +366,12 @@ async def spawn_registered_vehicle(
                 rotation=rotation,
                 customization=vehicle.config["Customization"],
                 decal=vehicle.config["Decal"],
-                parts=[{**p, "partKey": p["Key"]} for p in vehicle.config["Parts"]],
+                parts=parts,
                 extra_data=extra_data,
                 driver_guid=driver_guid,
                 tag=tag,
             )
-            return
+            break
         except Exception as e:
             if "503" in str(e) and attempt < 2:
                 logger.warning(

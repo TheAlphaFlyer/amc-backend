@@ -1,7 +1,9 @@
+import math
+
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import Character, Wanted
-from amc.mod_server import send_system_message
+from amc.mod_server import make_suspect, send_system_message, teleport_player
 from amc.police import (
     activate_police,
     deactivate_police,
@@ -14,7 +16,23 @@ from datetime import timedelta
 from django.utils import timezone
 from django.utils.translation import gettext as _, gettext_lazy
 
+from amc.commands.faction import parse_location_string
+
 SETWANTED_COOLDOWN = timedelta(hours=1)
+
+POLICE_STATIONS = [
+    ("Jeju Police Station", -42361, -141792, -21094),
+    ("Hallim Police Station", -325934, -2506, -21920),
+    ("Seoguipo Police Station", -8776, 144044, -21084),
+    ("Seongsan Police Station", 319727, -84041, -21921),
+    ("Gapa Police Station", 77156, 648911, -9011),
+    ("Gwangjin Police Station", 266983, 878250, -8911),
+    ("Ara Police Station", 315281, 1335754, -19911),
+]
+
+
+def _distance_3d(a, b):
+    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
 
 @registry.register(
@@ -46,6 +64,43 @@ async def cmd_police(ctx: CommandContext):
                 character_guid=ctx.character.guid,
             )
             return
+
+        # Fetch live player list for location and vehicle check
+        players = await get_players(ctx.http_client)
+        pdata = None
+        for uid, p in players:
+            if str(uid) == str(ctx.player.unique_id):
+                pdata = p
+                break
+
+        # Vehicle check
+        if pdata and bool(pdata.get("vehicle")):
+            await ctx.reply(
+                _("<Title>Cannot Go On Duty</>\n\nPlease exit the vehicle first.")
+            )
+            return
+
+        # Parse location and teleport to nearest police station
+        if pdata and pdata.get("location"):
+            try:
+                loc = parse_location_string(pdata["location"])
+                nearest = None
+                min_dist = float("inf")
+                for name, tx, ty, tz in POLICE_STATIONS:
+                    dist = _distance_3d(loc, (tx, ty, tz))
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest = (name, tx, ty, tz)
+                if nearest:
+                    station_name, tx, ty, tz = nearest
+                    await teleport_player(
+                        ctx.http_client_mod,
+                        str(ctx.player.unique_id),
+                        {"X": tx, "Y": ty, "Z": tz},
+                        no_vehicles=True,
+                    )
+            except ValueError:
+                pass
 
         await activate_police(ctx.character, ctx.http_client_mod)
         level = calculate_police_level(ctx.character.police_confiscated_total)
@@ -157,6 +212,9 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
     await create_or_refresh_wanted(
         target_character, ctx.http_client_mod, amount=bounty_amount
     )
+
+    # Flag the target as a suspect in-game
+    await make_suspect(ctx.http_client_mod, target_character.guid)
 
     await ctx.reply(
         _("<Title>Wanted Set</>\n\n{name} is now wanted!{note}").format(

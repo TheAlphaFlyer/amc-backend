@@ -228,7 +228,8 @@ def detect_custom_parts(
         if slot_value >= ATTACHMENT_SLOT_MIN:
             continue
         key_lower = key.lower()
-        if key_lower in stock_keys:
+        base_id = _strip_part_suffix(key, stock_keys)
+        if base_id in stock_keys:
             continue
         if whitelist and key_lower.startswith(whitelist):
             continue

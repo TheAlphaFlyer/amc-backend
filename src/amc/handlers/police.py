@@ -11,6 +11,7 @@ import logging
 
 from django.core.cache import cache
 
+from amc.commands.faction import _build_player_locations, perform_arrest
 from amc.handlers import register
 from amc.special_cargo import ILLICIT_CARGO_KEYS
 from amc.models import (
@@ -20,13 +21,14 @@ from amc.models import (
     PolicePenaltyLog,
     PoliceSession,
     PoliceShiftLog,
+    Wanted,
 )
 from amc.mod_server import (
     despawn_player_cargo,
     send_system_message,
     transfer_money,
 )
-from amc.game_server import announce
+from amc.game_server import announce, get_players
 from amc_finance.services import (
     record_treasury_confiscation_income,
     send_fund_to_player_wallet,
@@ -81,6 +83,52 @@ async def handle_police_penalty(event, player, character, ctx):
         warning_only=warning_only,
         data=event.get("data"),
     )
+
+    # Auto-arrest wanted suspects during pull-over
+    suspect_data = event["data"].get("SuspectCharacter", {})
+    suspect_guid = suspect_data.get("CharacterGuid")
+    if not suspect_guid:
+        return 0, 0, 0, 0
+
+    try:
+        suspect_character = await Character.objects.select_related("player").aget(
+            guid=suspect_guid
+        )
+    except Character.DoesNotExist:
+        return 0, 0, 0, 0
+
+    is_wanted = await Wanted.objects.filter(
+        character=suspect_character,
+        wanted_remaining__gt=0,
+        expired_at__isnull=True,
+    ).aexists()
+    if not is_wanted:
+        return 0, 0, 0, 0
+
+    # Suspect is wanted — execute arrest
+    players = await get_players(ctx.http_client)
+    if not players:
+        return 0, 0, 0, 0
+
+    locations = _build_player_locations(players)
+    if suspect_guid not in locations:
+        return 0, 0, 0, 0
+
+    targets = {suspect_guid: locations[suspect_guid]}
+    target_chars = {suspect_guid: suspect_character}
+
+    try:
+        await perform_arrest(
+            officer_character=character,
+            targets=targets,
+            target_chars=target_chars,
+            http_client=ctx.http_client,
+            http_client_mod=ctx.http_client_mod,
+            officer_message_format="{names} arrested and sent to jail.",
+        )
+    except ValueError as e:
+        logger.warning("Pull-over arrest skipped: %s", e)
+
     return 0, 0, 0, 0
 
 

@@ -51,6 +51,7 @@ from amc.commands.rp_rescue import cmd_rescue, cmd_respond
 from amc.commands.social import cmd_thank
 from amc.commands.teleport import cmd_tp_coords, cmd_tp_name, cmd_tp_vehicle
 from amc.commands.faction import cmd_arrest, parse_location_string
+from amc.commands.police import cmd_police
 from amc.commands.wanted import cmd_wanted
 
 
@@ -3277,4 +3278,110 @@ class SetWantedCooldownTestCase(TestCase):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
         mock_create.assert_called_once()
+
+
+class PoliceCommandTestCase(TestCase):
+    """Tests for /police command teleport to nearest station."""
+
+    def setUp(self):
+        self.ctx = MagicMock(spec=CommandContext)
+        self.ctx.reply = AsyncMock()
+        self.ctx.announce = AsyncMock()
+        self.ctx.http_client_mod = MagicMock()
+        self.ctx.http_client = MagicMock()
+        self.ctx.discord_client = None
+        self.ctx.player_info = {}
+
+        self.ctx.http_client_mod.get.return_value = MockResponse()
+        self.ctx.http_client_mod.post.return_value = MockResponse()
+        self.ctx.http_client.get.return_value = MockResponse()
+
+        self.player = Player.objects.create(unique_id="76561198000000000")
+        self.character = Character.objects.create(
+            name="TestChar", player=self.player, guid="guid-123"
+        )
+        self.ctx.character = self.character
+        self.ctx.player = self.player
+        self.ctx.timestamp = timezone.now()
+
+    async def test_cmd_police_on_duty_in_vehicle(self):
+        """Going on duty while in a vehicle is blocked."""
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=False)),
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(
+                    return_value=[
+                        (
+                            str(self.player.unique_id),
+                            {"name": "TestChar", "vehicle": {"name": "SomeCar"}},
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "amc.commands.police.activate_police", new=AsyncMock()
+            ) as mock_activate,
+            patch(
+                "amc.commands.police.teleport_player", new=AsyncMock()
+            ) as mock_tp,
+            patch("amc.player_tags.refresh_player_name", new=AsyncMock()),
+        ):
+            await cmd_police(self.ctx)
+            self.ctx.reply.assert_called()
+            args, _ = self.ctx.reply.call_args
+            self.assertIn("Please exit the vehicle first", args[0])
+            mock_tp.assert_not_called()
+            mock_activate.assert_not_called()
+
+    async def test_cmd_police_on_duty_teleports_to_nearest_station(self):
+        """Going on duty teleports player to the nearest police station."""
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=False)),
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(
+                    return_value=[
+                        (
+                            str(self.player.unique_id),
+                            {
+                                "name": "TestChar",
+                                "location": "X=-40000 Y=-140000 Z=-21000",
+                            },
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "amc.commands.police.activate_police", new=AsyncMock()
+            ) as mock_activate,
+            patch(
+                "amc.commands.police.teleport_player", new=AsyncMock()
+            ) as mock_tp,
+            patch("amc.player_tags.refresh_player_name", new=AsyncMock()),
+        ):
+            await cmd_police(self.ctx)
+            mock_tp.assert_called_with(
+                self.ctx.http_client_mod,
+                str(self.player.unique_id),
+                {"X": -42361, "Y": -141792, "Z": -21094},
+                no_vehicles=True,
+            )
+            mock_activate.assert_called_once()
+
+    async def test_cmd_police_off_duty_no_teleport(self):
+        """Going off duty does not teleport."""
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=True)),
+            patch(
+                "amc.commands.police.deactivate_police", new=AsyncMock()
+            ) as mock_deactivate,
+            patch("amc.player_tags.refresh_player_name", new=AsyncMock()),
+            patch(
+                "amc.commands.police.teleport_player", new=AsyncMock()
+            ) as mock_tp,
+        ):
+            await cmd_police(self.ctx)
+            mock_deactivate.assert_called_once()
+            mock_tp.assert_not_called()
 

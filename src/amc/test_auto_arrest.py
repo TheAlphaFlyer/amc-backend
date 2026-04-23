@@ -33,8 +33,8 @@ def _make_players_list(player_datas):
     return [(d["unique_id"], d) for d in player_datas]
 
 
-@patch("amc.auto_arrest.announce", new_callable=AsyncMock)
-@patch("amc.auto_arrest.send_system_message", new_callable=AsyncMock)
+@patch("amc.commands.faction.announce", new_callable=AsyncMock)
+@patch("amc.commands.faction.send_system_message", new_callable=AsyncMock)
 @patch("amc.commands.faction.send_fund_to_player_wallet", new_callable=AsyncMock)
 @patch("amc.commands.faction.record_confiscation_for_level", new_callable=AsyncMock)
 @patch(

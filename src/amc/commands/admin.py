@@ -8,7 +8,7 @@ from amc.mod_server import (
     show_popup,
     despawn_by_tag,
     spawn_garage,
-    get_garages,
+    get_player,
     spawn_assets,
     spawn_vehicle,
     force_exit_vehicle,
@@ -121,6 +121,12 @@ async def cmd_spawn_garages(ctx: CommandContext):
         async for g in Garage.objects.filter(spawn_on_restart=True):
             if g.config is None:
                 continue
+            # Despawn existing garage before spawning to avoid duplicates
+            if g.tag:
+                try:
+                    await despawn_by_tag(ctx.http_client_mod, g.tag)
+                except Exception:
+                    pass
             resp = await spawn_garage(
                 ctx.http_client_mod, g.config["Location"], g.config["Rotation"]
             )
@@ -136,7 +142,10 @@ async def cmd_spawn_garage_single(ctx: CommandContext, name: str):
         await ctx.announce("spawning garage")
         loc = {**ctx.player_info["Location"]}
         loc["Z"] -= 100
-        rot = ctx.player_info.get("Rotation", {})
+        player_data = await get_player(
+            ctx.http_client_mod, str(ctx.player.unique_id), force_refresh=True
+        )
+        rot = player_data.get("Rotation", {}) if player_data else {}
         resp = await spawn_garage(ctx.http_client_mod, loc, rot)
         tag = resp.get("tag")
         await ctx.announce(_("Garage spawned! Tag: {tag}").format(tag=tag))
@@ -162,55 +171,40 @@ async def cmd_remove_garage(ctx: CommandContext):
 
     RADIUS = 1000
 
-    live_garages = await get_garages(ctx.http_client_mod)
+    removed_count = 0
+    failed_despawn_count = 0
 
-    nearby_live = []
-    for lg in live_garages:
-        loc = lg.get("Location", {})
-        gx, gy, gz = loc.get("X", 0), loc.get("Y", 0), loc.get("Z", 0)
+    async for garage in Garage.objects.all():
+        if garage.config is None:
+            continue
+        garage_loc = garage.config.get("Location")
+        if not garage_loc:
+            continue
+
+        gx, gy, gz = garage_loc["X"], garage_loc["Y"], garage_loc["Z"]
         distance = (
             (player_x - gx) ** 2 + (player_y - gy) ** 2 + (player_z - gz) ** 2
         ) ** 0.5
-        if distance <= RADIUS:
-            nearby_live.append(lg)
+        if distance > RADIUS:
+            continue
 
-    removed_count = 0
-    no_tag_count = 0
+        if garage.tag:
+            try:
+                await despawn_by_tag(ctx.http_client_mod, garage.tag)
+            except Exception:
+                failed_despawn_count += 1
 
-    for lg in nearby_live:
-        loc = lg.get("Location", {})
-        lx, ly, lz = loc["X"], loc["Y"], loc["Z"]
-
-        best_garage = None
-        best_dist = float("inf")
-        async for garage in Garage.objects.all():
-            if garage.config is None:
-                continue
-            garage_loc = garage.config.get("Location")
-            if not garage_loc:
-                continue
-            gx, gy, gz = garage_loc["X"], garage_loc["Y"], garage_loc["Z"]
-            d = ((lx - gx) ** 2 + (ly - gy) ** 2 + (lz - gz) ** 2) ** 0.5
-            if d < best_dist:
-                best_dist = d
-                best_garage = garage
-
-        if best_garage and best_dist < RADIUS:
-            if best_garage.tag:
-                await despawn_by_tag(ctx.http_client_mod, best_garage.tag)
-            else:
-                no_tag_count += 1
-            await best_garage.adelete()
-            removed_count += 1
+        await garage.adelete()
+        removed_count += 1
 
     if removed_count > 0:
         msg = _(
             "<Title>Garage Removed</>\n\nRemoved {count} garage(s) near your location."
         ).format(count=removed_count)
-        if no_tag_count > 0:
+        if failed_despawn_count > 0:
             msg += _(
-                "\n\n<Warning>{no_tag} garage(s) had no tag and could not be despawned from the game world. They were only removed from the database.</>"
-            ).format(no_tag=no_tag_count)
+                "\n\n<Warning>Failed to despawn {count} garage(s) from the game world. They were removed from the database only.</>"
+            ).format(count=failed_despawn_count)
         await ctx.reply(msg)
     else:
         await ctx.reply(

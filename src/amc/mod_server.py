@@ -159,11 +159,12 @@ _NEG_SENTINEL = "__none__"
 _inflight: dict[str, asyncio.Future] = {}
 
 
-async def get_player(session, player_id):
+async def get_player(session, player_id, force_refresh=False):
     cache_key = f"mod_player_info:{player_id}"
-    cached = await cache.aget(cache_key)
-    if cached is not None:
-        return None if cached == _NEG_SENTINEL else cached
+    if not force_refresh:
+        cached = await cache.aget(cache_key)
+        if cached is not None:
+            return None if cached == _NEG_SENTINEL else cached
 
     pending = _inflight.get(player_id)
     if pending is not None:
@@ -583,3 +584,21 @@ async def get_muted_players(session):
             return []
         data = await resp.json()
         return data.get("data", [])
+
+
+async def get_vehicle_parts_by_tag(session, tag):
+    """Poll mod server for parts status of a tagged vehicle."""
+    async with session.get(f"/vehicle_parts_by_tag/{tag}", timeout=FAST_TIMEOUT) as resp:
+        if resp.status != 200:
+            return None
+        return await resp.json()
+
+
+async def set_vehicle_parts_by_tag(session, tag, parts):
+    """Re-apply parts to an existing tagged vehicle."""
+    await _write_limiter.acquire()
+    data = {"parts": parts}
+    async with session.post(f"/vehicle_parts_by_tag/{tag}", json=data) as resp:
+        if resp.status != 200:
+            raise Exception(f"Failed to set parts on vehicle {tag}")
+        return await resp.json()

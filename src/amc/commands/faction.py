@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 from amc.command_framework import registry, CommandContext
-from amc.game_server import get_players
+from amc.game_server import announce, get_players
 from amc.models import (
     ArrestZone,
     Character,
@@ -291,6 +291,51 @@ async def execute_arrest(
     return arrested_names, total_confiscated
 
 
+async def perform_arrest(
+    officer_character,
+    targets: dict,
+    target_chars: dict,
+    http_client,
+    http_client_mod,
+    officer_message_format: str = "{names} arrested and sent to jail.",
+) -> tuple[list[str], int]:
+    """Execute arrest and send standard officer notification + server announcement.
+
+    Wraps :func:`execute_arrest` with uniform post-arrest messaging so callers
+    do not duplicate notification logic.
+
+    Raises:
+        ValueError: If jail teleport point is not configured.
+    """
+    arrested_names, total_confiscated = await execute_arrest(
+        officer_character=officer_character,
+        targets=targets,
+        target_chars=target_chars,
+        http_client=http_client,
+        http_client_mod=http_client_mod,
+    )
+
+    if arrested_names and officer_character:
+        names_arrested = ", ".join(arrested_names)
+        await send_system_message(
+            http_client_mod,
+            officer_message_format.format(names=names_arrested),
+            character_guid=officer_character.guid,
+        )
+        if total_confiscated > 0:
+            await announce(
+                f"{names_arrested} arrested by {officer_character.name}! "
+                f"${total_confiscated:,} confiscated.",
+                http_client,
+            )
+        else:
+            await announce(
+                f"{names_arrested} arrested by {officer_character.name}!",
+                http_client,
+            )
+
+    return arrested_names, total_confiscated
+
 
 @registry.register(
     ["/arrest", "/a"],
@@ -558,12 +603,13 @@ async def cmd_arrest(ctx: CommandContext):
 
     # 7. Execute arrests
     try:
-        arrested_names, total_confiscated = await execute_arrest(
+        arrested_names, total_confiscated = await perform_arrest(
             officer_character=ctx.character,
             targets=targets,
             target_chars=target_chars,
             http_client=ctx.http_client,
             http_client_mod=ctx.http_client_mod,
+            officer_message_format=gettext("{names} arrested and sent to jail."),
         )
     except ValueError as e:
         await send_system_message(
@@ -581,17 +627,3 @@ async def cmd_arrest(ctx: CommandContext):
 
     # Set cooldown
     cache.set(cooldown_key, True, timeout=ARREST_COOLDOWN)
-
-    # Announce and confirm
-    names_arrested = ", ".join(arrested_names)
-    if total_confiscated > 0:
-        await ctx.announce(
-            f"{names_arrested} arrested by {ctx.character.name}! ${total_confiscated:,} confiscated."
-        )
-    else:
-        await ctx.announce(f"{names_arrested} arrested by {ctx.character.name}!")
-    await send_system_message(
-        ctx.http_client_mod,
-        gettext("{names} arrested and sent to jail.").format(names=names_arrested),
-        character_guid=ctx.character.guid,
-    )

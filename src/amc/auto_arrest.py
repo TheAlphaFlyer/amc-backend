@@ -19,9 +19,9 @@ from django.utils import timezone
 from amc.commands.faction import (
     _build_player_locations,
     _distance_3d,
-    execute_arrest,
+    perform_arrest,
 )
-from amc.game_server import announce, get_players
+from amc.game_server import get_players
 from amc.mod_server import send_system_message
 from amc.models import ArrestZone, Character, PoliceSession, Wanted
 from amc.police import is_police_vehicle
@@ -227,43 +227,19 @@ async def _patrol_tick(
 
         # Execute arrest
         try:
-            arrested_names, total_confiscated = await execute_arrest(
+            arrested_names, total_confiscated = await perform_arrest(
                 officer_character=cop_char,
                 targets=arrestable_targets,
                 target_chars=arrestable_chars,
                 http_client=http_client,
                 http_client_mod=http_client_mod,
+                officer_message_format="{names} auto-arrested and sent to jail.",
             )
         except ValueError as e:
-            logger.warning(f"Auto-arrest skipped: {e}")
+            logger.warning("Auto-arrest skipped: %s", e)
             return locations, still_counters
 
         if arrested_names:
-            names_arrested = ", ".join(arrested_names)
-
-            # System message to officer
-            await send_system_message(
-                http_client_mod,
-                f"{names_arrested} auto-arrested and sent to jail.",
-                character_guid=cop_char.guid,
-            )
-
-            # Server announcement
-            if total_confiscated > 0:
-                asyncio.create_task(
-                    announce(
-                        f"{names_arrested} arrested by {cop_char.name}! ${total_confiscated:,} confiscated.",
-                        http_client,
-                    )
-                )
-            else:
-                asyncio.create_task(
-                    announce(
-                        f"{names_arrested} arrested by {cop_char.name}!",
-                        http_client,
-                    )
-                )
-
             # Remove arrested suspects from this tick's pool and reset counters
             for g in arrestable_targets:
                 suspect_guids.discard(g)
