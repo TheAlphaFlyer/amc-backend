@@ -197,7 +197,7 @@ async def execute_arrest(
                 # --- Spread confiscation to all online police ---
                 online_police = [
                     c
-                    async for c in get_active_police_characters()
+                    async for c in await get_active_police_characters()
                 ]
                 if online_police:
                     per_officer_money = max(
