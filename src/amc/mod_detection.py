@@ -33,7 +33,7 @@ GAME_DB_PATH = os.environ.get("GAME_DB_PATH", "/var/lib/motortown/gamedata.db")
 ATTACHMENT_SLOT_MIN = VehiclePartSlot.Attachment0.value  # 148
 
 # Part key prefixes whitelisted for characters on active police duty
-POLICE_DUTY_WHITELIST: tuple[str, ...] = ("apf_",)
+POLICE_DUTY_WHITELIST: tuple[str, ...] = ("apf_", "pd_")
 
 # Module-level caches — loaded once on first call
 _stock_part_keys: Optional[set[str]] = None
