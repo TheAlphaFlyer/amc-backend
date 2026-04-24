@@ -23,7 +23,7 @@ from amc.criminals import (  # noqa: E402
     tick_criminal_record_decay,
     tick_wanted_countdown,
 )
-from amc.police import tick_police_station_updates  # noqa: E402
+
 from amc.jobs import monitor_jobs  # noqa: E402
 from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
@@ -203,10 +203,6 @@ async def criminal_record_decay_tick(ctx):
     await tick_criminal_record_decay()
 
 
-async def police_station_updates_tick(ctx):
-    await tick_police_station_updates(ctx["http_client"], ctx["http_client_mod"])
-
-
 class WorkerSettings:
     functions = [
         process_log_line,
@@ -230,8 +226,6 @@ class WorkerSettings:
         cron(suspect_tag_refresh_tick, second=set(range(0, 60, 10))),
         # pyrefly: ignore [bad-argument-type]
         cron(criminal_record_decay_tick, minute=None, second=30),  # every minute at :30s
-        # pyrefly: ignore [bad-argument-type]
-        cron(police_station_updates_tick, second=set(range(0, 60, 30))),  # every 30s
         # pyrefly: ignore [bad-argument-type]
         cron(handout_ubi, minute=set(range(0, 60, UBI_TASK_FREQUENCY)), second=37),
         # pyrefly: ignore [bad-argument-type]

@@ -1,4 +1,5 @@
 import asyncio
+import math
 from functools import wraps
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -305,3 +306,16 @@ async def countdown(http_client, start=3, delay=2.0):
     for i in range(start, -1, -1):
         await asyncio.sleep(delay)
         await announce(str(i) if i > 0 else "GO!!", http_client, clear_banner=False)
+
+
+def game_units_to_metres(units: float) -> int:
+    return round(units / 100)
+
+
+def compass_direction(dx: float, dy: float) -> str:
+    angle = math.atan2(-dy, dx)
+    if angle < 0:
+        angle += 2 * math.pi
+    dirs = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
+    idx = int((angle + math.pi / 8) / (math.pi / 4)) % 8
+    return dirs[idx]
