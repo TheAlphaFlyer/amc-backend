@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from amc.commands.faction import _build_player_locations, _distance_3d
+from amc.commands.faction import _build_player_locations, _distance_3d, execute_arrest
 from amc.game_server import get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
 from amc.mod_server import make_suspect, send_system_message
@@ -21,6 +21,9 @@ TICK_INTERVAL = 1.0  # seconds between ticks (matches cron cadence)
 ESCAPE_DISTANCE = 50_000  # 500m (game units) — suspect must be beyond all cops to clear
 ESCAPE_FLOOR = 0.1        # minimum wanted_remaining while near police (cannot expire)
 ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
+
+# Underwater auto-arrest threshold (game units)
+UNDERWATER_Z_THRESHOLD = -22455
 
 # Time-based decay — online suspects always decay; clears in BASE_WANTED_DURATION seconds.
 BASE_WANTED_DURATION = 300  # 5 minutes
@@ -215,7 +218,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
         async for w in Wanted.objects.filter(
             expired_at__isnull=True,
             wanted_remaining__gt=0,
-        ).select_related("character")
+        ).select_related("character__player")
     ]
     if not wanted_list:
         return
@@ -234,7 +237,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             async for ps in PoliceSession.objects.filter(
                 ended_at__isnull=True,
                 character__last_online__gte=online_threshold,
-            ).select_related("character")
+        ).select_related("character__player")
         ]
         cop_guids = {
             ps.character.guid
@@ -258,6 +261,44 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             continue
 
         _, sus_loc, _ = locations[sus_guid]
+
+        # Underwater suspects are automatically arrested
+        if sus_loc[2] < UNDERWATER_Z_THRESHOLD:
+            if http_client_mod:
+                targets = {
+                    sus_guid: (
+                        str(wanted.character.player.unique_id),
+                        sus_loc,
+                        False,
+                    )
+                }
+                target_chars = {sus_guid: wanted.character}
+                try:
+                    arrested_names, total_confiscated = await execute_arrest(
+                        officer_character=None,
+                        targets=targets,
+                        target_chars=target_chars,
+                        http_client=http_client,
+                        http_client_mod=http_client_mod,
+                    )
+                    logger.info(
+                        "underwater arrest: %s — z=%.0f confiscated=$%d",
+                        wanted.character.name,
+                        sus_loc[2],
+                        total_confiscated,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "underwater arrest failed (jail not configured?): %s", exc
+                    )
+                except Exception:
+                    logger.exception(
+                        "underwater arrest failed unexpectedly for %s",
+                        wanted.character.name,
+                    )
+            _last_star_notified.pop(sus_guid, None)
+            _last_escape_msg_sent.pop(sus_guid, None)
+            continue
 
         # Default: full base decay rate
         effective_decay = BASE_DECAY_PER_TICK * TICK_INTERVAL
