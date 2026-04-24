@@ -283,7 +283,7 @@ async def execute_arrest(
 
         # Mark character as jailed so monitor_locations enforces jail perimeter
         if suspect_char:
-            suspect_char.jailed_until = timezone.now() + timedelta(seconds=30)
+            suspect_char.jailed_until = timezone.now() + timedelta(seconds=60)
             await suspect_char.asave(update_fields=["jailed_until"])
 
         arrested_names.append(name)
