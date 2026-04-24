@@ -3,10 +3,11 @@ import math
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import Character, Wanted
-from amc.mod_server import make_suspect, send_system_message, teleport_player
+from amc.mod_server import get_player, make_suspect, send_system_message, teleport_player
 from amc.police import (
     activate_police,
     deactivate_police,
+    get_active_police_characters,
     is_police,
     calculate_police_level,
 )
@@ -19,6 +20,7 @@ from django.utils.translation import gettext as _, gettext_lazy
 from amc.commands.faction import parse_location_string
 
 SETWANTED_COOLDOWN = timedelta(hours=1)
+SETWANTED_MIN_DISTANCE = 300_000  # 3km = 300,000 units (1m = 100 units)
 
 POLICE_STATIONS = [
     ("Jeju Police Station", -42361, -141792, -21094),
@@ -192,6 +194,72 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
                 ).format(name=target_character.name, mins=remaining_mins)
             )
             return
+
+    # Distance check: target must be at least 3km away from any police officer
+    target_location_str = target_player_data.get("location")
+    if not target_location_str:
+        await ctx.reply(
+            _(
+                "<Title>Location Unknown</>\n\n"
+                "Cannot determine {name}'s location."
+            ).format(name=target_character.name)
+        )
+        return
+
+    try:
+        target_loc = parse_location_string(target_location_str)
+    except ValueError:
+        await ctx.reply(
+            _(
+                "<Title>Location Unknown</>\n\n"
+                "Cannot determine {name}'s location."
+            ).format(name=target_character.name)
+        )
+        return
+
+    police_chars = await get_active_police_characters()
+    async for police_char in police_chars:
+        police_player_data = next(
+            (
+                p
+                for pid, p in players
+                if p.get("character_guid") == str(police_char.guid)
+            ),
+            None,
+        )
+        if not police_player_data:
+            continue
+        police_location_str = police_player_data.get("location")
+        if not police_location_str:
+            continue
+        try:
+            police_loc = parse_location_string(police_location_str)
+        except ValueError:
+            continue
+
+        dist = _distance_3d(target_loc, police_loc)
+        if dist < SETWANTED_MIN_DISTANCE:
+            await ctx.reply(
+                _(
+                    "<Title>Too Close</>\n\n"
+                    "{name} is too close to a police officer. "
+                    "You can only set wanted on players at least 3km away from any officer."
+                ).format(name=target_character.name)
+            )
+            return
+
+    # AFK check: police may not set AFK players as wanted
+    target_live = await get_player(
+        ctx.http_client, str(target_pid), force_refresh=True
+    )
+    if target_live and target_live.get("bAFK"):
+        await ctx.reply(
+            _(
+                "<Title>Player AFK</>\n\n"
+                "{name} is currently AFK and cannot be set as wanted."
+            ).format(name=target_character.name)
+        )
+        return
 
     # Innocence check: CriminalRecord is the single source of truth.
     # A NULL cleared_at means the character has an active criminal record.

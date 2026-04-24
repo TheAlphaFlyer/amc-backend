@@ -3206,9 +3206,36 @@ class SetWantedCooldownTestCase(TestCase):
         self.mock_players = [
             (
                 "76561199000001002",
-                {"character_guid": "target-guid-cool", "name": "CooldownTarget"},
+                {
+                    "character_guid": "target-guid-cool",
+                    "name": "CooldownTarget",
+                    "location": "X=0 Y=0 Z=0",
+                },
             )
         ]
+
+        class _MockAsyncIterable:
+            def __init__(self, items):
+                self.items = items
+            def __aiter__(self):
+                self._index = 0
+                return self
+            async def __anext__(self):
+                if self._index >= len(self.items):
+                    raise StopAsyncIteration
+                item = self.items[self._index]
+                self._index += 1
+                return item
+
+        async def _empty_police():
+            return _MockAsyncIterable([])
+
+        self.empty_police = _empty_police
+
+        async def _mock_get_player(*args, **kwargs):
+            return {"bAFK": False}
+
+        self.mock_get_player = _mock_get_player
 
         self.ctx = MagicMock()
         self.ctx.player = self.cop_player
@@ -3228,9 +3255,15 @@ class SetWantedCooldownTestCase(TestCase):
             expired_at=timezone.now() - timedelta(minutes=30),
         )
 
-        with patch(
-            "amc.commands.police.get_players",
-            new=AsyncMock(return_value=self.mock_players),
+        with (
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(return_value=self.mock_players),
+            ),
+            patch(
+                "amc.commands.police.get_active_police_characters",
+                new=self.empty_police,
+            ),
         ):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
@@ -3259,6 +3292,14 @@ class SetWantedCooldownTestCase(TestCase):
             patch(
                 "amc.commands.police.create_or_refresh_wanted", new=AsyncMock()
             ) as mock_create,
+            patch(
+                "amc.commands.police.get_active_police_characters",
+                new=self.empty_police,
+            ),
+            patch(
+                "amc.commands.police.get_player",
+                new=self.mock_get_player,
+            ),
         ):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
@@ -3274,6 +3315,14 @@ class SetWantedCooldownTestCase(TestCase):
             patch(
                 "amc.commands.police.create_or_refresh_wanted", new=AsyncMock()
             ) as mock_create,
+            patch(
+                "amc.commands.police.get_active_police_characters",
+                new=self.empty_police,
+            ),
+            patch(
+                "amc.commands.police.get_player",
+                new=self.mock_get_player,
+            ),
         ):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
