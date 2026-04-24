@@ -9,9 +9,9 @@ PUSHED_NAME_TTL = 3600  # 1 hour
 
 # Regexes for stripping tags — covers both new compact and legacy formats
 TAG_PATTERNS = [
-    # New compact format: must start with C/M/G/P or *, optionally followed by more letters/digits/stars
-    # e.g. [C], [M], [G3], [CM], [MG3], [CMG12], [*****], [C***], [MP], [MPG3], [MC1***G3]
-    re.compile(r"\[(?=[CMGP*])[CMGP\d*]+\]\s*"),
+    # New compact format: must start with C/M/G/P/R or *, optionally followed by more letters/digits/stars
+    # e.g. [C], [M], [R], [G3], [CM], [MG3], [CMG12], [*****], [C***], [MP], [MPG3], [MC1***G3], [RMG3]
+    re.compile(r"\[(?=[CMGPR*])[CMGPR\d*]+\]\s*"),
     # Legacy formats with W-prefix or Unicode stars (for players who logged in before star refactor)
     re.compile(r"\[(?=[CMGPW\u2605])[CMGPW\d\u2605]+\]\s*"),
     # Legacy compact format with Unicode subscript digits (e.g. [G₃], [MG₂₃])
@@ -49,10 +49,12 @@ def build_display_name(
     police_level: int = 0,
     gov_level: int = 0,
     wanted_stars: int = 0,
+    rp_mode: bool = False,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [MP1*****C1G3] BaseName  (order: M, P, stars, C, G)
+    Tag format: [RMP1*****C1G3] BaseName  (order: R, M, P, stars, C, G)
+      R = RP mode toggled on
       M = Modded vehicle parts
       P1 = Police level (active session)
       ***** = Wanted level (1–5 stars, based on wanted_remaining heat)
@@ -66,9 +68,13 @@ def build_display_name(
         police_level: Police level (0 = not on duty)
         gov_level: Government employee level (0 = not a gov employee)
         wanted_stars: Wanted level (0–5, 0 = not wanted)
+        rp_mode: Whether the character is currently in RP mode
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
+
+    if rp_mode:
+        tag += "R"
 
     if has_custom_parts:
         tag += "M"
@@ -165,6 +171,7 @@ async def refresh_player_name(
         police_level=police_level,
         gov_level=gov_level,
         wanted_stars=wanted_stars,
+        rp_mode=character.rp_mode,
     )
 
     # Save to DB if changed

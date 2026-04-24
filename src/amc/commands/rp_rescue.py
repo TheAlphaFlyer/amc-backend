@@ -8,11 +8,36 @@ from amc.mod_server import (
     send_system_message,
 )
 from amc.game_server import get_player_info
+from amc.player_tags import refresh_player_name
 from amc.vehicles import format_vehicle_name
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
 from django.utils.translation import gettext as _, gettext_lazy
+
+
+@registry.register(
+    ["/rp_mode", "/rp"],
+    description=gettext_lazy("Toggle RP mode on your character"),
+    category="RP & Rescue",
+    featured=True,
+)  # type: ignore
+async def cmd_rp_mode(ctx: CommandContext):
+    ctx.character.rp_mode = not ctx.character.rp_mode
+    await ctx.character.asave(update_fields=["rp_mode"])
+    # Refresh the display-name tag so [R] appears/disappears; fire-and-forget
+    # so we don't block the reply on DB reads + the mod-server write_limiter.
+    asyncio.create_task(refresh_player_name(ctx.character, ctx.http_client_mod))
+    if ctx.character.rp_mode:
+        await ctx.reply(
+            _(
+                "<EffectGood>RP Mode Enabled</>\n"
+                "You may no longer use roadside recovery to reset vehicles. "
+                "Call /rescue if you need help."
+            )
+        )
+    else:
+        await ctx.reply(_("<Title>RP Mode Disabled</>"))
 
 
 @registry.register(

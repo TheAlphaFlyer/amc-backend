@@ -231,6 +231,42 @@ def test_build_display_name_wanted_with_crim_mods():
     )
 
 
+def test_build_display_name_rp_mode_only():
+    assert build_display_name("PlayerOne", rp_mode=True) == "[R] PlayerOne"
+
+
+def test_build_display_name_rp_mode_with_mods_and_gov():
+    """R goes first: [RMG3] PlayerOne."""
+    assert (
+        build_display_name(
+            "PlayerOne", rp_mode=True, has_custom_parts=True, gov_level=3
+        )
+        == "[RMG3] PlayerOne"
+    )
+
+
+def test_build_display_name_rp_mode_with_police_wanted_gov():
+    """R prepended before P/stars/G: [RP1**G3] PlayerOne (crim suppressed by police)."""
+    assert (
+        build_display_name(
+            "PlayerOne",
+            rp_mode=True,
+            police_level=1,
+            wanted_stars=2,
+            criminal_level=0,
+            gov_level=3,
+        )
+        == "[RP1**G3] PlayerOne"
+    )
+
+
+def test_build_display_name_rp_mode_default_false():
+    """Not passing rp_mode leaves the tag unaffected."""
+    assert (
+        build_display_name("PlayerOne", has_custom_parts=True) == "[M] PlayerOne"
+    )
+
+
 # --- strip_all_tags ---
 
 
@@ -260,6 +296,11 @@ def test_strip_new_format():
     assert (
         strip_all_tags("[P1\u2605\u2605\u2605\u2605\u2605G3] PlayerOne") == "PlayerOne"
     )
+    # RP mode tag
+    assert strip_all_tags("[R] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[RM] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[RMG3] PlayerOne") == "PlayerOne"
+    assert strip_all_tags("[RP1**G3] PlayerOne") == "PlayerOne"
 
 
 def test_strip_legacy_format():

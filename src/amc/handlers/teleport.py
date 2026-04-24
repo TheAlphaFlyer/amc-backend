@@ -17,6 +17,7 @@ from amc.models import (
     Wanted,
 )
 from amc.game_server import announce
+from amc.mod_server import despawn_player_vehicle
 
 logger = logging.getLogger("amc.webhook.handlers.teleport")
 
@@ -37,6 +38,14 @@ async def handle_reset_vehicle(event, player, character, ctx):
                 color="FFA500",
             )
         )
+        if ctx.http_client_mod:
+            asyncio.create_task(
+                despawn_player_vehicle(
+                    ctx.http_client_mod,
+                    str(character.guid),
+                    category="current",
+                )
+            )
     return 0, 0, 0, 0
 
 

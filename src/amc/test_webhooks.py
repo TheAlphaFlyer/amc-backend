@@ -1166,14 +1166,20 @@ class ExtraWebhookTests(TestCase):
         self.assertEqual(log.cargo_key, "trash")
         self.assertEqual(log.payment, 500)
 
+    @patch("amc.handlers.teleport.despawn_player_vehicle", new_callable=AsyncMock)
     async def test_vehicle_reset_rp_mode(
-        self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode
+        self,
+        mock_despawn,
+        mock_show_popup,
+        mock_announce,
+        mock_get_treasury,
+        mock_get_rp_mode,
     ):
         mock_get_rp_mode.return_value = True
         player = await sync_to_async(PlayerFactory)()
         # Set last_login far enough in the past
         character = await sync_to_async(CharacterFactory)(
-            player=player, guid="test-char-rp"
+            player=player, guid="test-char-rp", rp_mode=True
         )
         await CharacterLocation.objects.acreate(
             character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"
@@ -1193,9 +1199,17 @@ class ExtraWebhookTests(TestCase):
             },
         }
 
-        await process_events([event], http_client=MagicMock())
+        await process_events([event], http_client=MagicMock(), http_client_mod=MagicMock())
+
+        # Give the fire-and-forget tasks a chance to run.
+        await asyncio.sleep(0)
+
         mock_announce.assert_called()
         self.assertIn("despawned", mock_announce.call_args[0][0])
+        mock_despawn.assert_called_once()
+        # despawn_player_vehicle(session, character.guid, category="current")
+        self.assertEqual(mock_despawn.call_args.args[1], str(character.guid))
+        self.assertEqual(mock_despawn.call_args.kwargs.get("category"), "current")
 
     async def test_rp_mode_subsidy_fix(
         self, mock_show_popup, mock_announce, mock_get_treasury, mock_get_rp_mode
@@ -1205,7 +1219,7 @@ class ExtraWebhookTests(TestCase):
 
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
-            player=player, guid="test-char-rp-fix"
+            player=player, guid="test-char-rp-fix", rp_mode=True
         )
         await CharacterLocation.objects.acreate(
             character=character, location=Point(0, 0, 0), vehicle_key="TestVehicle"

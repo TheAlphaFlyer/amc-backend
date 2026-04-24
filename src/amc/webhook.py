@@ -66,7 +66,12 @@ from amc.handlers.smuggling import (
     _announce_smuggling_tipoff_after_delay,  # noqa: F401
 )
 from amc.mod_server import show_popup  # noqa: F401
-from amc.mod_server import get_webhook_events2, get_rp_mode, transfer_money, get_parties
+from amc.mod_server import (
+    get_webhook_events2,
+    get_rp_mode,  # noqa: F401  (kept importable so tests' @patch("amc.webhook.get_rp_mode") remains resolvable)
+    transfer_money,
+    get_parties,
+)
 from amc.game_server import announce  # noqa: F401
 from amc.subsidies import subsidise_player, set_aside_player_savings  # noqa: F401
 from amc_finance.loans import repay_loan_for_profit  # noqa: F401
@@ -242,7 +247,7 @@ async def process_events(
         total_contract_payment = 0
         total_clawback = 0
 
-        is_rp_mode = await get_rp_mode(http_client_mod, character_guid)
+        is_rp_mode = character.rp_mode
         used_shortcut = (
             character.shortcut_zone_entered_at is not None
             and character.shortcut_zone_entered_at > timezone.now() - timedelta(hours=1)
