@@ -1,13 +1,13 @@
 """Tests for the wanted countdown tick (amc.criminals).
 
 Hybrid mechanic:
-  - Online suspects always decay at BASE_DECAY_PER_TICK (1.0/tick).
+  - Online suspects always decay at BASE_DECAY_PER_TICK (3.0/tick).
     Clears in BASE_WANTED_DURATION (5 min = 300 ticks) with no police.
   - Police proximity SLOWS decay via 1/r² law:
       effective_decay = BASE_DECAY_PER_TICK / (1 + proximity_factor)
     Closer police → larger factor → slower decay. Decay never reverses.
-  - Escape gate: cannot expire while any cop is within ESCAPE_DISTANCE (200m).
-    Clamped at ESCAPE_FLOOR. Clears freely once all cops are beyond 200m.
+  - Escape gate: cannot expire while any cop is within ESCAPE_DISTANCE (500m).
+    Clamped at ESCAPE_FLOOR. Clears freely once all cops are beyond 500m.
   - Offline suspects: no decay, wanted persists indefinitely.
 """
 
@@ -55,8 +55,9 @@ def _make_players_list(player_datas):
 # Cop and criminal coordinates used across tests
 # ---------------------------------------------------------------------------
 _SUSPECT_LOC = (5000, 5000, 0)
-_COP_CLOSE    = (5000 + 1000, 5000, 0)    # 1000 units = 10m  (MIN_DISTANCE → factor=10)
-_COP_MED      = (5000 + 10_000, 5000, 0)  # 10_000 units = 100m (REF_DISTANCE → factor=1)
+_COP_CLOSE    = (5000 + 1000, 5000, 0)    # 1000 units = 10m  (clamped to MIN_DISTANCE=50m → factor=10)
+_COP_MED      = (5000 + 10_000, 5000, 0)  # 10_000 units = 100m (factor=4.0 with REF_DISTANCE=200m)
+_COP_REF      = (5000 + Wanted.REF_DISTANCE, 5000, 0)  # at REF_DISTANCE → factor=1.0 → decay = BASE/2
 _COP_ESCAPED  = (5000 + ESCAPE_DISTANCE + 1000, 5000, 0)  # > ESCAPE_DISTANCE away
 _COP_FAR      = (5000 + 100_000, 5000, 0)  # 1000m — well beyond escape distance
 
@@ -320,12 +321,12 @@ class WantedCountdownTickTests(TestCase):
         mock_sys_msg,
         mock_refresh,
     ):
-        """Cop at REF_DISTANCE (100m): factor=1.0, effective_decay = 0.5/tick."""
+        """Cop at REF_DISTANCE: factor=1.0, effective_decay = BASE_DECAY_PER_TICK / 2."""
         criminal = await self._setup_criminal(wanted_remaining=200)
         officer = await self._setup_police()
 
         sx, sy, sz = _SUSPECT_LOC
-        cx, cy, cz = _COP_MED  # 100m → factor=1.0 → decay = 1.0/(1+1) = 0.5/tick
+        cx, cy, cz = _COP_REF  # at REF_DISTANCE → factor=1.0 → decay = BASE_DECAY_PER_TICK / 2
         players = _make_players_list([
             _make_player_data(officer.player.unique_id, officer.guid, cx, cy, cz),
             _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
@@ -338,8 +339,9 @@ class WantedCountdownTickTests(TestCase):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         wanted = await Wanted.objects.aget(character=criminal)
-        # 10 ticks × 0.5/tick = 5 decay → 195
-        self.assertAlmostEqual(wanted.wanted_remaining, 195.0, delta=0.5)
+        # 10 ticks × (BASE_DECAY_PER_TICK / 2) × TICK_INTERVAL
+        expected = 200 - 10 * (BASE_DECAY_PER_TICK / 2.0) * TICK_INTERVAL
+        self.assertAlmostEqual(wanted.wanted_remaining, expected, delta=0.5)
         self.assertIsNone(wanted.expired_at)
 
     async def test_cop_beyond_escape_distance_uses_full_rate(
@@ -365,8 +367,9 @@ class WantedCountdownTickTests(TestCase):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         wanted = await Wanted.objects.aget(character=criminal)
-        # Full decay: 10 × 1.0 = 10 units → 190
-        self.assertAlmostEqual(wanted.wanted_remaining, 190.0, delta=0.5)
+        # Full decay: 10 × BASE_DECAY_PER_TICK × TICK_INTERVAL
+        expected = 200 - 10 * BASE_DECAY_PER_TICK * TICK_INTERVAL
+        self.assertAlmostEqual(wanted.wanted_remaining, expected, delta=0.5)
         self.assertIsNone(wanted.expired_at)
 
     async def test_bounty_grows_near_police(

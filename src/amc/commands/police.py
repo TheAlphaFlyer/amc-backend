@@ -14,14 +14,14 @@ from amc.police import (
 )
 from amc.criminals import create_or_refresh_wanted
 from amc.utils import fuzzy_find_player
-from datetime import timedelta
+from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import gettext as _, gettext_lazy
 
 from amc.commands.faction import parse_location_string
 
-SETWANTED_COOLDOWN = timedelta(minutes=30)
-SETWANTED_MIN_DISTANCE = 300_000  # 3km = 300,000 units (1m = 100 units)
+SETWANTED_COOLDOWN = timezone.timedelta(minutes=settings.SETWANTED_COOLDOWN_MINUTES)
+SETWANTED_MIN_DISTANCE = 200_000  # 2km = 200,000 units (1m = 100 units)
 
 
 def _distance_3d(a, b):
