@@ -18,11 +18,11 @@ from django.utils.translation import gettext as _, gettext_lazy
 
 logger = logging.getLogger("amc.commands.teleport")
 
-WANTED_TELEPORT_JAIL_MESSAGE = """\
-<Title>Arrested</>
-<Warning>You are wanted by the police — teleporting is not allowed!</>
-You have been automatically arrested. Your illegal earnings have been confiscated.
-"""
+WANTED_TELEPORT_BLOCKED_MESSAGE = (
+    "<Title>Teleport Blocked</>\n"
+    "<Warning>You are wanted by the police — teleporting is not allowed!</>\n"
+    "Escape the police to clear your wanted status first."
+)
 
 
 async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mod):
@@ -83,6 +83,27 @@ async def cmd_tp_vehicle(ctx: CommandContext):
         await ctx.reply(_("Police Only"))
         return
 
+    # --- Wanted check: criminals cannot teleport ---
+    active_wanted = await Wanted.objects.filter(
+        character=ctx.character,
+        expired_at__isnull=True,
+        wanted_remaining__gt=0,
+    ).afirst()
+    if active_wanted:
+        logger.info(
+            "Wanted criminal %s attempted /tp vehicle — blocked",
+            ctx.character.name,
+        )
+        asyncio.create_task(
+            show_popup(
+                ctx.http_client_mod,
+                _(WANTED_TELEPORT_BLOCKED_MESSAGE),
+                character_guid=ctx.character.guid,
+                player_id=str(ctx.player.unique_id),
+            )
+        )
+        return
+
     if settings.TP_VEHICLE_USE_TELEPORT_FALLBACK:
         # Temporary fallback: find police vehicle via last vehicle endpoint
         try:
@@ -127,15 +148,37 @@ async def cmd_tp_vehicle(ctx: CommandContext):
     category="Teleportation",
 )
 async def cmd_tp_coords(ctx: CommandContext, x: int, y: int, z: int):
-    if ctx.player_info and ctx.player_info.get("bIsAdmin"):
-        await teleport_player(
-            ctx.http_client_mod,
-            ctx.player.unique_id,
-            {"X": x, "Y": y, "Z": z},
-            no_vehicles=False,
-        )
-    else:
+    if not (ctx.player_info and ctx.player_info.get("bIsAdmin")):
         await ctx.reply(_("Admin Only"))
+        return
+
+    # --- Wanted check: criminals cannot teleport ---
+    active_wanted = await Wanted.objects.filter(
+        character=ctx.character,
+        expired_at__isnull=True,
+        wanted_remaining__gt=0,
+    ).afirst()
+    if active_wanted:
+        logger.info(
+            "Wanted criminal %s attempted /tp coords — blocked",
+            ctx.character.name,
+        )
+        asyncio.create_task(
+            show_popup(
+                ctx.http_client_mod,
+                _(WANTED_TELEPORT_BLOCKED_MESSAGE),
+                character_guid=ctx.character.guid,
+                player_id=str(ctx.player.unique_id),
+            )
+        )
+        return
+
+    await teleport_player(
+        ctx.http_client_mod,
+        ctx.player.unique_id,
+        {"X": x, "Y": y, "Z": z},
+        no_vehicles=False,
+    )
 
 
 @registry.register(
@@ -149,25 +192,25 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
     player_info = ctx.player_info or {}
 
     # --- Wanted check: criminals cannot teleport ---
-    # Admins are exempt; everyone else with an active Wanted gets sent to jail.
-    if not player_info.get("bIsAdmin"):
-        active_wanted = await Wanted.objects.filter(
-            character=ctx.character,
-            expired_at__isnull=True,
-            wanted_remaining__gt=0,
-        ).afirst()
-        if active_wanted:
-            logger.info(
-                "Wanted criminal %s attempted /tp — sending to jail",
-                ctx.character.name,
-            )
-            await _auto_arrest_wanted_criminal(
-                active_wanted,
-                ctx.character,
-                ctx.player,
+    active_wanted = await Wanted.objects.filter(
+        character=ctx.character,
+        expired_at__isnull=True,
+        wanted_remaining__gt=0,
+    ).afirst()
+    if active_wanted:
+        logger.info(
+            "Wanted criminal %s attempted /tp — blocked",
+            ctx.character.name,
+        )
+        asyncio.create_task(
+            show_popup(
                 ctx.http_client_mod,
+                _(WANTED_TELEPORT_BLOCKED_MESSAGE),
+                character_guid=ctx.character.guid,
+                player_id=str(ctx.player.unique_id),
             )
-            return
+        )
+        return
 
     tp_points = TeleportPoint.objects.filter(character__isnull=True).order_by("name")
     tp_points_names = [tp.name async for tp in tp_points]
