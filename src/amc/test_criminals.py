@@ -11,6 +11,7 @@ Hybrid mechanic:
   - Offline suspects: no decay, wanted persists indefinitely.
 """
 
+import math
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -25,9 +26,11 @@ from amc.criminals import (
     ESCAPE_DISTANCE,
     ESCAPE_FLOOR,
     ESCAPE_MESSAGE,
+    TICK_INTERVAL,
     _compute_stars,
     _last_escape_msg_sent,
     _last_star_notified,
+    refresh_suspect_tags,
     tick_wanted_countdown,
 )
 from amc.factories import CharacterFactory, PlayerFactory
@@ -775,3 +778,91 @@ class WantedCountdownTickTests(TestCase):
             await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
+
+
+@patch("amc.criminals.make_suspect", new_callable=AsyncMock)
+class RefreshSuspectTagsTests(TestCase):
+    """Tests for refresh_suspect_tags — decoupled from tick_wanted_countdown."""
+
+    async def _setup_criminal(self, wanted_remaining=300):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+        )
+        await character.asave(update_fields=["last_online"])
+        await Wanted.objects.acreate(
+            character=character,
+            wanted_remaining=wanted_remaining,
+        )
+        return character
+
+    async def test_calls_make_suspect_for_online_wanted_players(
+        self,
+        mock_make_suspect,
+    ):
+        """Online wanted players get make_suspect called."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        expected_duration = math.ceil(300 / BASE_DECAY_PER_TICK * TICK_INTERVAL)
+        mock_make_suspect.assert_called_once_with(
+            mock_http_mod, criminal.guid, duration_seconds=expected_duration
+        )
+
+    async def test_skips_offline_wanted_players(
+        self,
+        mock_make_suspect,
+    ):
+        """Offline wanted players are skipped."""
+        await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list([])
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_make_suspect.assert_not_called()
+
+    async def test_skips_expired_wanted_records(
+        self,
+        mock_make_suspect,
+    ):
+        """Wanted records with wanted_remaining <= 0 are skipped."""
+        criminal = await self._setup_criminal(wanted_remaining=0)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_make_suspect.assert_not_called()
+
+    async def test_calls_for_multiple_online_players(
+        self,
+        mock_make_suspect,
+    ):
+        """Multiple online wanted players all get make_suspect called."""
+        criminal_a = await self._setup_criminal(wanted_remaining=300)
+        criminal_b = await self._setup_criminal(wanted_remaining=200)
+        players = _make_players_list([
+            _make_player_data(criminal_a.player.unique_id, criminal_a.guid, *_SUSPECT_LOC),
+            _make_player_data(criminal_b.player.unique_id, criminal_b.guid, 6000, 6000, 0),
+        ])
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        self.assertEqual(mock_make_suspect.call_count, 2)
+        calls = {c.args[1]: c.kwargs["duration_seconds"] for c in mock_make_suspect.call_args_list}
+        self.assertEqual(calls[criminal_a.guid], math.ceil(300 / BASE_DECAY_PER_TICK * TICK_INTERVAL))
+        self.assertEqual(calls[criminal_b.guid], math.ceil(200 / BASE_DECAY_PER_TICK * TICK_INTERVAL))

@@ -9,7 +9,7 @@ from django.utils import timezone
 from amc.commands.faction import _build_player_locations, _distance_3d
 from amc.game_server import get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
-from amc.mod_server import send_system_message
+from amc.mod_server import make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured
 
@@ -382,6 +382,43 @@ CRIMINAL_RECORD_HALF_LIFE_MINUTES = 120  # 2 hours of online time
 CRIMINAL_RECORD_DECAY_FACTOR = 0.5 ** (1 / CRIMINAL_RECORD_HALF_LIFE_MINUTES)
 CRIMINAL_RECORD_DECAY_FLOOR = 100  # confiscatable amounts below this are zeroed out
 ONLINE_THRESHOLD_SECONDS = 60  # character considered online if last_online < 60s ago
+
+
+async def refresh_suspect_tags(http_client_mod) -> None:
+    """Re-apply the suspect flag to every online wanted player.
+
+    Called every 10 seconds via arq cron, decoupled from the 1-second wanted
+    countdown tick so that suspect-tagging cadence can be tuned independently.
+    """
+    wanted_list = [
+        w
+        async for w in Wanted.objects.filter(
+            expired_at__isnull=True,
+            wanted_remaining__gt=0,
+        ).select_related("character")
+    ]
+    if not wanted_list:
+        return
+
+    players = await get_players(http_client_mod)
+    locations = _build_player_locations(players) if players else {}
+
+    for wanted in wanted_list:
+        sus_guid = wanted.character.guid
+        if not sus_guid or sus_guid not in locations:
+            continue
+        # Time left at base decay rate (no police).  Police nearby slow decay,
+        # so the actual expiry may be later — the 10-second refresh loop will
+        # renew the flag before then.
+        duration_seconds = math.ceil(
+            wanted.wanted_remaining / BASE_DECAY_PER_TICK * TICK_INTERVAL
+        )
+        try:
+            await make_suspect(
+                http_client_mod, sus_guid, duration_seconds=max(1, duration_seconds)
+            )
+        except Exception:
+            logger.warning("Failed to make suspect for %s", wanted.character.name)
 
 
 async def tick_criminal_record_decay() -> None:

@@ -18,7 +18,11 @@ from amc.webhook import monitor_webhook, WEBHOOK_SSE_ENABLED  # noqa: E402
 from amc.sse_client import run_sse_listener  # noqa: E402
 from amc.ubi import handout_ubi, TASK_FREQUENCY as UBI_TASK_FREQUENCY  # noqa: E402
 from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
-from amc.criminals import tick_criminal_record_decay, tick_wanted_countdown  # noqa: E402
+from amc.criminals import (  # noqa: E402
+    refresh_suspect_tags,
+    tick_criminal_record_decay,
+    tick_wanted_countdown,
+)
 from amc.jobs import monitor_jobs  # noqa: E402
 from amc.status import monitor_server_status  # noqa: E402
 from amc.gov_employee import expire_gov_employees  # noqa: E402
@@ -190,6 +194,10 @@ async def wanted_countdown_tick(ctx):
     await tick_wanted_countdown(ctx["http_client"], ctx["http_client_mod"])
 
 
+async def suspect_tag_refresh_tick(ctx):
+    await refresh_suspect_tags(ctx["http_client_mod"])
+
+
 async def criminal_record_decay_tick(ctx):
     await tick_criminal_record_decay()
 
@@ -213,6 +221,8 @@ class WorkerSettings:
         cron(monitor_locations, second=None),
         # pyrefly: ignore [bad-argument-type]
         cron(wanted_countdown_tick, second=None),
+        # pyrefly: ignore [bad-argument-type]
+        cron(suspect_tag_refresh_tick, second=set(range(0, 60, 10))),
         # pyrefly: ignore [bad-argument-type]
         cron(criminal_record_decay_tick, minute=None, second=30),  # every minute at :30s
         # pyrefly: ignore [bad-argument-type]
