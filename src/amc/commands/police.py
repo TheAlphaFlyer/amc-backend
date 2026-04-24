@@ -312,7 +312,7 @@ async def cmd_suspects(ctx: CommandContext):
         await ctx.reply(_("Cannot determine your location."))
         return
 
-    _, officer_loc, _ = officer_entry
+    _officer_name, officer_loc, _officer_vehicle = officer_entry
     officer_x, officer_y, officer_z = officer_loc
 
     suspect_entries = []
@@ -326,7 +326,7 @@ async def cmd_suspects(ctx: CommandContext):
         entry = locations.get(guid)
         if not entry:
             continue
-        _, suspect_loc, _ = entry
+        _suspect_name, suspect_loc, _suspect_vehicle = entry
         suspect_x, suspect_y, suspect_z = suspect_loc
         dx = suspect_x - officer_x
         dy = suspect_y - officer_y
@@ -345,7 +345,7 @@ async def cmd_suspects(ctx: CommandContext):
 
     suspect_entries.sort(key=lambda x: x[0])
     lines = ["<Title>Suspects</>", ""]
-    for _dist, name, metres, direction in suspect_entries:
+    for _entry_dist, name, metres, direction in suspect_entries:
         if metres < 1000:
             dist_str = f"{metres}m"
         else:
