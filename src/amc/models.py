@@ -471,7 +471,7 @@ class Wanted(models.Model):
     associated with this wanted record (used for confiscation calculations).
     """
 
-    INITIAL_WANTED_LEVEL = 300  # all wanted levels start at the same value
+    INITIAL_WANTED_LEVEL = 600  # all wanted levels start at the same value
 
     # 1/r² decay constants (game units; 100 units = 1 metre)
     REF_DISTANCE = 10_000  # 100m — distance where decay_rate = 1.0/tick
@@ -493,6 +493,14 @@ class Wanted(models.Model):
     )  # cumulative illicit delivery payment; negative = wrongful wanted
     created_at = models.DateTimeField(auto_now_add=True)
     expired_at = models.DateTimeField(null=True, blank=True)
+    set_by = models.ForeignKey(
+        Character,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="wants_set",
+        help_text="Police officer who set this wanted status.",
+    )
 
     class Meta:
         verbose_name_plural = "wants"

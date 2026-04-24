@@ -20,8 +20,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from amc.game_server import announce
-from amc.mod_server import make_suspect, send_system_message
-from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog, Wanted
+from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog
 from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
 
@@ -158,71 +157,6 @@ async def announce_money_secured(character_guid: str, http_client) -> None:
             total,
             bool(http_client),
         )
-
-
-# ---------------------------------------------------------------------------
-# Wanted status management (shared by all illicit cargo)
-# ---------------------------------------------------------------------------
-
-
-async def create_or_refresh_wanted(
-    character, http_client_mod, *, amount: int = 0
-) -> tuple[Wanted, bool]:
-    """Create or refresh a Wanted record for the given character.
-
-    Returns a tuple of (active Wanted instance, created) where *created*
-    is True when a brand-new record was inserted.
-    Called by cargo handlers for all illicit cargo types.
-
-    Args:
-        character: The Character model instance.
-        http_client_mod: Mod server HTTP client.
-        amount: Additional bounty to accumulate on the Wanted record.
-            Typically 0 — bounty grows from police proximity in tick_wanted_countdown.
-            Values are floored at WANTED_MIN_BOUNTY.
-    """
-
-    # Enforce minimum bounty per event.
-    effective_amount = max(amount, WANTED_MIN_BOUNTY)
-
-    created = False
-    active_wanted = await Wanted.objects.filter(
-        character=character,
-        expired_at__isnull=True,
-    ).afirst()
-    if active_wanted:
-        active_wanted.wanted_remaining = Wanted.INITIAL_WANTED_LEVEL
-        active_wanted.amount = F("amount") + effective_amount
-        await active_wanted.asave(update_fields=["wanted_remaining", "amount"])
-        await active_wanted.arefresh_from_db(fields=["amount"])
-    else:
-        active_wanted = await Wanted.objects.acreate(
-            character=character,
-            wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
-            amount=effective_amount,
-        )
-        created = True
-
-    await refresh_player_name(character, http_client_mod)
-    asyncio.create_task(
-        send_system_message(
-            http_client_mod,
-            "You are wanted. Police are closing in!",
-            character_guid=character.guid,
-        )
-    )
-
-    # Set the player as a suspect in-game so police can chase them
-    if http_client_mod and character.guid:
-        try:
-            await make_suspect(http_client_mod, character.guid)
-        except Exception:
-            logger.warning(
-                "make_suspect failed for %s (guid=%s)",
-                character.name, character.guid, exc_info=True,
-            )
-
-    return active_wanted, created
 
 
 async def ensure_criminal_record(

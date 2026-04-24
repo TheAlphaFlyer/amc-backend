@@ -3,15 +3,16 @@ import math
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import Character, Wanted
-from amc.mod_server import get_player, make_suspect, send_system_message, teleport_player
+from amc.mod_server import get_player, make_suspect, send_system_message, show_popup, teleport_player
 from amc.police import (
     activate_police,
     deactivate_police,
     get_active_police_characters,
     is_police,
     calculate_police_level,
+    POLICE_STATIONS,
 )
-from amc.special_cargo import create_or_refresh_wanted
+from amc.criminals import create_or_refresh_wanted
 from amc.utils import fuzzy_find_player
 from datetime import timedelta
 from django.utils import timezone
@@ -19,18 +20,8 @@ from django.utils.translation import gettext as _, gettext_lazy
 
 from amc.commands.faction import parse_location_string
 
-SETWANTED_COOLDOWN = timedelta(hours=1)
+SETWANTED_COOLDOWN = timedelta(minutes=30)
 SETWANTED_MIN_DISTANCE = 300_000  # 3km = 300,000 units (1m = 100 units)
-
-POLICE_STATIONS = [
-    ("Jeju Police Station", -42361, -141792, -21094),
-    ("Hallim Police Station", -325934, -2506, -21920),
-    ("Seoguipo Police Station", -8776, 144044, -21084),
-    ("Seongsan Police Station", 319727, -84041, -21921),
-    ("Gapa Police Station", 77156, 648911, -9011),
-    ("Gwangjin Police Station", 266983, 878250, -8911),
-    ("Ara Police Station", 315281, 1335754, -19911),
-]
 
 
 def _distance_3d(a, b):
@@ -185,13 +176,17 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
         now = timezone.now()
         if now < cooldown_end:
             remaining = cooldown_end - now
-            remaining_mins = int(remaining.total_seconds() / 60) + 1
-            await ctx.reply(
-                _(
-                    "<Title>Cooldown Active</>\n\n"
-                    "{name} was recently released. "
-                    "You can set them as wanted again in {mins} minute(s)."
-                ).format(name=target_character.name, mins=remaining_mins)
+            remaining_mins = int(remaining.total_seconds() / 60)
+            remaining_secs = int(remaining.total_seconds()) % 60
+            countdown_msg = _(
+                "<Title>Cooldown Active</>\n\n"
+                "You can set {name} as wanted again in "
+                "{mins}m {secs}s."
+            ).format(name=target_character.name, mins=remaining_mins, secs=remaining_secs)
+            await show_popup(
+                ctx.http_client_mod,
+                countdown_msg,
+                character_guid=ctx.character.guid,
             )
             return
 
@@ -278,7 +273,10 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
 
     # Create or refresh the wanted record
     await create_or_refresh_wanted(
-        target_character, ctx.http_client_mod, amount=bounty_amount
+        target_character,
+        ctx.http_client_mod,
+        amount=bounty_amount,
+        set_by=ctx.character,
     )
 
     # Flag the target as a suspect in-game

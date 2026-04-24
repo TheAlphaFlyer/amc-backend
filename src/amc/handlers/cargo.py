@@ -23,10 +23,10 @@ from amc.models import (
     SubsidyRule,
     Wanted,
 )
+from amc.criminals import create_or_refresh_wanted
 from amc.special_cargo import (
     ILLICIT_CARGO_KEYS,
     accumulate_illicit_delivery,
-    create_or_refresh_wanted,
     link_delivery_to_criminal_record,
     should_trigger_wanted,
 )
@@ -257,7 +257,10 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 # proximity during chase, tracked in tick_wanted_countdown.
                 # Delivery payments are confiscated via CriminalRecord.confiscatable_amount.
                 wanted, newly_created = await create_or_refresh_wanted(
-                    character, ctx.http_client_mod, amount=0
+                    character,
+                    ctx.http_client_mod,
+                    amount=0,
+                    wanted_remaining=Wanted.INITIAL_WANTED_LEVEL,
                 )
                 # Announce only when a new Wanted record is created
                 if newly_created and ctx.http_client:

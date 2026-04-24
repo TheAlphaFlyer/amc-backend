@@ -3300,10 +3300,15 @@ class SetWantedCooldownTestCase(TestCase):
                 "amc.commands.police.get_player",
                 new=self.mock_get_player,
             ),
+            patch(
+                "amc.commands.police.make_suspect", new=AsyncMock()
+            ),
         ):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
-        mock_create.assert_called_once()
+        mock_create.assert_called_once_with(
+            self.target_char, self.ctx.http_client_mod, amount=0
+        )
 
     async def test_no_previous_wanted_no_cooldown(self):
         """Target never wanted before -> setwanted always allowed."""
@@ -3323,10 +3328,15 @@ class SetWantedCooldownTestCase(TestCase):
                 "amc.commands.police.get_player",
                 new=self.mock_get_player,
             ),
+            patch(
+                "amc.commands.police.make_suspect", new=AsyncMock()
+            ),
         ):
             await self.cmd_setwanted(self.ctx, "CooldownTarget")
 
-        mock_create.assert_called_once()
+        mock_create.assert_called_once_with(
+            self.target_char, self.ctx.http_client_mod, amount=0
+        )
 
 
 class PoliceCommandTestCase(TestCase):

@@ -434,8 +434,8 @@ class MakeSuspectTests(TestCase):
             },
         }
 
-    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
-    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.criminals.make_suspect", new_callable=AsyncMock)
+    @patch("amc.criminals.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_make_suspect_called_on_wanted_creation(
         self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
@@ -451,8 +451,8 @@ class MakeSuspectTests(TestCase):
 
         mock_make_suspect.assert_called_once_with(mock_http_client_mod, character.guid)
 
-    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
-    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.criminals.make_suspect", new_callable=AsyncMock)
+    @patch("amc.criminals.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_make_suspect_not_called_without_http_client_mod(
         self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
@@ -467,8 +467,8 @@ class MakeSuspectTests(TestCase):
 
         mock_make_suspect.assert_not_called()
 
-    @patch("amc.special_cargo.make_suspect", new_callable=AsyncMock)
-    @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.criminals.make_suspect", new_callable=AsyncMock)
+    @patch("amc.criminals.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
     async def test_make_suspect_failure_does_not_block_wanted_creation(
         self, mock_treasury, mock_refresh, mock_make_suspect, mock_accumulate, mock_trigger, mock_get_treasury, mock_get_rp_mode
