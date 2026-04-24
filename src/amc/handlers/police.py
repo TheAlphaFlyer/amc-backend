@@ -17,11 +17,11 @@ from amc.special_cargo import ILLICIT_CARGO_KEYS
 from amc.models import (
     Character,
     Confiscation,
+    CriminalRecord,
     PolicePatrolLog,
     PolicePenaltyLog,
     PoliceSession,
     PoliceShiftLog,
-    Wanted,
 )
 from amc.mod_server import (
     despawn_player_cargo,
@@ -97,12 +97,10 @@ async def handle_police_penalty(event, player, character, ctx):
     except Character.DoesNotExist:
         return 0, 0, 0, 0
 
-    is_wanted = await Wanted.objects.filter(
+    has_record = await CriminalRecord.objects.filter(
         character=suspect_character,
-        wanted_remaining__gt=0,
-        expired_at__isnull=True,
     ).aexists()
-    if not is_wanted:
+    if not has_record:
         return 0, 0, 0, 0
 
     # Suspect is wanted — execute arrest
