@@ -30,8 +30,8 @@ LOCATION_TELEPORT_DETECTION_ENABLED = os.environ.get(
 # Jail boundary enforcement
 JAIL_BOUNDARY_RADIUS = 1_000   # 10 m (100 game units = 1 m)
 JAIL_BOUNDARY_MESSAGE = """\
-<Title>⛓️ Stay in Jail</Title>
-<Warning>You are under arrest — you cannot leave jail!</Warning>
+<Title>⛓️ Stay in Jail</>
+<Warning>You are under arrest — you cannot leave jail!</>
 """
 
 
