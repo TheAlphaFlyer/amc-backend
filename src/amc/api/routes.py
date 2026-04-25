@@ -319,7 +319,7 @@ async def streaming_player_positions(request):
 
     async def event_stream():
         while True:
-            players = await get_players_mod(session)
+            players = await get_players_mod(session, filter_hidden=True)
             player_positions = {
                 player["PlayerName"]: {
                     **{
@@ -349,7 +349,7 @@ async def streaming_player_count(request):
         last_count = None
         ticks_since_heartbeat = 0
         while True:
-            players = await get_players_mod(session)
+            players = await get_players_mod(session, filter_hidden=True)
             count = len(players)
             if count != last_count:
                 yield f"data: {count}\n\n"

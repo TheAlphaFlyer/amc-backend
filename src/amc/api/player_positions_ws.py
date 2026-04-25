@@ -54,7 +54,7 @@ async def _websocket_handler(scope, receive, send):
                 pass
 
             try:
-                players = await get_players_mod(session)
+                players = await get_players_mod(session, filter_hidden=True)
                 data = serialize_players(players)
                 await send({"type": "websocket.send", "bytes": data})
             except Exception:
