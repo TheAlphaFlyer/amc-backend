@@ -48,7 +48,7 @@ async def get_active_police_characters(exclude_character=None):
     )
     from amc.models import Character
 
-    characters = Character.objects.filter(pk__in=qs)
+    characters = Character.objects.filter(pk__in=qs).select_related("player")
     if exclude_character is not None:
         characters = characters.exclude(pk=exclude_character.pk)
     return characters
