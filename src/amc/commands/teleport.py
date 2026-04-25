@@ -6,6 +6,7 @@ from django.utils import timezone
 from amc.command_framework import registry, CommandContext
 from amc.models import TeleportPoint, RescueRequest, PoliceSession, Wanted
 from amc.mod_server import (
+    get_player,
     teleport_player,
     get_player_last_vehicle,
     show_popup,
@@ -316,6 +317,23 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                     )
                 )
                 return
+
+            # Admins typing bare /tp need CustomDestinationAbsoluteLocation,
+            # which the native game API doesn't expose — fetch from mod server.
+            if (
+                not name
+                and not player_info.get("CustomDestinationAbsoluteLocation")
+                and ctx.http_client_mod
+                and ctx.player
+            ):
+                try:
+                    mod_player_info = await get_player(
+                        ctx.http_client_mod, str(ctx.player.unique_id)
+                    )
+                    if mod_player_info and mod_player_info.get("CustomDestinationAbsoluteLocation"):
+                        player_info = {**player_info, **mod_player_info}
+                except Exception:
+                    pass
 
             # Teleport to Custom Waypoint
             no_vehicles = (
