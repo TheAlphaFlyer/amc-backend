@@ -93,11 +93,6 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
-        "amc.auto_arrest": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
-        },
     },
 }
 
