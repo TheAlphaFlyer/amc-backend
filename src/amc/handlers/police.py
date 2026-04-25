@@ -84,7 +84,10 @@ async def handle_police_penalty(event, player, character, ctx):
         data=event.get("data"),
     )
 
-    # Auto-arrest wanted suspects during pull-over
+    if warning_only:
+        return 0, 0, 0, 0
+
+    # Auto-arrest suspects with an active criminal record during pull-over
     suspect_data = event["data"].get("SuspectCharacter", {})
     suspect_guid = suspect_data.get("CharacterGuid")
     if not suspect_guid:
@@ -99,6 +102,7 @@ async def handle_police_penalty(event, player, character, ctx):
 
     has_record = await CriminalRecord.objects.filter(
         character=suspect_character,
+        cleared_at__isnull=True,
     ).aexists()
     if not has_record:
         return 0, 0, 0, 0
