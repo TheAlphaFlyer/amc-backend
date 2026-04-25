@@ -3,7 +3,14 @@ import math
 from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import Character, Wanted
-from amc.mod_server import get_player, make_suspect, send_system_message, show_popup, teleport_player
+from amc.mod_server import (
+    despawn_player_vehicle,
+    get_player,
+    make_suspect,
+    send_system_message,
+    show_popup,
+    teleport_player,
+)
 from amc.police import (
     activate_police,
     deactivate_police,
@@ -211,7 +218,8 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
             )
             return
 
-    # Distance check: target must be at least 2km away from any police officer
+    # Distance check: target must be at least 2km away from any police officer.
+    # Officers within range are despawned and teleported to the nearest station outside the radius.
     target_location_str = target_player_data.get("location")
     if not target_location_str:
         await ctx.reply(
@@ -233,6 +241,7 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
         )
         return
 
+    officers_to_move = []
     police_chars = await get_active_police_characters()
     async for police_char in police_chars:
         police_player_data = next(
@@ -255,14 +264,44 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
 
         dist = _distance_3d(target_loc, police_loc)
         if dist < SETWANTED_MIN_DISTANCE:
-            await ctx.reply(
-                _(
-                    "<Title>Too Close</>\n\n"
-                    "{name} is too close to a police officer. "
-                    "You can only set wanted on players at least 2km away from any officer."
-                ).format(name=target_character.name)
+            officers_to_move.append((police_char, police_player_data, police_loc))
+
+    for police_char, police_player_data, police_loc in officers_to_move:
+        police_uid = police_player_data.get("unique_id")
+        if not police_uid:
+            continue
+
+        try:
+            await despawn_player_vehicle(
+                ctx.http_client_mod,
+                str(police_char.guid),
+                category="current",
             )
-            return
+        except Exception:
+            pass  # Best effort — proceed even if despawn fails
+
+        # Find the police station closest to the officer that is outside the 2km radius from the suspect
+        nearest_station = None
+        min_officer_dist = float("inf")
+        for name, tx, ty, tz in POLICE_STATIONS:
+            station_dist_from_suspect = _distance_3d(target_loc, (tx, ty, tz))
+            if station_dist_from_suspect >= SETWANTED_MIN_DISTANCE:
+                officer_dist = _distance_3d(police_loc, (tx, ty, tz))
+                if officer_dist < min_officer_dist:
+                    min_officer_dist = officer_dist
+                    nearest_station = (name, tx, ty, tz)
+
+        if nearest_station:
+            _station_name, tx, ty, tz = nearest_station
+            try:
+                await teleport_player(
+                    ctx.http_client_mod,
+                    str(police_uid),
+                    {"X": tx, "Y": ty, "Z": tz},
+                    no_vehicles=True,
+                )
+            except Exception:
+                pass  # Best effort — proceed even if teleport fails
 
     # AFK check: police may not set AFK players as wanted
     target_live = await get_player(
