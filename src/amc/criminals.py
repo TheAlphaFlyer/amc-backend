@@ -9,10 +9,10 @@ from django.db.models import F
 from django.utils import timezone
 
 from amc.commands.faction import _build_player_locations, _distance_3d, execute_arrest
-from amc.game_server import get_players
+from amc.game_server import announce, get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
-from amc.mod_detection import POLICE_DUTY_WHITELIST
-from amc.mod_server import make_suspect, send_system_message
+from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
+from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured, WANTED_MIN_BOUNTY
 
@@ -27,6 +27,9 @@ ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 
 # Underwater auto-arrest threshold (game units)
 UNDERWATER_Z_THRESHOLD = -22455
+
+# Modded-vehicle auto-arrest grace period
+MODDED_VEHICLE_GRACE_PERIOD = timedelta(minutes=2)
 
 # Time-based decay — online suspects always decay; clears in BASE_WANTED_DURATION seconds.
 BASE_WANTED_DURATION = Wanted.INITIAL_WANTED_LEVEL  # e.g. 900 s = 15 min
@@ -374,6 +377,65 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
             _last_escape_msg_sent.pop(sus_guid, None)
             continue
 
+        # Modded-vehicle auto-arrest after grace period
+        if http_client_mod:
+            try:
+                if timezone.now() - wanted.created_at > MODDED_VEHICLE_GRACE_PERIOD:
+                    last_vehicle, parts_data = await asyncio.gather(
+                        get_player_last_vehicle(http_client_mod, sus_guid),
+                        get_player_last_vehicle_parts(http_client_mod, sus_guid, complete=False),
+                    )
+                    main_vehicle = last_vehicle.get("vehicle")
+                    if main_vehicle:
+                        whitelist = None
+                        is_on_duty = await PoliceSession.objects.filter(
+                            character=wanted.character, ended_at__isnull=True
+                        ).aexists()
+                        if is_on_duty:
+                            whitelist = POLICE_DUTY_WHITELIST
+                        custom_parts = detect_custom_parts(
+                            parts_data.get("parts", []), whitelist=whitelist
+                        )
+                        if custom_parts:
+                            targets = {
+                                sus_guid: (
+                                    str(wanted.character.player.unique_id),
+                                    sus_loc,
+                                    False,
+                                )
+                            }
+                            target_chars = {sus_guid: wanted.character}
+                            try:
+                                arrested_names, total_confiscated = await execute_arrest(
+                                    officer_character=None,
+                                    targets=targets,
+                                    target_chars=target_chars,
+                                    http_client=http_client,
+                                    http_client_mod=http_client_mod,
+                                )
+                                logger.info(
+                                    "modded vehicle arrest: %s — confiscated=$%d",
+                                    wanted.character.name,
+                                    total_confiscated,
+                                )
+                            except ValueError as exc:
+                                logger.warning(
+                                    "modded vehicle arrest failed (jail not configured?): %s", exc
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "modded vehicle arrest failed unexpectedly for %s",
+                                    wanted.character.name,
+                                )
+                            _last_star_notified.pop(sus_guid, None)
+                            _last_escape_msg_sent.pop(sus_guid, None)
+                            continue
+            except Exception:
+                logger.debug(
+                    "tick_wanted_countdown: mod check failed for %s, skipping",
+                    wanted.character.name,
+                )
+
         # Default: full base decay rate
         effective_decay = BASE_DECAY_PER_TICK * TICK_INTERVAL
         near_police = False
@@ -484,6 +546,14 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 )
         if char.guid:
             try:
+                await announce(
+                    f"{char.name} is no longer wanted by police",
+                    http_client,
+                    color="43B581",
+                )
+            except Exception:
+                logger.warning(f"Failed to announce freedom for {char.name}")
+            try:
                 await announce_money_secured(char.guid, http_client)
             except Exception:
                 logger.warning(f"Failed to announce money secured for {char.name}")
@@ -585,17 +655,21 @@ async def tick_police_suspect_locations(http_client, http_client_mod) -> None:
                 continue
 
             dist = _distance_3d(officer_loc, suspect_loc)
-            dx = suspect_loc[0] - officer_x
-            dy = suspect_loc[1] - officer_y
-            direction = compass_direction(dx, dy)
             metres = game_units_to_metres(dist)
 
-            if metres < 1000:
-                dist_str = f"{metres}m"
+            if metres < 100:
+                entries.append((dist, f"[{character.name}] is within 100m"))
             else:
-                dist_str = f"{metres / 1000:.1f}km"
+                dx = suspect_loc[0] - officer_x
+                dy = suspect_loc[1] - officer_y
+                direction = compass_direction(dx, dy)
 
-            entries.append((dist, f"[{character.name}] {dist_str} {direction}"))
+                if metres < 1000:
+                    dist_str = f"{metres}m"
+                else:
+                    dist_str = f"{metres / 1000:.1f}km"
+
+                entries.append((dist, f"[{character.name}] {dist_str} {direction}"))
 
         if not entries:
             continue
@@ -626,6 +700,8 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
     their confiscatable amount is preserved as long as they remain in
     a modified vehicle.
 
+    Players who are AFK (bAFK=true) are also excluded from decay.
+
     The `amount` field is NEVER decayed — it is a permanent audit trail.
     """
     online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
@@ -635,17 +711,33 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
             cleared_at__isnull=True,
             confiscatable_amount__gt=0,
             character__last_online__gte=online_cutoff,
-        ).select_related("character")
+        ).select_related("character__player")
     ]
     if not records:
         return
 
     modded_guids: set[str] = set()
+    afk_player_ids: set[str] = set()
     if http_client_mod:
-        from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
+        from amc.mod_server import get_player, get_player_last_vehicle, get_player_last_vehicle_parts
         from amc.mod_detection import detect_custom_parts
 
         for record in records:
+            player_id = str(record.character.player.unique_id)
+
+            # AFK check
+            try:
+                player_data = await get_player(http_client_mod, player_id)
+                if player_data and player_data.get("bAFK"):
+                    afk_player_ids.add(player_id)
+                    continue
+            except Exception:
+                logger.debug(
+                    "tick_criminal_record_decay: afk check failed for %s, skipping",
+                    record.character.name,
+                )
+
+            # Modded vehicle check
             guid = record.character.guid
             if not guid:
                 continue
@@ -679,6 +771,8 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
     for record in records:
         if record.character.guid in modded_guids:
             continue
+        if str(record.character.player.unique_id) in afk_player_ids:
+            continue
         record.confiscatable_amount = int(
             record.confiscatable_amount * CRIMINAL_RECORD_DECAY_FACTOR
         )
@@ -690,7 +784,8 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
         return
     await CriminalRecord.objects.abulk_update(decayed, ["confiscatable_amount"])
     logger.debug(
-        "tick_criminal_record_decay: decayed %d record(s) (skipped %d modded)",
+        "tick_criminal_record_decay: decayed %d record(s) (skipped %d modded, %d afk)",
         len(decayed),
         len(modded_guids),
+        len(afk_player_ids),
     )

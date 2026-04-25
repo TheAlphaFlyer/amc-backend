@@ -13,6 +13,7 @@ Hybrid mechanic:
 
 import math
 import time
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from asgiref.sync import sync_to_async
@@ -23,6 +24,7 @@ from amc.criminals import (
     BASE_DECAY_PER_TICK,
     BASE_WANTED_DURATION,
     BOUNTY_GROWTH_PER_TICK,
+    CRIMINAL_RECORD_DECAY_FACTOR,
     ESCAPE_DISTANCE,
     ESCAPE_FLOOR,
     ESCAPE_MESSAGE,
@@ -31,10 +33,12 @@ from amc.criminals import (
     _last_escape_msg_sent,
     _last_star_notified,
     refresh_suspect_tags,
+    tick_criminal_record_decay,
+    tick_police_suspect_locations,
     tick_wanted_countdown,
 )
 from amc.factories import CharacterFactory, PlayerFactory
-from amc.models import PoliceSession, Wanted
+from amc.models import CriminalRecord, PoliceSession, Wanted
 
 
 def _make_player_data(unique_id, character_guid, x, y, z):
@@ -782,6 +786,33 @@ class WantedCountdownTickTests(TestCase):
 
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
 
+    async def test_expiry_announces_freedom(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """A public announcement is sent when a criminal's wanted status expires."""
+        criminal = await self._setup_criminal(wanted_remaining=0.5)
+        officer = await self._setup_police()
+
+        sx, sy, sz = _SUSPECT_LOC
+        ex, ey, ez = _COP_ESCAPED
+        players = _make_players_list([
+            _make_player_data(officer.player.unique_id, officer.guid, ex, ey, ez),
+            _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
+        ])
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.announce", new_callable=AsyncMock) as mock_announce:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_announce.assert_awaited_once()
+        self.assertIn(criminal.name, mock_announce.call_args.args[0])
+        self.assertIn("no longer wanted", mock_announce.call_args.args[0])
+        self.assertEqual(mock_announce.call_args.kwargs.get("color"), "43B581")
+
     # -----------------------------------------------------------------------
     # Underwater auto-arrest
     # -----------------------------------------------------------------------
@@ -892,6 +923,161 @@ class WantedCountdownTickTests(TestCase):
         wanted_b = await Wanted.objects.aget(character=criminal_b)
         self.assertLess(wanted_b.wanted_remaining, 200)
 
+    # -----------------------------------------------------------------------
+    # Modded-vehicle auto-arrest
+    # -----------------------------------------------------------------------
+
+    async def test_modded_vehicle_within_grace_period_no_arrest(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """Wanted record created now (< 2 min old): no arrest, decays normally."""
+        criminal = await self._setup_criminal(wanted_remaining=200)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_last_vehicle", new_callable=AsyncMock) as mock_vehicle, \
+             patch("amc.criminals.get_player_last_vehicle_parts", new_callable=AsyncMock) as mock_parts, \
+             patch("amc.criminals.execute_arrest", new_callable=AsyncMock) as mock_arrest:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_vehicle.assert_not_called()
+        mock_parts.assert_not_called()
+        mock_arrest.assert_not_called()
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertLess(wanted.wanted_remaining, 200)
+        self.assertIsNone(wanted.expired_at)
+
+    async def test_modded_vehicle_after_grace_period_auto_arrest(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """Wanted record > 2 min old with modded vehicle: auto-arrested."""
+        criminal = await self._setup_criminal(wanted_remaining=200)
+        wanted = await Wanted.objects.aget(character=criminal)
+        wanted.created_at = timezone.now() - timedelta(minutes=3)
+        await wanted.asave(update_fields=["created_at"])
+
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        async def _mock_arrest(*args, **kwargs):
+            w = await Wanted.objects.aget(character=criminal, expired_at__isnull=True)
+            w.wanted_remaining = 0
+            w.expired_at = timezone.now()
+            await w.asave(update_fields=["wanted_remaining", "expired_at"])
+            return ([criminal.name], 1000)
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
+             patch("amc.criminals.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": [{"Key": "mod_part", "Slot": 0}]}), \
+             patch("amc.criminals.detect_custom_parts", return_value=[{"key": "mod_part"}]), \
+             patch("amc.criminals.execute_arrest", new_callable=AsyncMock, side_effect=_mock_arrest) as mock_arrest:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_arrest.assert_awaited_once()
+        call_kwargs = mock_arrest.call_args.kwargs
+        self.assertIsNone(call_kwargs["officer_character"])
+        self.assertEqual(call_kwargs["http_client"], mock_http)
+        self.assertEqual(call_kwargs["http_client_mod"], mock_http_mod)
+
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertIsNotNone(wanted.expired_at)
+
+    async def test_stock_vehicle_after_grace_period_no_arrest(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """Wanted record > 2 min old with stock vehicle: no arrest, decays normally."""
+        criminal = await self._setup_criminal(wanted_remaining=200)
+        wanted = await Wanted.objects.aget(character=criminal)
+        wanted.created_at = timezone.now() - timedelta(minutes=3)
+        await wanted.asave(update_fields=["created_at"])
+
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
+             patch("amc.criminals.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": [{"Key": "stock_part", "Slot": 0}]}), \
+             patch("amc.criminals.detect_custom_parts", return_value=[]), \
+             patch("amc.criminals.execute_arrest", new_callable=AsyncMock) as mock_arrest:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_arrest.assert_not_called()
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertLess(wanted.wanted_remaining, 200)
+        self.assertIsNone(wanted.expired_at)
+
+    async def test_no_vehicle_after_grace_period_no_arrest(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """Wanted record > 2 min old with no vehicle: no arrest, decays normally."""
+        criminal = await self._setup_criminal(wanted_remaining=200)
+        wanted = await Wanted.objects.aget(character=criminal)
+        wanted.created_at = timezone.now() - timedelta(minutes=3)
+        await wanted.asave(update_fields=["created_at"])
+
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": None}), \
+             patch("amc.criminals.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": []}), \
+             patch("amc.criminals.execute_arrest", new_callable=AsyncMock) as mock_arrest:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_arrest.assert_not_called()
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertLess(wanted.wanted_remaining, 200)
+        self.assertIsNone(wanted.expired_at)
+
+    async def test_modded_vehicle_check_failure_graceful(
+        self,
+        mock_sys_msg,
+        mock_refresh,
+    ):
+        """Mod-server failure during mod check is graceful: no crash, decays normally."""
+        criminal = await self._setup_criminal(wanted_remaining=200)
+        wanted = await Wanted.objects.aget(character=criminal)
+        wanted.created_at = timezone.now() - timedelta(minutes=3)
+        await wanted.asave(update_fields=["created_at"])
+
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_last_vehicle", new_callable=AsyncMock, side_effect=Exception("mod server down")), \
+             patch("amc.criminals.get_player_last_vehicle_parts", new_callable=AsyncMock), \
+             patch("amc.criminals.execute_arrest", new_callable=AsyncMock) as mock_arrest:
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_arrest.assert_not_called()
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertLess(wanted.wanted_remaining, 200)
+        self.assertIsNone(wanted.expired_at)
+
 
 @patch("amc.criminals.make_suspect", new_callable=AsyncMock)
 class RefreshSuspectTagsTests(TestCase):
@@ -979,3 +1165,222 @@ class RefreshSuspectTagsTests(TestCase):
         calls = {c.args[1]: c.kwargs["duration_seconds"] for c in mock_make_suspect.call_args_list}
         self.assertEqual(calls[criminal_a.guid], math.ceil(300 / BASE_DECAY_PER_TICK * TICK_INTERVAL))
         self.assertEqual(calls[criminal_b.guid], math.ceil(200 / BASE_DECAY_PER_TICK * TICK_INTERVAL))
+
+
+class PoliceSuspectLocationsTests(TestCase):
+    """Tests for tick_police_suspect_locations."""
+
+    async def _setup_criminal(self, wanted_remaining=300):
+        """Create a criminal with wanted status."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+        )
+        await character.asave(update_fields=["last_online"])
+        await Wanted.objects.acreate(
+            character=character,
+            wanted_remaining=wanted_remaining,
+        )
+        return character
+
+    async def _setup_police(self):
+        """Create an officer with active police session."""
+        player = await sync_to_async(PlayerFactory)()
+        officer = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+        )
+        await officer.asave(update_fields=["last_online"])
+        await PoliceSession.objects.acreate(character=officer)
+        return officer
+
+    def _mock_async_iter(self, items):
+        """Return an async iterator wrapping a list."""
+        async def _iter():
+            for item in items:
+                yield item
+        return _iter()
+
+    async def test_within_100m_shows_no_direction(
+        self,
+    ):
+        """Suspect within 100m shows 'is within 100m' instead of distance and bearing."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        officer = await self._setup_police()
+
+        # Suspect 50m away (5000 game units)
+        sx, sy, sz = _SUSPECT_LOC
+        ox, oy, oz = sx + 5000, sy, sz
+
+        players = _make_players_list([
+            _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
+            _make_player_data(officer.player.unique_id, officer.guid, ox, oy, oz),
+        ])
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.police.get_active_police_characters", return_value=self._mock_async_iter([officer])), \
+             patch("amc.criminals.send_system_message", new_callable=AsyncMock) as mock_sys_msg:
+            await tick_police_suspect_locations(mock_http, mock_http_mod)
+
+        mock_sys_msg.assert_awaited_once()
+        message = mock_sys_msg.call_args.args[1]
+        self.assertIn("is within 100m", message)
+        self.assertNotIn("m ", message.split("within")[0])  # No direction/distance format
+        self.assertEqual(mock_sys_msg.call_args.kwargs["character_guid"], officer.guid)
+
+    async def test_beyond_100m_shows_distance_and_direction(
+        self,
+    ):
+        """Suspect beyond 100m shows distance and bearing as usual."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        officer = await self._setup_police()
+
+        # Suspect 150m away (15000 game units)
+        sx, sy, sz = _SUSPECT_LOC
+        ox, oy, oz = sx + 15000, sy, sz
+
+        players = _make_players_list([
+            _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
+            _make_player_data(officer.player.unique_id, officer.guid, ox, oy, oz),
+        ])
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.police.get_active_police_characters", return_value=self._mock_async_iter([officer])), \
+             patch("amc.criminals.send_system_message", new_callable=AsyncMock) as mock_sys_msg:
+            await tick_police_suspect_locations(mock_http, mock_http_mod)
+
+        mock_sys_msg.assert_awaited_once()
+        message = mock_sys_msg.call_args.args[1]
+        self.assertIn("150m", message)
+        self.assertIn("W", message)  # West direction since suspect is east of officer
+        self.assertNotIn("within 100m", message)
+
+    async def test_mixed_distances_some_within_some_beyond(
+        self,
+    ):
+        """Multiple suspects: some within 100m, some beyond — formatting is correct per suspect."""
+        criminal_close = await self._setup_criminal(wanted_remaining=300)
+        criminal_far = await self._setup_criminal(wanted_remaining=300)
+        officer = await self._setup_police()
+
+        sx, sy, sz = _SUSPECT_LOC
+        # Close suspect: 50m away
+        cx, cy, cz = sx + 5000, sy, sz
+        # Far suspect: 200m away
+        fx, fy, fz = sx + 20000, sy, sz
+
+        players = _make_players_list([
+            _make_player_data(criminal_close.player.unique_id, criminal_close.guid, cx, cy, cz),
+            _make_player_data(criminal_far.player.unique_id, criminal_far.guid, fx, fy, fz),
+            _make_player_data(officer.player.unique_id, officer.guid, sx, sy, sz),
+        ])
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.police.get_active_police_characters", return_value=self._mock_async_iter([officer])), \
+             patch("amc.criminals.send_system_message", new_callable=AsyncMock) as mock_sys_msg:
+            await tick_police_suspect_locations(mock_http, mock_http_mod)
+
+        mock_sys_msg.assert_awaited_once()
+        message = mock_sys_msg.call_args.args[1]
+        lines = message.split("\n")
+
+        close_line = [line for line in lines if criminal_close.name in line][0]
+        far_line = [line for line in lines if criminal_far.name in line][0]
+
+        self.assertIn("is within 100m", close_line)
+        self.assertIn("200m", far_line)
+        self.assertNotIn("within 100m", far_line)
+
+
+class CriminalRecordDecayTests(TestCase):
+    """Tests for tick_criminal_record_decay."""
+
+    async def _setup_criminal_record(self, confiscatable_amount=10000):
+        """Create a character with an active criminal record."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+        )
+        await character.asave(update_fields=["last_online"])
+        record = await CriminalRecord.objects.acreate(
+            character=character,
+            reason="Test",
+            confiscatable_amount=confiscatable_amount,
+        )
+        return record
+
+    async def test_afk_player_does_not_decay(
+        self,
+    ):
+        """AFK players are excluded from criminal record decay."""
+        record = await self._setup_criminal_record(confiscatable_amount=10000)
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.mod_server.get_player", new_callable=AsyncMock, return_value={"bAFK": True}):
+            await tick_criminal_record_decay(mock_http_mod)
+
+        record = await CriminalRecord.objects.aget(pk=record.pk)
+        self.assertEqual(record.confiscatable_amount, 10000)
+
+    async def test_non_afk_player_decays(
+        self,
+    ):
+        """Non-AFK online players have their confiscatable amount decayed."""
+        record = await self._setup_criminal_record(confiscatable_amount=10000)
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.mod_server.get_player", new_callable=AsyncMock, return_value={"bAFK": False}), \
+             patch("amc.mod_server.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
+             patch("amc.mod_server.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": []}), \
+             patch("amc.mod_detection.detect_custom_parts", return_value=[]):
+            await tick_criminal_record_decay(mock_http_mod)
+
+        record = await CriminalRecord.objects.aget(pk=record.pk)
+        expected = int(10000 * CRIMINAL_RECORD_DECAY_FACTOR)
+        self.assertEqual(record.confiscatable_amount, expected)
+
+    async def test_offline_player_does_not_decay(
+        self,
+    ):
+        """Offline players are not included in the decay at all."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now() - timedelta(minutes=5),
+        )
+        await character.asave(update_fields=["last_online"])
+        record = await CriminalRecord.objects.acreate(
+            character=character,
+            reason="Test",
+            confiscatable_amount=10000,
+        )
+        mock_http_mod = AsyncMock()
+
+        await tick_criminal_record_decay(mock_http_mod)
+
+        record = await CriminalRecord.objects.aget(pk=record.pk)
+        self.assertEqual(record.confiscatable_amount, 10000)
+
+    async def test_modded_vehicle_player_does_not_decay(
+        self,
+    ):
+        """Players in modded vehicles are excluded from decay."""
+        record = await self._setup_criminal_record(confiscatable_amount=10000)
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.mod_server.get_player", new_callable=AsyncMock, return_value={"bAFK": False}), \
+             patch("amc.mod_server.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
+             patch("amc.mod_server.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": [{"Key": "mod_part", "Slot": 0}]}), \
+             patch("amc.mod_detection.detect_custom_parts", return_value=[{"key": "mod_part"}]):
+            await tick_criminal_record_decay(mock_http_mod)
+
+        record = await CriminalRecord.objects.aget(pk=record.pk)
+        self.assertEqual(record.confiscatable_amount, 10000)
