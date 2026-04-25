@@ -651,7 +651,7 @@ class ProcessEventTests(TestCase):
     @patch("amc.handlers.cargo.get_player_last_vehicle_parts", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.get_player_last_vehicle", new_callable=AsyncMock)
     @patch("amc.handlers.cargo.show_popup", new_callable=AsyncMock)
-    @patch("amc.handlers.cargo.transfer_money", new_callable=AsyncMock)
+    @patch("amc.special_cargo.transfer_money", new_callable=AsyncMock)
     async def test_cargo_arrived_money_modded(
         self,
         mock_transfer,
@@ -709,7 +709,7 @@ class ProcessEventTests(TestCase):
         mock_transfer.assert_called_once_with(
             http_client_mod,
             -10_000,
-            "Modded Vehicle Penalty",
+            "Modded Vehicle Confiscation",
             str(player.unique_id),
         )
         mock_show_popup.assert_called_once()

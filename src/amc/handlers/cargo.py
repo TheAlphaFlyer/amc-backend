@@ -35,7 +35,6 @@ from amc.mod_server import (
     get_player_last_vehicle,
     get_player_last_vehicle_parts,
     show_popup,
-    transfer_money,
 )
 from amc.fraud_detection import validate_cargo_payment
 from amc.pipeline.discord import post_discord_delivery_embed
@@ -160,19 +159,18 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         cargo_name = group_list[0].get_cargo_key_display()
 
-        # Modded vehicle detection + money penalty for illicit cargo
+        # Modded vehicle / on-foot detection for illicit cargo
         is_modded = False
         if cargo_key in ILLICIT_CARGO_KEYS and ctx.http_client_mod:
-            is_modded = await _apply_modded_vehicle_penalty(
-                character, payment, quantity, ctx.http_client_mod
+            is_modded = await _check_modded_vehicle(
+                character, ctx.http_client_mod
             )
 
-        # Special cargo side effects (criminal level, criminal record)
-        # Skipped when modded parts detected — criminal gets no progression
-        if not is_modded:
-            await run_special_cargo_handlers(
-                group_list, character, ctx.http_client, ctx.http_client_mod
-            )
+        # Special cargo side effects (criminal level, criminal record, modded penalty)
+        await run_special_cargo_handlers(
+            group_list, character, ctx.http_client, ctx.http_client_mod,
+            is_modded=is_modded,
+        )
 
         # Find matching delivery job
         job = await (
@@ -334,13 +332,13 @@ def _parse_cargos(event):
     return valid_cargos
 
 
-async def _apply_modded_vehicle_penalty(
-    character, payment, quantity, http_client_mod
+async def _check_modded_vehicle(
+    character, http_client_mod
 ) -> bool:
-    """Check for modded parts on illicit cargo delivery; confiscate profits if found.
+    """Check for modded parts or on-foot delivery of illicit cargo.
 
-    Returns True if modded parts were detected (and money was clawed back),
-    False otherwise.
+    Returns True if modded parts were detected or player is on foot.
+    Wallet deduction is handled by the special cargo handlers.
     """
     try:
         last_vehicle, parts_data = await asyncio.gather(
@@ -351,7 +349,15 @@ async def _apply_modded_vehicle_penalty(
         )
         main_vehicle = last_vehicle.get("vehicle")
         if not main_vehicle:
-            return False
+            asyncio.create_task(
+                show_popup(
+                    http_client_mod,
+                    "Your criminal profits were zeroed out for delivering on foot.",
+                    character_guid=character.guid,
+                    player_id=str(character.player.unique_id),
+                )
+            )
+            return True
 
         whitelist = None
         is_on_duty = await PoliceSession.objects.filter(
@@ -363,13 +369,6 @@ async def _apply_modded_vehicle_penalty(
             parts_data.get("parts", []), whitelist=whitelist
         )
         if custom_parts:
-            penalty = payment * quantity
-            await transfer_money(
-                http_client_mod,
-                int(-penalty),
-                "Modded Vehicle Penalty",
-                str(character.player.unique_id),
-            )
             asyncio.create_task(
                 show_popup(
                     http_client_mod,

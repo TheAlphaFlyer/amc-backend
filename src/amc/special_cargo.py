@@ -20,6 +20,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from amc.game_server import announce
+from amc.mod_server import transfer_money
 from amc.models import Confiscation, CriminalRecord, ServerCargoArrivedLog
 from amc.player_tags import refresh_player_name
 from amc_finance.services import record_treasury_expense
@@ -85,9 +86,9 @@ async def accumulate_illicit_delivery(character_guid: str, amount: int) -> int:
     return new_total
 
 
-# Handler signature: (logs, character, http_client, http_client_mod) -> None
+# Handler signature: (logs, character, http_client, http_client_mod, is_modded) -> None
 SpecialCargoHandler = Callable[
-    [list[ServerCargoArrivedLog], Any, Any, Any],
+    [list[ServerCargoArrivedLog], Any, Any, Any, bool],
     Coroutine[Any, Any, None],
 ]
 
@@ -225,12 +226,14 @@ async def handle_money_cargo(
     character,
     http_client,
     http_client_mod,
+    is_modded: bool = False,
 ) -> None:
     """Side effects for Money deliveries.
 
     - Create or ensure active criminal record (refreshes [C] tag on first delivery)
     - Debounced laundering announcement (15s window)
     - Record 20% treasury cost
+    - Zero out wallet payment if delivered with a modded vehicle
     """
     # --- Accumulate laundered total for criminal level ---
     money_payment = sum(log.payment for log in logs)
@@ -240,6 +243,15 @@ async def handle_money_cargo(
         )
         await character.asave(update_fields=["criminal_laundered_total"])
         await character.arefresh_from_db(fields=["criminal_laundered_total"])
+
+    # --- Zero out wallet payment for modded vehicle deliveries ---
+    if is_modded and money_payment > 0 and http_client_mod:
+        await transfer_money(
+            http_client_mod,
+            int(-money_payment),
+            "Modded Vehicle Confiscation",
+            str(character.player.unique_id),
+        )
 
     # --- Criminal record (refresh tag if newly created) ---
     await ensure_criminal_record(character, reason="Money delivery", http_client_mod=http_client_mod)
@@ -282,12 +294,14 @@ async def handle_contraband_cargo(
     character,
     http_client,
     http_client_mod,
+    is_modded: bool = False,
 ) -> None:
     """Side effects for contraband deliveries (Ganja, Cocaine, etc.).
 
     - Create or ensure active criminal record (refreshes [C] tag on first delivery)
     - Accumulate confiscatable amount
     - Increment criminal_laundered_total for criminal level progression
+    - Zero out wallet payment if delivered with a modded vehicle
     """
     # --- Accumulate laundered total for criminal level ---
     delivery_payment = sum(log.payment for log in logs)
@@ -297,6 +311,15 @@ async def handle_contraband_cargo(
         )
         await character.asave(update_fields=["criminal_laundered_total"])
         await character.arefresh_from_db(fields=["criminal_laundered_total"])
+
+    # --- Zero out wallet payment for modded vehicle deliveries ---
+    if is_modded and delivery_payment > 0 and http_client_mod:
+        await transfer_money(
+            http_client_mod,
+            int(-delivery_payment),
+            "Modded Vehicle Confiscation",
+            str(character.player.unique_id),
+        )
 
     # --- Criminal record (refresh tag if newly created) ---
     cargo_key = logs[0].cargo_key if logs else "Contraband"
@@ -331,6 +354,7 @@ async def run_special_cargo_handlers(
     character,
     http_client,
     http_client_mod,
+    is_modded: bool = False,
 ) -> None:
     """Dispatch special-cargo handlers for all cargo keys present in *logs*."""
     if not character:
@@ -341,5 +365,5 @@ async def run_special_cargo_handlers(
             logs_by_key[log.cargo_key].append(log)
     for key, matching_logs in logs_by_key.items():
         await SPECIAL_CARGO_HANDLERS[key](
-            matching_logs, character, http_client, http_client_mod
+            matching_logs, character, http_client, http_client_mod, is_modded
         )

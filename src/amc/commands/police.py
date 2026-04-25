@@ -262,7 +262,7 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
                 _(
                     "<Title>Too Close</>\n\n"
                     "{name} is too close to a police officer. "
-                    "You can only set wanted on players at least 3km away from any officer."
+                    "You can only set wanted on players at least 2km away from any officer."
                 ).format(name=target_character.name)
             )
             return
