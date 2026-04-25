@@ -319,3 +319,17 @@ def compass_direction(dx: float, dy: float) -> str:
     dirs = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
     idx = int((angle + math.pi / 8) / (math.pi / 4)) % 8
     return dirs[idx]
+
+
+def compass_heading(dx: float, dy: float) -> str:
+    """Return heading in degrees with cardinal direction, e.g. '315°NW'.
+
+    North is -Y (game convention).
+    """
+    angle = math.atan2(dx, -dy)
+    if angle < 0:
+        angle += 2 * math.pi
+    degrees = round(math.degrees(angle))
+    dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    idx = int((angle + math.pi / 8) / (math.pi / 4)) % 8
+    return f"{degrees}°{dirs[idx]}"

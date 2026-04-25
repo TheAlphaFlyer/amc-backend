@@ -637,7 +637,7 @@ async def tick_police_suspect_locations(http_client, http_client_mod) -> None:
         return
 
     from amc.police import get_active_police_characters
-    from amc.utils import compass_direction, game_units_to_metres
+    from amc.utils import compass_heading, game_units_to_metres
 
     police_chars = await get_active_police_characters()
     async for officer in police_chars:
@@ -662,7 +662,7 @@ async def tick_police_suspect_locations(http_client, http_client_mod) -> None:
             else:
                 dx = suspect_loc[0] - officer_x
                 dy = suspect_loc[1] - officer_y
-                direction = compass_direction(dx, dy)
+                direction = compass_heading(dx, dy)
 
                 if metres < 1000:
                     dist_str = f"{metres}m"
