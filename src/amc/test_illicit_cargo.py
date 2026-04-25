@@ -346,10 +346,10 @@ class ContrabandCriminalRecordTests(TestCase):
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)
-    async def test_contraband_does_not_accumulate_laundered_total(
+    async def test_contraband_accumulates_laundered_total(
         self, mock_treasury, mock_refresh, mock_get_treasury, mock_get_rp_mode
     ):
-        """Contraband (non-Money) should NOT increment criminal_laundered_total."""
+        """Contraband (non-Money) should increment criminal_laundered_total."""
         mock_get_rp_mode.return_value = False
         mock_get_treasury.return_value = 100_000
         player, character = await self._setup_character()
@@ -358,7 +358,7 @@ class ContrabandCriminalRecordTests(TestCase):
         await process_event(event, player, character)
 
         await character.arefresh_from_db()
-        self.assertEqual(character.criminal_laundered_total, 0)
+        self.assertEqual(character.criminal_laundered_total, 50_000)
 
     @patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.special_cargo.record_treasury_expense", new_callable=AsyncMock)

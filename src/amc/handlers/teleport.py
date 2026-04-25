@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import timedelta
 
 from amc.handlers import register
@@ -16,8 +17,9 @@ from amc.models import (
     ServerTeleportLog,
     Wanted,
 )
-from amc.game_server import announce
-from amc.mod_server import despawn_player_vehicle
+from amc.game_server import announce, get_players
+from amc.mod_server import despawn_player_vehicle, send_system_message, teleport_player
+from amc.police import POLICE_STATIONS
 
 logger = logging.getLogger("amc.webhook.handlers.teleport")
 
@@ -66,7 +68,71 @@ async def _handle_teleport_vehicle(event, player, character, ctx):
 
 @register("ServerRespawnCharacter")
 async def _handle_respawn_character(event, player, character, ctx):
-    return await _handle_teleport_or_respawn(event, character, ctx)
+    result = await _handle_teleport_or_respawn(event, character, ctx)
+
+    # Police who respawn near wanted players are redirected to the nearest
+    # police station to prevent exploiting respawns to catch suspects.
+    is_police = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).aexists()
+    if not is_police or not ctx.http_client or not ctx.http_client_mod:
+        return result
+
+    from amc.commands.faction import _build_player_locations
+    from amc.commands.police import SETWANTED_MIN_DISTANCE
+
+    players_list = await get_players(ctx.http_client)
+    if not players_list:
+        return result
+
+    locations = _build_player_locations(players_list)
+
+    officer_entry = locations.get(str(character.guid))
+    if not officer_entry:
+        return result
+    _officer_name, officer_loc, _officer_vehicle = officer_entry
+
+    wanted_nearby = False
+    async for wanted in Wanted.objects.filter(
+        expired_at__isnull=True, wanted_remaining__gt=0
+    ).select_related("character"):
+        guid = wanted.character.guid
+        if not guid or guid == str(character.guid):
+            continue
+        entry = locations.get(guid)
+        if not entry:
+            continue
+        _name, suspect_loc, _vehicle = entry
+        if _distance_3d(officer_loc, suspect_loc) < SETWANTED_MIN_DISTANCE:
+            wanted_nearby = True
+            break
+
+    if not wanted_nearby:
+        return result
+
+    nearest = None
+    min_dist = float("inf")
+    for _name, tx, ty, tz in POLICE_STATIONS:
+        dist = _distance_3d(officer_loc, (tx, ty, tz))
+        if dist < min_dist:
+            min_dist = dist
+            nearest = (tx, ty, tz)
+
+    if nearest:
+        tx, ty, tz = nearest
+        await teleport_player(
+            ctx.http_client_mod,
+            str(player.unique_id),
+            {"X": tx, "Y": ty, "Z": tz},
+            no_vehicles=True,
+        )
+        await send_system_message(
+            ctx.http_client_mod,
+            "Respawn redirected — too close to a wanted suspect.",
+            character_guid=character.guid,
+        )
+
+    return result
 
 
 
@@ -126,6 +192,10 @@ async def _handle_teleport_or_respawn(event, character, ctx):
     )
 
     return 0, 0, 0, 0
+
+
+def _distance_3d(a, b):
+    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
 
 def _parse_timestamp(event):

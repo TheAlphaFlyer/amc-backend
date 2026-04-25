@@ -214,7 +214,7 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
             )
             return
 
-    # Distance check: target must be at least 3km away from any police officer
+    # Distance check: target must be at least 2km away from any police officer
     target_location_str = target_player_data.get("location")
     if not target_location_str:
         await ctx.reply(

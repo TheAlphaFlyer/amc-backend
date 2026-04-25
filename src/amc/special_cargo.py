@@ -246,6 +246,10 @@ async def handle_money_cargo(
     if money_payment > 0:
         await accumulate_criminal_record_amount(character, money_payment)
 
+    # --- Refresh name to show updated criminal level ---
+    if money_payment > 0 and http_client_mod:
+        await refresh_player_name(character, http_client_mod)
+
     # --- Treasury cost ---
     if money_payment > 0:
         laundering_cost = int(money_payment * 0.20)
@@ -283,15 +287,28 @@ async def handle_contraband_cargo(
 
     - Create or ensure active criminal record (refreshes [C] tag on first delivery)
     - Accumulate confiscatable amount
+    - Increment criminal_laundered_total for criminal level progression
     """
+    # --- Accumulate laundered total for criminal level ---
+    delivery_payment = sum(log.payment for log in logs)
+    if delivery_payment > 0:
+        character.criminal_laundered_total = (
+            F("criminal_laundered_total") + delivery_payment
+        )
+        await character.asave(update_fields=["criminal_laundered_total"])
+        await character.arefresh_from_db(fields=["criminal_laundered_total"])
+
     # --- Criminal record (refresh tag if newly created) ---
     cargo_key = logs[0].cargo_key if logs else "Contraband"
     await ensure_criminal_record(
         character, reason=f"{cargo_key} delivery", http_client_mod=http_client_mod
     )
-    delivery_payment = sum(log.payment for log in logs)
     if delivery_payment > 0:
         await accumulate_criminal_record_amount(character, delivery_payment)
+
+    # --- Refresh name to show updated criminal level ---
+    if delivery_payment > 0 and http_client_mod:
+        await refresh_player_name(character, http_client_mod)
 
 
 # ---------------------------------------------------------------------------
