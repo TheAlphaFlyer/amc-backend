@@ -9,7 +9,6 @@ from amc.police import (
     deactivate_police,
     get_active_police_characters,
     is_police,
-    calculate_police_level,
     POLICE_STATIONS,
 )
 from amc.utils import game_units_to_metres, compass_direction
@@ -124,8 +123,7 @@ async def cmd_police(ctx: CommandContext):
                 pass
 
         await activate_police(ctx.character, ctx.http_client_mod)
-        level = calculate_police_level(ctx.character.police_confiscated_total)
-        await ctx.announce(("You are now on police duty (Level {level}).").format(level=level))
+        await ctx.announce(f"{ctx.character.name} is now on police duty!")
 
 
 @registry.register(
