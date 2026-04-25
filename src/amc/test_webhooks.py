@@ -2527,6 +2527,9 @@ class SeqDeduplicationTests(TestCase):
         cache.delete("webhook:last_epoch")
 
 
+@patch("amc.special_cargo.transfer_money", new_callable=AsyncMock)
+@patch("amc.handlers.cargo.show_popup", new_callable=AsyncMock)
+@patch("amc.special_cargo.refresh_player_name", new_callable=AsyncMock)
 @patch("amc_finance.services.check_treasury_floor", new_callable=AsyncMock, return_value=True)
 @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
 @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
@@ -2564,6 +2567,9 @@ class SecurityBonusTests(TestCase):
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
+        mock_sc_refresh,
+        mock_show_popup,
+        mock_transfer,
     ):
         """0 police on duty → 0% risk premium."""
         mock_get_last_vehicle.return_value = {"vehicle": None}
@@ -2600,6 +2606,9 @@ class SecurityBonusTests(TestCase):
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
+        mock_sc_refresh,
+        mock_show_popup,
+        mock_transfer,
     ):
         """1 police on duty and online → 50% risk premium."""
         mock_get_last_vehicle.return_value = {"vehicle": None}
@@ -2648,6 +2657,9 @@ class SecurityBonusTests(TestCase):
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
+        mock_sc_refresh,
+        mock_show_popup,
+        mock_transfer,
     ):
         """Police on duty but offline (stale last_online) → no risk premium."""
         mock_get_last_vehicle.return_value = {"vehicle": None}
@@ -2693,6 +2705,9 @@ class SecurityBonusTests(TestCase):
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
+        mock_sc_refresh,
+        mock_show_popup,
+        mock_transfer,
     ):
         """2 police on duty and online → 100% risk premium."""
         mock_get_last_vehicle.return_value = {"vehicle": None}
@@ -2740,6 +2755,9 @@ class SecurityBonusTests(TestCase):
         mock_refresh,
         mock_send_sys_msg,
         mock_check_floor,
+        mock_sc_refresh,
+        mock_show_popup,
+        mock_transfer,
     ):
         """6 police → would be 300%, but capped at 250%."""
         mock_get_last_vehicle.return_value = {"vehicle": None}

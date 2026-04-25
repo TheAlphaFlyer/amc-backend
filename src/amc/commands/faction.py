@@ -19,6 +19,7 @@ from amc.models import (
 )
 from amc.mod_server import (
     force_exit_vehicle,
+    get_player,
     send_system_message,
     show_popup,
     teleport_player,
@@ -26,8 +27,8 @@ from amc.mod_server import (
 )
 from amc_finance.services import (
     record_treasury_confiscation_income,
-    send_fund_to_player_wallet,
 )
+from amc.pipeline.profit import on_player_profit
 from amc.police import (
     get_active_police_characters,
     is_police_vehicle,
@@ -199,11 +200,20 @@ async def execute_arrest(
                     c
                     async for c in await get_active_police_characters()
                 ]
-                if online_police:
-                    per_officer_money = max(
-                        1, confiscated_amount // len(online_police)
+                # Filter out AFK officers — they don't receive rewards
+                active_police = []
+                for officer in online_police:
+                    player_data = await get_player(
+                        http_client_mod, str(officer.player_id)
                     )
-                    for officer in online_police:
+                    if player_data and player_data.get("bAFK"):
+                        continue
+                    active_police.append(officer)
+                if active_police:
+                    per_officer_money = max(
+                        1, confiscated_amount // len(active_police)
+                    )
+                    for officer in active_police:
                         await record_confiscation_for_level(
                             officer,
                             confiscated_amount,
@@ -216,8 +226,12 @@ async def execute_arrest(
                             "Confiscation Reward",
                             str(officer.player_id),
                         )
-                        await send_fund_to_player_wallet(
-                            per_officer_money, officer, "Confiscation Reward"
+                        await on_player_profit(
+                            officer,
+                            0,
+                            per_officer_money,
+                            http_client_mod,
+                            http_client,
                         )
                         await send_system_message(
                             http_client_mod,

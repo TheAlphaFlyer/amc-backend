@@ -200,7 +200,7 @@ async def suspect_tag_refresh_tick(ctx):
 
 
 async def criminal_record_decay_tick(ctx):
-    await tick_criminal_record_decay()
+    await tick_criminal_record_decay(ctx["http_client_mod"])
 
 
 class WorkerSettings:

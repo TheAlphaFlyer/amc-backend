@@ -9,7 +9,6 @@ from django.conf import settings
 from amc.models import (
     Character,
     CharacterLocation,
-    PoliceSession,
     ShortcutZone,
 )
 from amc.utils import skip_if_running
@@ -162,58 +161,6 @@ async def _check_shortcut_zones(character, old_location, new_location, ctx):
     # Clear the timestamp when the player is confirmed outside ALL zones
     if character.shortcut_zone_entered_at and not currently_inside_any:
         character.shortcut_zone_entered_at = None
-
-
-async def _check_teleport_by_location(character, old_location, new_location, ctx):
-    """Detect teleportation via location delta and escalate wanted heat.
-
-    Hotfix for when the mod server hooks (ServerTeleportCharacter etc.) are
-    unavailable. If a wanted player moves more than
-    TELEPORT_DISTANCE_THRESHOLD between ticks, trigger the same heat
-    escalation as _handle_teleport_or_respawn.
-    """
-    if not LOCATION_TELEPORT_DETECTION_ENABLED:
-        return
-
-    distance = old_location.distance(new_location)
-    if distance <= TELEPORT_DISTANCE_THRESHOLD:
-        return
-
-    # Only relevant for actively wanted players
-    from amc.models import Wanted
-
-    is_wanted = await Wanted.objects.filter(
-        character=character, expired_at__isnull=True, wanted_remaining__gt=0
-    ).aexists()
-    if not is_wanted:
-        return
-
-    # Skip police officers
-    is_police = await PoliceSession.objects.filter(
-        character=character, ended_at__isnull=True
-    ).aexists()
-    if is_police:
-        return
-
-    logger.info(
-        "Teleport detected via location delta for %s (distance=%.0f)",
-        character.name,
-        distance,
-    )
-
-    # Reuse the existing heat escalation handler
-    import time
-    from amc.handlers.teleport import _handle_teleport_or_respawn
-    from amc.webhook_context import EventContext
-
-    http_client_mod = ctx.get("http_client_mod")
-    http_client = ctx.get("http_client")
-    event = {"data": {}, "timestamp": time.time()}
-    handler_ctx = EventContext(
-        http_client=http_client,
-        http_client_mod=http_client_mod,
-    )
-    await _handle_teleport_or_respawn(event, character, handler_ctx)
 
 
 async def _check_jail_boundary(character, new_location, ctx):
@@ -393,9 +340,6 @@ async def monitor_locations(ctx):
                 character, character.last_location, new_point, ctx
             )
             await _check_shortcut_zones(
-                character, character.last_location, new_point, ctx
-            )
-            await _check_teleport_by_location(
                 character, character.last_location, new_point, ctx
             )
 

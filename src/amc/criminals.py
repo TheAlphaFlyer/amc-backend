@@ -11,6 +11,7 @@ from django.utils import timezone
 from amc.commands.faction import _build_player_locations, _distance_3d, execute_arrest
 from amc.game_server import get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
+from amc.mod_detection import POLICE_DUTY_WHITELIST
 from amc.mod_server import make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured, WANTED_MIN_BOUNTY
@@ -535,12 +536,16 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             logger.warning("Failed to make suspect for %s", wanted.character.name)
 
 
-async def tick_criminal_record_decay() -> None:
+async def tick_criminal_record_decay(http_client_mod=None) -> None:
     """Decay confiscatable_amount for ONLINE characters only.
 
     Called every minute via arq cron. Applies exponential decay with a
     2-hour half-life of *online time*. Offline criminals preserve their
     confiscatable amount so they cannot escape punishment by logging off.
+
+    Players currently in a modded vehicle are excluded from decay —
+    their confiscatable amount is preserved as long as they remain in
+    a modified vehicle.
 
     The `amount` field is NEVER decayed — it is a permanent audit trail.
     """
@@ -551,19 +556,62 @@ async def tick_criminal_record_decay() -> None:
             cleared_at__isnull=True,
             confiscatable_amount__gt=0,
             character__last_online__gte=online_cutoff,
-        )
+        ).select_related("character")
     ]
     if not records:
         return
 
+    modded_guids: set[str] = set()
+    if http_client_mod:
+        from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
+        from amc.mod_detection import detect_custom_parts
+
+        for record in records:
+            guid = record.character.guid
+            if not guid:
+                continue
+            try:
+                last_vehicle, parts_data = await asyncio.gather(
+                    get_player_last_vehicle(http_client_mod, guid),
+                    get_player_last_vehicle_parts(http_client_mod, guid, complete=False),
+                )
+                main_vehicle = last_vehicle.get("vehicle")
+                if not main_vehicle:
+                    modded_guids.add(guid)
+                    continue
+                whitelist = None
+                is_on_duty = await PoliceSession.objects.filter(
+                    character=record.character, ended_at__isnull=True
+                ).aexists()
+                if is_on_duty:
+                    whitelist = POLICE_DUTY_WHITELIST
+                custom_parts = detect_custom_parts(
+                    parts_data.get("parts", []), whitelist=whitelist
+                )
+                if custom_parts:
+                    modded_guids.add(guid)
+            except Exception:
+                logger.debug(
+                    "tick_criminal_record_decay: mod check failed for %s, skipping",
+                    record.character.name,
+                )
+
+    decayed = []
     for record in records:
+        if record.character.guid in modded_guids:
+            continue
         record.confiscatable_amount = int(
             record.confiscatable_amount * CRIMINAL_RECORD_DECAY_FACTOR
         )
         if record.confiscatable_amount < CRIMINAL_RECORD_DECAY_FLOOR:
             record.confiscatable_amount = 0
+        decayed.append(record)
 
-    await CriminalRecord.objects.abulk_update(records, ["confiscatable_amount"])
+    if not decayed:
+        return
+    await CriminalRecord.objects.abulk_update(decayed, ["confiscatable_amount"])
     logger.debug(
-        "tick_criminal_record_decay: decayed %d active record(s)", len(records)
+        "tick_criminal_record_decay: decayed %d record(s) (skipped %d modded)",
+        len(decayed),
+        len(modded_guids),
     )

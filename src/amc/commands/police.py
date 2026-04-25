@@ -45,7 +45,11 @@ async def cmd_police(ctx: CommandContext):
             _("You are now off duty."),
             character_guid=ctx.character.guid,
         )
-        await ctx.announce(f"{ctx.character.name} is now off police duty.")
+        await send_system_message(
+            ctx.http_client_mod,
+            _("You are now off police duty."),
+            character_guid=ctx.character.guid,
+        )
     else:
         # Wanted criminals may not become police
         has_wanted = await Wanted.objects.filter(
@@ -121,12 +125,7 @@ async def cmd_police(ctx: CommandContext):
 
         await activate_police(ctx.character, ctx.http_client_mod)
         level = calculate_police_level(ctx.character.police_confiscated_total)
-        await send_system_message(
-            ctx.http_client_mod,
-            _("You are now on police duty (Level {level}).").format(level=level),
-            character_guid=ctx.character.guid,
-        )
-        await ctx.announce(f"{ctx.character.name} is now on police duty (P{level})!")
+        await ctx.announce(("You are now on police duty (Level {level}).").format(level=level))
 
 
 @registry.register(
