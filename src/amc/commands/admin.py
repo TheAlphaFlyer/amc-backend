@@ -340,6 +340,14 @@ async def cmd_tp_player(
         reset_carried_vehicles=False,
     )
 
+    await show_popup(
+        ctx.http_client_mod,
+        _(
+            "<Title>Teleported</>\n\nYou have been teleported to {location} by {admin}."
+        ).format(location=location_name, admin=ctx.character.name),
+        player_id=str(target_pid),
+    )
+
     if is_jail:
         # Apply jail boundary enforcement for 60 seconds
         target_player_data = next(
