@@ -3444,3 +3444,105 @@ class PoliceCommandTestCase(TestCase):
             mock_deactivate.assert_called_once()
             mock_tp.assert_not_called()
 
+    async def test_cmd_police_blocked_recent_criminal_delivery(self):
+        """Going on duty is blocked if the player had a criminal delivery in the last 24h."""
+        from amc.models import Delivery
+
+        crim_record = await CriminalRecord.objects.acreate(
+            character=self.character,
+            reason="Money delivery",
+            cleared_at=timezone.now(),
+        )
+        await Delivery.objects.acreate(
+            character=self.character,
+            cargo_key="Money",
+            quantity=1,
+            payment=1000,
+            timestamp=timezone.now() - timezone.timedelta(hours=12),
+            criminal_record=crim_record,
+        )
+
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=False)),
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "amc.commands.police.activate_police", new=AsyncMock()
+            ) as mock_activate,
+            patch(
+                "amc.commands.police.send_system_message", new=AsyncMock()
+            ) as mock_ssm,
+        ):
+            await cmd_police(self.ctx)
+            mock_ssm.assert_called()
+            msg = mock_ssm.call_args[0][1]
+            self.assertIn("24 hours", msg)
+            mock_activate.assert_not_called()
+
+    async def test_cmd_police_allowed_old_criminal_delivery(self):
+        """Going on duty is allowed if the last criminal delivery was over 24h ago."""
+        from amc.models import Delivery
+
+        crim_record = await CriminalRecord.objects.acreate(
+            character=self.character,
+            reason="Money delivery",
+            cleared_at=timezone.now(),
+        )
+        await Delivery.objects.acreate(
+            character=self.character,
+            cargo_key="Money",
+            quantity=1,
+            payment=1000,
+            timestamp=timezone.now() - timezone.timedelta(hours=25),
+            criminal_record=crim_record,
+        )
+
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=False)),
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(
+                    return_value=[
+                        (
+                            str(self.player.unique_id),
+                            {"name": "TestChar"},
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "amc.commands.police.activate_police", new=AsyncMock()
+            ) as mock_activate,
+            patch("amc.commands.police.teleport_player", new=AsyncMock()),
+            patch("amc.player_tags.refresh_player_name", new=AsyncMock()),
+        ):
+            await cmd_police(self.ctx)
+            mock_activate.assert_called_once()
+
+    async def test_cmd_police_allowed_no_criminal_delivery(self):
+        """Going on duty is allowed if the player has no criminal deliveries at all."""
+        with (
+            patch("amc.commands.police.is_police", new=AsyncMock(return_value=False)),
+            patch(
+                "amc.commands.police.get_players",
+                new=AsyncMock(
+                    return_value=[
+                        (
+                            str(self.player.unique_id),
+                            {"name": "TestChar"},
+                        )
+                    ]
+                ),
+            ),
+            patch(
+                "amc.commands.police.activate_police", new=AsyncMock()
+            ) as mock_activate,
+            patch("amc.commands.police.teleport_player", new=AsyncMock()),
+            patch("amc.player_tags.refresh_player_name", new=AsyncMock()),
+        ):
+            await cmd_police(self.ctx)
+            mock_activate.assert_called_once()
+
+
