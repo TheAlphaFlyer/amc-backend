@@ -21,6 +21,7 @@ from amc.deliverypoints import monitor_deliverypoints  # noqa: E402
 from amc.criminals import (  # noqa: E402
     refresh_suspect_tags,
     tick_criminal_record_decay,
+    tick_police_suspect_locations,
     tick_wanted_countdown,
 )
 
@@ -199,6 +200,10 @@ async def suspect_tag_refresh_tick(ctx):
     await refresh_suspect_tags(ctx["http_client_mod"])
 
 
+async def police_suspect_locations_tick(ctx):
+    await tick_police_suspect_locations(ctx["http_client"], ctx["http_client_mod"])
+
+
 async def criminal_record_decay_tick(ctx):
     await tick_criminal_record_decay(ctx["http_client_mod"])
 
@@ -224,6 +229,8 @@ class WorkerSettings:
         cron(wanted_countdown_tick, second=None),
         # pyrefly: ignore [bad-argument-type]
         cron(suspect_tag_refresh_tick, second=set(range(0, 60, 10))),
+        # pyrefly: ignore [bad-argument-type]
+        cron(police_suspect_locations_tick, second=set(range(5, 60, 10))),
         # pyrefly: ignore [bad-argument-type]
         cron(criminal_record_decay_tick, minute=None, second=30),  # every minute at :30s
         # pyrefly: ignore [bad-argument-type]

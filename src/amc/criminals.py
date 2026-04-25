@@ -536,6 +536,85 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             logger.warning("Failed to make suspect for %s", wanted.character.name)
 
 
+async def tick_police_suspect_locations(http_client, http_client_mod) -> None:
+    """Send every on-duty police officer a combined system message showing
+    distance and bearing for each online wanted suspect.  Runs every 10 s.
+    """
+    wanted_list = [
+        w
+        async for w in Wanted.objects.filter(
+            expired_at__isnull=True,
+            wanted_remaining__gt=0,
+        ).select_related("character")
+    ]
+    if not wanted_list:
+        return
+
+    players = await get_players(http_client)
+    locations = _build_player_locations(players) if players else {}
+    if not locations:
+        return
+
+    # Pre-compute online suspect (character, location) pairs
+    online_suspects = []
+    for wanted in wanted_list:
+        guid = wanted.character.guid
+        if not guid or guid not in locations:
+            continue
+        online_suspects.append((wanted.character, locations[guid][1]))
+
+    if not online_suspects:
+        return
+
+    from amc.police import get_active_police_characters
+    from amc.utils import compass_direction, game_units_to_metres
+
+    police_chars = await get_active_police_characters()
+    async for officer in police_chars:
+        officer_guid = officer.guid
+        if not officer_guid or officer_guid not in locations:
+            continue
+
+        _, officer_loc, _ = locations[officer_guid]
+        officer_x, officer_y, officer_z = officer_loc
+
+        entries = []  # (distance, formatted_line)
+        for character, suspect_loc in online_suspects:
+            # Wanted players should never be police, but guard anyway
+            if character.guid == officer_guid:
+                continue
+
+            dist = _distance_3d(officer_loc, suspect_loc)
+            dx = suspect_loc[0] - officer_x
+            dy = suspect_loc[1] - officer_y
+            direction = compass_direction(dx, dy)
+            metres = game_units_to_metres(dist)
+
+            if metres < 1000:
+                dist_str = f"{metres}m"
+            else:
+                dist_str = f"{metres / 1000:.1f}km"
+
+            entries.append((dist, f"[{character.name}] {dist_str} {direction}"))
+
+        if not entries:
+            continue
+
+        entries.sort(key=lambda x: x[0])
+        message = "\n".join(line for _, line in entries)
+
+        try:
+            await send_system_message(
+                http_client_mod,
+                message,
+                character_guid=officer_guid,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to send suspect locations to officer %s", officer.name
+            )
+
+
 async def tick_criminal_record_decay(http_client_mod=None) -> None:
     """Decay confiscatable_amount for ONLINE characters only.
 
