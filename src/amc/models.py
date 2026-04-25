@@ -471,14 +471,14 @@ class Wanted(models.Model):
     associated with this wanted record (used for confiscation calculations).
     """
 
-    INITIAL_WANTED_LEVEL = 900  # all wanted levels start at the same value
+    INITIAL_WANTED_LEVEL = 600  # all wanted levels start at the same value
 
     # 1/r² decay constants (game units; 100 units = 1 metre)
     REF_DISTANCE = 20_000  # 200m — distance where decay_rate = 1.0/tick
     MIN_DISTANCE = 5000   # 50m — clamp to avoid infinity
     MAX_DECAY = 10.0      # cap at very close range
 
-    LEVEL_PER_STAR = 60  # wanted_remaining bands for W1–W5 display
+    LEVEL_PER_STAR = INITIAL_WANTED_LEVEL / 5  # equal bands for W1–W5 display
 
     character = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="wanted_records"

@@ -1,8 +1,8 @@
 """Tests for the wanted countdown tick (amc.criminals).
 
 Hybrid mechanic:
-  - Online suspects always decay at BASE_DECAY_PER_TICK (3.0/tick).
-    Clears in BASE_WANTED_DURATION (5 min = 300 ticks) with no police.
+  - Online suspects always decay at BASE_DECAY_PER_TICK (1.0/tick).
+    Clears in BASE_WANTED_DURATION (e.g. 900 s = 15 min) with no police.
   - Police proximity SLOWS decay via 1/r² law:
       effective_decay = BASE_DECAY_PER_TICK / (1 + proximity_factor)
     Closer police → larger factor → slower decay. Decay never reverses.
@@ -65,41 +65,41 @@ _COP_FAR      = (5000 + 100_000, 5000, 0)  # 1000m — well beyond escape distan
 class ComputeStarsTests(TestCase):
     """Unit tests for _compute_stars helper.
 
-    LEVEL_PER_STAR = 60, so:
-      5 stars: wanted_remaining > 240   (241–300)
-      4 stars: wanted_remaining 181–240
-      3 stars: wanted_remaining 121–180
-      2 stars: wanted_remaining 61–120
-      1 star:  wanted_remaining 1–60
+    LEVEL_PER_STAR = INITIAL_WANTED_LEVEL / 5 (e.g. 120), so:
+      5 stars: wanted_remaining > 480   (481–600)
+      4 stars: wanted_remaining 361–480
+      3 stars: wanted_remaining 241–360
+      2 stars: wanted_remaining 121–240
+      1 star:  wanted_remaining 1–120
       0 stars: wanted_remaining <= 0
     """
 
-    def test_300_is_5_stars(self):
-        self.assertEqual(_compute_stars(300), 5)
+    def test_600_is_5_stars(self):
+        self.assertEqual(_compute_stars(600), 5)
 
-    def test_241_is_5_stars(self):
-        self.assertEqual(_compute_stars(241), 5)
+    def test_481_is_5_stars(self):
+        self.assertEqual(_compute_stars(481), 5)
 
-    def test_240_is_4_stars(self):
-        self.assertEqual(_compute_stars(240), 4)
+    def test_480_is_4_stars(self):
+        self.assertEqual(_compute_stars(480), 4)
 
-    def test_181_is_4_stars(self):
-        self.assertEqual(_compute_stars(181), 4)
+    def test_361_is_4_stars(self):
+        self.assertEqual(_compute_stars(361), 4)
 
-    def test_180_is_3_stars(self):
-        self.assertEqual(_compute_stars(180), 3)
+    def test_360_is_3_stars(self):
+        self.assertEqual(_compute_stars(360), 3)
 
-    def test_121_is_3_stars(self):
-        self.assertEqual(_compute_stars(121), 3)
+    def test_241_is_3_stars(self):
+        self.assertEqual(_compute_stars(241), 3)
 
-    def test_120_is_2_stars(self):
-        self.assertEqual(_compute_stars(120), 2)
+    def test_240_is_2_stars(self):
+        self.assertEqual(_compute_stars(240), 2)
 
-    def test_61_is_2_stars(self):
-        self.assertEqual(_compute_stars(61), 2)
+    def test_121_is_2_stars(self):
+        self.assertEqual(_compute_stars(121), 2)
 
-    def test_60_is_1_star(self):
-        self.assertEqual(_compute_stars(60), 1)
+    def test_120_is_1_star(self):
+        self.assertEqual(_compute_stars(120), 1)
 
     def test_1_is_1_star(self):
         self.assertEqual(_compute_stars(1), 1)
@@ -181,7 +181,7 @@ class WantedCountdownTickTests(TestCase):
         mock_refresh,
     ):
         """Wanted expires after BASE_WANTED_DURATION ticks with no police."""
-        criminal = await self._setup_criminal(wanted_remaining=300)
+        criminal = await self._setup_criminal(wanted_remaining=BASE_WANTED_DURATION)
         players = _make_players_list(
             [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
         )
@@ -666,9 +666,9 @@ class WantedCountdownTickTests(TestCase):
         """Crossing a star boundary (5→4) sends the corresponding message to the suspect.
 
         No police: decay = 1.0/tick.
-        Start at 241 (W5). After 2 ticks: 241 - 2.0 = 239 (W4).
+        Start at 481 (W5). After 1 tick: 481 - 1.0 = 480 (W4).
         """
-        criminal = await self._setup_criminal(wanted_remaining=241)
+        criminal = await self._setup_criminal(wanted_remaining=481)
 
         sx, sy, sz = _SUSPECT_LOC
         # No police — full decay of 1.0/tick
@@ -679,7 +679,7 @@ class WantedCountdownTickTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(2):
+            for _ in range(1):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         star_calls = [
@@ -695,7 +695,7 @@ class WantedCountdownTickTests(TestCase):
         mock_refresh,
     ):
         """refresh_player_name is called when the star count changes."""
-        criminal = await self._setup_criminal(wanted_remaining=241)
+        criminal = await self._setup_criminal(wanted_remaining=481)
 
         sx, sy, sz = _SUSPECT_LOC
         players = _make_players_list([
@@ -705,7 +705,7 @@ class WantedCountdownTickTests(TestCase):
         mock_http_mod = AsyncMock()
 
         with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(2):
+            for _ in range(1):
                 await tick_wanted_countdown(mock_http, mock_http_mod)
 
         mock_refresh.assert_called_once_with(criminal, mock_http_mod)
@@ -716,10 +716,10 @@ class WantedCountdownTickTests(TestCase):
         mock_refresh,
     ):
         """No star-change message sent if wanted decays without crossing a boundary."""
-        criminal = await self._setup_criminal(wanted_remaining=300)
+        criminal = await self._setup_criminal(wanted_remaining=500)
 
         sx, sy, sz = _SUSPECT_LOC
-        # No police — 300 - 1.0 = 299 (still W5)
+        # No police — 500 - 1.0 = 499 (still W5)
         players = _make_players_list([
             _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
         ])

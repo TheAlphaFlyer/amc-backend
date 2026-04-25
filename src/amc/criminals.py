@@ -29,8 +29,8 @@ ESCAPE_MSG_COOLDOWN = 30  # seconds between "escape the police" popup messages
 UNDERWATER_Z_THRESHOLD = -22455
 
 # Time-based decay — online suspects always decay; clears in BASE_WANTED_DURATION seconds.
-BASE_WANTED_DURATION = 300  # 5 minutes
-BASE_DECAY_PER_TICK = Wanted.INITIAL_WANTED_LEVEL / BASE_WANTED_DURATION  # 1.0/tick
+BASE_WANTED_DURATION = Wanted.INITIAL_WANTED_LEVEL  # e.g. 900 s = 15 min
+BASE_DECAY_PER_TICK = Wanted.INITIAL_WANTED_LEVEL / BASE_WANTED_DURATION  # = 1.0/tick
 
 # Police proximity SLOWS decay (1/r² law).
 # effective_decay = BASE_DECAY_PER_TICK / (1 + proximity_factor)
@@ -191,7 +191,7 @@ async def create_or_refresh_wanted(
     http_client_mod,
     *,
     amount: int = 0,
-    wanted_remaining: int = 600,
+    wanted_remaining: int = Wanted.INITIAL_WANTED_LEVEL,
     set_by=None,
 ) -> tuple[Wanted, bool]:
     """Create or refresh a Wanted record for the given character.

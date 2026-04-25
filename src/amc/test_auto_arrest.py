@@ -14,6 +14,14 @@ from amc.models import Confiscation, PoliceSession, TeleportPoint, Wanted
 from django.contrib.gis.geos import Point
 
 
+class _EmptyAsyncIter:
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise StopAsyncIteration
+
+
 def _make_player_data(unique_id, character_guid, x, y, z, vehicle=None):
     """Build a fake player dict matching the game server /player/list format.
 
@@ -35,7 +43,13 @@ def _make_players_list(player_datas):
 
 @patch("amc.commands.faction.announce", new_callable=AsyncMock)
 @patch("amc.commands.faction.send_system_message", new_callable=AsyncMock)
-@patch("amc.commands.faction.send_fund_to_player_wallet", new_callable=AsyncMock)
+@patch("amc.commands.faction.on_player_profit", new_callable=AsyncMock)
+@patch("amc.commands.faction.refresh_player_name", new_callable=AsyncMock)
+@patch(
+    "amc.commands.faction.get_active_police_characters",
+    new_callable=AsyncMock,
+    return_value=_EmptyAsyncIter(),
+)
 @patch("amc.commands.faction.record_confiscation_for_level", new_callable=AsyncMock)
 @patch(
     "amc.commands.faction.record_treasury_confiscation_income", new_callable=AsyncMock
@@ -81,7 +95,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -138,7 +154,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -179,7 +197,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -224,7 +244,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -276,7 +298,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -345,7 +369,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -390,7 +416,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -438,7 +466,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -491,7 +521,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -546,7 +578,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -588,7 +622,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -647,7 +683,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -697,7 +735,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
@@ -747,7 +787,9 @@ class AutoArrestPatrolTests(TestCase):
         mock_transfer,
         mock_treasury,
         mock_level,
-        mock_fund_wallet,
+        mock_get_active,
+        mock_refresh,
+        mock_on_profit,
         mock_sys_msg,
         mock_announce,
     ):
