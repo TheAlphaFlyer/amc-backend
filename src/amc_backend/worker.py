@@ -215,7 +215,7 @@ class WorkerSettings:
         # pyrefly: ignore [bad-argument-type]
         cron(suspect_tag_refresh_tick, second=set(range(0, 60, 10))),
         # pyrefly: ignore [bad-argument-type]
-        cron(police_suspect_locations_tick, second=set(range(5, 60, 10))),
+        cron(police_suspect_locations_tick, second=set(range(5, 60, 15))),
         # pyrefly: ignore [bad-argument-type]
         cron(criminal_record_decay_tick, minute=None, second=30),  # every minute at :30s
         # pyrefly: ignore [bad-argument-type]
