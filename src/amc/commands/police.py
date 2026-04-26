@@ -28,7 +28,7 @@ from django.utils.translation import gettext as _, gettext_lazy
 from amc.commands.faction import parse_location_string, _build_player_locations
 
 SETWANTED_COOLDOWN = timezone.timedelta(minutes=settings.SETWANTED_COOLDOWN_MINUTES)
-SETWANTED_MIN_DISTANCE = 200_000  # 2km = 200,000 units (1m = 100 units)
+SETWANTED_MIN_DISTANCE = 100_000  # 1km = 100,000 units (1m = 100 units)
 
 
 def _distance_3d(a, b):
@@ -245,7 +245,7 @@ async def cmd_setwanted(ctx: CommandContext, target_player_name: str):
             )
             return
 
-    # Distance check: target must be at least 2km away from any police officer.
+    # Distance check: target must be at least 1km away from any police officer.
     # Officers within range are despawned and teleported to the nearest station outside the radius.
     target_location_str = target_player_data.get("location")
     if not target_location_str:
