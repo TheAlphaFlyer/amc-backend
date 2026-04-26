@@ -24,6 +24,7 @@ from amc.criminals import (
     BASE_DECAY_PER_TICK,
     BASE_WANTED_DURATION,
     CRIMINAL_RECORD_DECAY_FACTOR,
+    CRIMINAL_SUSPECT_DURATION,
     ESCAPE_DISTANCE,
     ESCAPE_FLOOR,
     ESCAPE_MESSAGE,
@@ -1272,6 +1273,7 @@ class PoliceSuspectLocationsTests(TestCase):
         self.assertNotIn("within 100m", far_line)
 
 
+@patch("amc.criminals.make_suspect", new_callable=AsyncMock)
 class CriminalRecordDecayTests(TestCase):
     """Tests for tick_criminal_record_decay."""
 
@@ -1292,6 +1294,7 @@ class CriminalRecordDecayTests(TestCase):
 
     async def test_afk_player_does_not_decay(
         self,
+        mock_make_suspect,
     ):
         """AFK players are excluded from criminal record decay."""
         record = await self._setup_criminal_record(confiscatable_amount=10000)
@@ -1305,6 +1308,7 @@ class CriminalRecordDecayTests(TestCase):
 
     async def test_non_afk_player_decays(
         self,
+        mock_make_suspect,
     ):
         """Non-AFK online players have their confiscatable amount decayed."""
         record = await self._setup_criminal_record(confiscatable_amount=10000)
@@ -1322,6 +1326,7 @@ class CriminalRecordDecayTests(TestCase):
 
     async def test_offline_player_does_not_decay(
         self,
+        mock_make_suspect,
     ):
         """Offline players are not included in the decay at all."""
         player = await sync_to_async(PlayerFactory)()
@@ -1337,13 +1342,15 @@ class CriminalRecordDecayTests(TestCase):
         )
         mock_http_mod = AsyncMock()
 
-        await tick_criminal_record_decay(mock_http_mod)
+        with patch("amc.criminals.make_suspect", new_callable=AsyncMock):
+            await tick_criminal_record_decay(mock_http_mod)
 
         record = await CriminalRecord.objects.aget(pk=record.pk)
         self.assertEqual(record.confiscatable_amount, 10000)
 
     async def test_modded_vehicle_player_does_not_decay(
         self,
+        mock_make_suspect,
     ):
         """Players in modded vehicles are excluded from decay."""
         record = await self._setup_criminal_record(confiscatable_amount=10000)
@@ -1357,3 +1364,66 @@ class CriminalRecordDecayTests(TestCase):
 
         record = await CriminalRecord.objects.aget(pk=record.pk)
         self.assertEqual(record.confiscatable_amount, 10000)
+
+    async def test_applies_suspect_to_online_criminals(
+        self,
+        mock_make_suspect,
+    ):
+        """Online active criminals with a guid get make_suspect called."""
+        record = await self._setup_criminal_record(confiscatable_amount=10000)
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.mod_server.get_player", new_callable=AsyncMock, return_value={"bAFK": False}), \
+             patch("amc.mod_server.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
+             patch("amc.mod_server.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": []}), \
+             patch("amc.mod_detection.detect_custom_parts", return_value=[]):
+            await tick_criminal_record_decay(mock_http_mod)
+
+        mock_make_suspect.assert_any_call(
+            mock_http_mod, record.character.guid, duration_seconds=CRIMINAL_SUSPECT_DURATION
+        )
+
+    async def test_skips_suspect_for_offline_criminals(
+        self,
+        mock_make_suspect,
+    ):
+        """Offline criminals are not made suspect."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now() - timedelta(minutes=5),
+        )
+        await character.asave(update_fields=["last_online"])
+        await CriminalRecord.objects.acreate(
+            character=character,
+            reason="Test",
+            confiscatable_amount=10000,
+        )
+        mock_http_mod = AsyncMock()
+
+        await tick_criminal_record_decay(mock_http_mod)
+
+        mock_make_suspect.assert_not_called()
+
+    async def test_skips_suspect_for_criminals_without_guid(
+        self,
+        mock_make_suspect,
+    ):
+        """Criminals without a guid are not made suspect."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            guid=None,
+            last_online=timezone.now(),
+        )
+        await character.asave(update_fields=["last_online"])
+        await CriminalRecord.objects.acreate(
+            character=character,
+            reason="Test",
+            confiscatable_amount=10000,
+        )
+        mock_http_mod = AsyncMock()
+
+        await tick_criminal_record_decay(mock_http_mod)
+
+        mock_make_suspect.assert_not_called()

@@ -567,6 +567,7 @@ CRIMINAL_RECORD_HALF_LIFE_MINUTES = 120  # 2 hours of online time
 CRIMINAL_RECORD_DECAY_FACTOR = 0.5 ** (1 / CRIMINAL_RECORD_HALF_LIFE_MINUTES)
 CRIMINAL_RECORD_DECAY_FLOOR = 100  # confiscatable amounts below this are zeroed out
 ONLINE_THRESHOLD_SECONDS = 60  # character considered online if last_online < 60s ago
+CRIMINAL_SUSPECT_DURATION = 70  # seconds — slightly > tick interval (60s) for continuous overlap
 
 
 async def refresh_suspect_tags(http_client_mod) -> None:
@@ -705,6 +706,29 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
     The `amount` field is NEVER decayed — it is a permanent audit trail.
     """
     online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+
+    if http_client_mod:
+        suspect_records = [
+            r
+            async for r in CriminalRecord.objects.filter(
+                cleared_at__isnull=True,
+                character__guid__isnull=False,
+                character__last_online__gte=online_cutoff,
+            ).select_related("character")
+        ]
+        for rec in suspect_records:
+            try:
+                await make_suspect(
+                    http_client_mod,
+                    rec.character.guid,
+                    duration_seconds=CRIMINAL_SUSPECT_DURATION,
+                )
+            except Exception:
+                logger.warning(
+                    "make_suspect failed for criminal %s (guid=%s)",
+                    rec.character.name, rec.character.guid, exc_info=True,
+                )
+
     records = [
         r
         async for r in CriminalRecord.objects.filter(
