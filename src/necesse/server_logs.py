@@ -2,6 +2,7 @@ import re
 from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime
+from django.conf import settings
 from django.utils import timezone
 from zoneinfo import ZoneInfo
 
@@ -97,7 +98,7 @@ def parse_log_line(line: str) -> tuple[ServerLog, LogEvent]:
     content = pattern_match.group("content")
     timestamp = datetime.strptime(
         game_timestamp.strip("[").strip("]"), GAME_TIMESTAMP_FORMAT
-    ).replace(tzinfo=ZoneInfo("Asia/Bangkok"))
+    ).replace(tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE))
     server_log = ServerLog(
         timestamp=timestamp,
         content=content,

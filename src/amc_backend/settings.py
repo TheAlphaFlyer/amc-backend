@@ -251,6 +251,13 @@ EVENT_MOD_SERVER_API_URL = os.environ.get(
     "EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011"
 )
 
+# Timezone used by the game server for log timestamps.
+# The Motor Town game server writes log timestamps in the system's local timezone,
+# so this must match the server's OS timezone setting.
+# Production (asean-mt-server): Asia/Bangkok (GMT+7)
+# Staging (amc-peripheral): UTC
+GAME_LOG_TIMEZONE = os.environ.get("GAME_LOG_TIMEZONE", "Asia/Bangkok")
+
 CHAT_VIA_WEBHOOK = os.environ.get("CHAT_VIA_WEBHOOK", "0").lower() in (
     "1",
     "true",

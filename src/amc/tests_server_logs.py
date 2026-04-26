@@ -1,7 +1,8 @@
 from unittest import skip
 from datetime import datetime, timedelta
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
+from django.conf import settings
 from amc.server_logs import (
     parse_log_line,
     PlayerChatMessageLogEvent,
@@ -45,7 +46,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:00:00.123Z hostname tag filename [2025.03.22-08.13.07] [CHAT] TestPlayer (123): Hello world!"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         # Await the async function call
@@ -66,7 +67,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:01:00Z hostname tag filename [2025.03.22-08.13.07] Player Login: Admin (1)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -82,7 +83,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:01:00Z hostname tag filename [2025.03.22-08.13.07] Player Login: Admin Admin (1)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -98,7 +99,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:01:00Z hostname tag filename [2025.03.22-08.13.07] Player Login: Admin (100) (1)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -114,7 +115,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:01:00Z hostname tag filename [2025.03.22-08.13.07] Player Logout: Admin"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -129,7 +130,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:02:00Z hostname tag filename [2025.03.22-08.13.07] Company added. Name=MegaCorp(Corp?true) Owner=CEO(99)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -147,7 +148,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:02:00Z hostname tag filename [2025.03.22-08.13.07] Player entered vehicle. Player=Dr-P (76561198129501840) Vehicle=Atlas 6x4 Semi(854460) "
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -166,7 +167,7 @@ class LogParserTestCase(SimpleTestCase):
         """
         log_line = "2024-07-08T10:03:00Z hostname tag filename [2025.03.22-08.13.07] [CHAT] Server is restarting in 5 minutes."
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -182,7 +183,7 @@ class LogParserTestCase(SimpleTestCase):
         original_content = "This is a weird and unexpected log format."
         log_line = f"2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] {original_content}"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -207,7 +208,7 @@ class LogParserTestCase(SimpleTestCase):
     async def test_parse_server_started(self):
         log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] DedicatedServer is started. version: 0.7.18+1(B1031)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -219,7 +220,7 @@ class LogParserTestCase(SimpleTestCase):
     async def test_parse_afk_changed_on(self):
         log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] AFK Changed freeman (76561198378447512)(On)"
         expected_timestamp = datetime.fromisoformat("2025-03-22T08:13:07Z").replace(
-            tzinfo=ZoneInfo("Asia/Bangkok")
+            tzinfo=ZoneInfo(settings.GAME_LOG_TIMEZONE)
         )
 
         _log, result = parse_log_line(log_line)
@@ -239,6 +240,24 @@ class LogParserTestCase(SimpleTestCase):
         self.assertEqual(result.player_name, "Tobs")
         self.assertEqual(result.player_id, 76561198097444309)
         self.assertFalse(result.is_afk)
+
+    @override_settings(GAME_LOG_TIMEZONE="UTC")
+    async def test_parse_log_uses_game_log_timezone_setting(self):
+        """Log timestamps should be interpreted in the GAME_LOG_TIMEZONE setting.
+
+        When GAME_LOG_TIMEZONE=UTC, a game timestamp of 08:13:07 should be
+        parsed as 08:13:07+00:00 (UTC), not 08:13:07+07:00 (Bangkok).
+        """
+        log_line = "2024-07-08T10:04:00Z hostname tag filename [2025.03.22-08.13.07] Player Login: Admin (1)"
+        _log, result = parse_log_line(log_line)
+
+        self.assertIsInstance(result, PlayerLoginLogEvent)
+        # The timestamp should be 08:13:07 UTC (not Bangkok)
+        expected_utc = datetime(2025, 3, 22, 8, 13, 7, tzinfo=ZoneInfo("UTC"))
+        self.assertEqual(result.timestamp, expected_utc)
+        # Verify it's NOT offset by +07:00
+        expected_bangkok = datetime(2025, 3, 22, 8, 13, 7, tzinfo=ZoneInfo("Asia/Bangkok"))
+        self.assertNotEqual(result.timestamp, expected_bangkok)
 
 
 class ProcessLogEventTestCase(TestCase):
