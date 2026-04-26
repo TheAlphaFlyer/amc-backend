@@ -4,7 +4,7 @@ from amc.command_framework import registry, CommandContext
 from amc.game_server import get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
 from amc.special_cargo import calculate_criminal_level
-from amc.criminals import _compute_stars
+from amc.criminals import _compute_stars, CRIMINAL_RECORD_DECAY_FACTOR
 from django.conf import settings
 from django.utils import timezone
 from django.utils.translation import gettext_lazy
@@ -128,6 +128,11 @@ async def cmd_wanted(ctx: CommandContext):
         laundered = record.character.criminal_laundered_total
         level = calculate_criminal_level(laundered)
         guid = record.character.guid
+        decay_per_min = (
+            int(record.confiscatable_amount * (1 - CRIMINAL_RECORD_DECAY_FACTOR))
+            if record.confiscatable_amount > 0 and guid in online_guids
+            else 0
+        )
         other_entries.append(
             {
                 "name": record.character.name,
@@ -136,6 +141,7 @@ async def cmd_wanted(ctx: CommandContext):
                 "laundered": laundered,
                 "confiscatable_amount": record.confiscatable_amount,
                 "online": guid in online_guids,
+                "decay_per_min": decay_per_min,
             }
         )
     other_online = sorted(
@@ -160,9 +166,11 @@ async def cmd_wanted(ctx: CommandContext):
     def _row_record(e: dict) -> str:
         confiscatable = e["confiscatable_amount"]
         amount_str = f"${confiscatable:,}" if confiscatable > 0 else "no bounty"
+        decay = e.get("decay_per_min", 0)
+        decay_str = f" (-${decay:,}/min)" if decay > 0 else ""
         return (
             f"<Highlight>C{e['level']}</> {e['name']}"
-            f" <Secondary>{amount_str}</>\n"
+            f" <Secondary>{amount_str}{decay_str}</>\n"
         )
 
     def _row_cooldown(e: dict) -> str:
@@ -210,5 +218,6 @@ async def cmd_wanted(ctx: CommandContext):
             msg += "<Warning>Offline</>\n"
             for e in other_offline:
                 msg += _row_record(e)
+        msg += "<Secondary>Bounty decays ~0.6%/min of online time. Paused when AFK or in a modded vehicle.</>\n"
 
     await ctx.reply(msg.rstrip())

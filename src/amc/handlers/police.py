@@ -87,6 +87,13 @@ async def handle_police_penalty(event, player, character, ctx):
     if warning_only:
         return 0, 0, 0, 0
 
+    # Officer must be on duty to perform an arrest
+    is_on_duty = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).aexists()
+    if not is_on_duty:
+        return 0, 0, 0, 0
+
     # Auto-arrest suspects with an active criminal record during pull-over
     suspect_data = event["data"].get("SuspectCharacter", {})
     suspect_guid = suspect_data.get("CharacterGuid")
