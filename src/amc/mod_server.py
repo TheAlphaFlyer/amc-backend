@@ -441,6 +441,24 @@ async def make_suspect(session, character_guid, duration_seconds=300):
         return None
 
 
+async def clear_suspect(session, character_guid):
+    """Remove every active UGE_PoliceSuspect_C gameplay effect from the player.
+
+    Inverse of ``make_suspect``.  Safe to call on a non-suspect — the GAS
+    remove-by-source API is a no-op when no matching GE is active.  The GE's
+    on-remove lifecycle tears down the ``Net_Suspects`` entry and the granted
+    suspect GameplayTags automatically.
+    """
+    await _write_limiter.acquire()
+    async with session.delete(f"/players/{character_guid}/suspect") as resp:
+        if resp.status not in (200, 204):
+            body = await resp.text()
+            raise Exception(f"Failed to clear suspect (status={resp.status}, body={body[:200]})")
+        if resp.status == 200:
+            return await resp.json()
+        return None
+
+
 async def despawn_player_cargo(session, character_guid):
     await _write_limiter.acquire()
     async with session.post(f"/players/{character_guid}/despawn_cargo") as resp:

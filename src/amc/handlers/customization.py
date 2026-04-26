@@ -3,7 +3,7 @@ import logging
 from django.conf import settings
 
 from amc.handlers import register
-from amc.mod_server import make_suspect
+from amc.mod_server import clear_suspect, make_suspect
 from amc.models import CriminalRecord
 
 logger = logging.getLogger("amc.webhook.handlers.customization")
@@ -23,6 +23,8 @@ async def handle_set_equipment_inventory(event, player, character, ctx):
 
     if not costume_equipped and not costume_unequipped:
         return 0, 0, 0, 0  # nothing to do for hat/glasses/beard
+
+    was_wearing_costume = character.wearing_costume
 
     if costume_equipped:
         new_key = costume_equipped.get("ItemKey") or None
@@ -50,5 +52,15 @@ async def handle_set_equipment_inventory(event, player, character, ctx):
             except Exception:
                 logger.warning("make_suspect (costume-equip) failed for %s",
                                character.name, exc_info=True)
+
+    # Immediate suspect GE removal when the player stops wearing a suspect
+    # costume — clears the blue overlay / Net_Suspects entry without waiting
+    # up to 10 s for the refresh_suspect_tags transition-out pass.
+    if was_wearing_costume and not character.wearing_costume and ctx.http_client_mod and character.guid:
+        try:
+            await clear_suspect(ctx.http_client_mod, character.guid)
+        except Exception:
+            logger.warning("clear_suspect (costume-change) failed for %s",
+                           character.name, exc_info=True)
 
     return 0, 0, 0, 0

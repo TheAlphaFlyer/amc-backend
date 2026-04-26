@@ -14,6 +14,7 @@ from amc.models import (
     Wanted,
 )
 from amc.mod_server import (
+    clear_suspect,
     force_exit_vehicle,
     get_player,
     send_system_message,
@@ -172,6 +173,21 @@ async def execute_arrest(
                 suspect_char.wearing_costume  = False
                 suspect_char.costume_item_key = None
                 await suspect_char.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+            # Drop the in-game suspect GE proactively — both the wanted and the
+            # costume-criminal paths are now cleared above, so the reconciliation
+            # loop would eventually clear it on its next 10 s tick, but the
+            # arrestee is being teleported to jail right now and we want the
+            # blue overlay / Net_Suspects entry to disappear immediately.
+            # Safe to call on non-suspects (no-op when no GE is active).
+            if suspect_char.guid:
+                try:
+                    await clear_suspect(http_client_mod, suspect_char.guid)
+                except Exception:
+                    logger.warning(
+                        "clear_suspect failed for %s after arrest",
+                        suspect_char.name,
+                    )
 
             if confiscated_amount > 0:
                 # --- Legitimate arrest: confiscate delivery earnings from laundered total ---

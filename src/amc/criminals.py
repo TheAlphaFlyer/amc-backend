@@ -13,7 +13,7 @@ from amc.commands.faction import _build_player_locations, _distance_3d, execute_
 from amc.game_server import announce, get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
-from amc.mod_server import get_player_customization, get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
+from amc.mod_server import clear_suspect, get_player_customization, get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured, WANTED_MIN_BOUNTY
 
@@ -65,6 +65,12 @@ _last_escape_msg_sent: dict[str, float] = {}
 # Tracks GUIDs that have had costume state reconciled against the mod server
 # (one-shot per backend process to self-heal stale DB state on restart).
 _costume_reconciled_guids: set[str] = set()
+
+# Tracks GUIDs that were flagged as suspects on the previous refresh_suspect_tags
+# tick.  Used to detect transition-out (flagged last tick, no longer flagged this
+# tick) so we can proactively call clear_suspect instead of waiting for the GE
+# duration to expire naturally.
+_last_suspect_guids: set[str] = set()
 
 
 def _calculate_logout_heat(min_police_distance: float) -> float:
@@ -564,6 +570,20 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 await announce_money_secured(char.guid, http_client)
             except Exception:
                 logger.warning(f"Failed to announce money secured for {char.name}")
+            # Immediately drop the in-game suspect GE so the blue overlay and
+            # Net_Suspects entry disappear within the same tick rather than
+            # waiting up to ~70 s for the last-applied duration to expire.
+            # refresh_suspect_tags would also clear this on its next 10 s pass,
+            # but we want instant feedback when a chase ends.
+            if http_client_mod:
+                try:
+                    await clear_suspect(http_client_mod, char.guid)
+                except Exception:
+                    logger.warning(
+                        "clear_suspect failed for %s after wanted expired",
+                        char.name,
+                    )
+                _last_suspect_guids.discard(char.guid)
 
 
 # ---------------------------------------------------------------------------
@@ -583,9 +603,15 @@ async def refresh_suspect_tags(http_client_mod) -> None:
 
     Called every 10 seconds via arq cron, decoupled from the 1-second wanted
     countdown tick so that suspect-tagging cadence can be tuned independently.
+
+    Also emits ``clear_suspect`` for players who were flagged on the previous
+    tick but are no longer wanted or costume criminals — this catches
+    transitions (e.g. costume removed, wanted state cleared externally) within
+    10 s instead of waiting for the last-applied GE duration to expire.
     """
     # --- Wanted pass ---
-    wanted_guids = set()
+    flagged_guids: set[str] = set()
+    wanted_guids: set[str] = set()
     wanted_list = [
         w
         async for w in Wanted.objects.filter(
@@ -609,6 +635,7 @@ async def refresh_suspect_tags(http_client_mod) -> None:
                 http_client_mod, sus_guid, duration_seconds=max(1, duration_seconds)
             )
             wanted_guids.add(sus_guid)
+            flagged_guids.add(sus_guid)
         except Exception:
             logger.warning("Failed to make suspect for %s", wanted.character.name)
 
@@ -624,6 +651,7 @@ async def refresh_suspect_tags(http_client_mod) -> None:
     async for rec in costume_criminals:
         guid = rec.character.guid
         if guid in wanted_guids:
+            flagged_guids.add(guid)
             continue
         if guid not in locations:
             continue
@@ -631,6 +659,7 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             await make_suspect(
                 http_client_mod, guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
             )
+            flagged_guids.add(guid)
         except Exception:
             logger.warning("costume make_suspect failed for %s", rec.character.name)
 
@@ -661,10 +690,26 @@ async def refresh_suspect_tags(http_client_mod) -> None:
                         await make_suspect(
                             http_client_mod, guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
                         )
+                        flagged_guids.add(guid)
                     except Exception:
                         logger.warning("reconciliation make_suspect failed for %s", rec.character.name)
         except Exception:
             logger.debug("reconciliation poll failed for %s", rec.character.name)
+
+    # --- Transition-out pass ---
+    # GUIDs flagged last tick but not this tick are no longer wanted or costume
+    # criminals — call clear_suspect so the blue overlay and Net_Suspects entry
+    # drop immediately.  Without this the GE would linger for up to its last
+    # applied duration (up to CRIMINAL_SUSPECT_DURATION = 70 s).
+    transitioned_out = _last_suspect_guids - flagged_guids
+    for guid in transitioned_out:
+        try:
+            await clear_suspect(http_client_mod, guid)
+        except Exception:
+            logger.warning("clear_suspect failed for transitioned-out guid %s", guid)
+
+    _last_suspect_guids.clear()
+    _last_suspect_guids.update(flagged_guids)
 
 
 async def tick_police_suspect_locations(http_client, http_client_mod) -> None:

@@ -33,6 +33,7 @@ from amc.criminals import (
     _costume_reconciled_guids,
     _last_escape_msg_sent,
     _last_star_notified,
+    _last_suspect_guids,
     refresh_suspect_tags,
     tick_criminal_record_decay,
     tick_police_suspect_locations,
@@ -128,6 +129,7 @@ class WantedCountdownTickTests(TestCase):
     def setUp(self):
         _last_star_notified.clear()
         _last_escape_msg_sent.clear()
+        _last_suspect_guids.clear()
 
     async def _setup_criminal(self, wanted_remaining=300):
         """Create a criminal with wanted status."""
@@ -1058,6 +1060,10 @@ class WantedCountdownTickTests(TestCase):
 class RefreshSuspectTagsTests(TestCase):
     """Tests for refresh_suspect_tags — decoupled from tick_wanted_countdown."""
 
+    def setUp(self):
+        _last_suspect_guids.clear()
+        _costume_reconciled_guids.clear()
+
     async def _setup_criminal(self, wanted_remaining=300):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
@@ -1418,6 +1424,10 @@ class PoliceSuspectLocationsTests(TestCase):
 class CriminalRecordDecayTests(TestCase):
     """Tests for tick_criminal_record_decay."""
 
+    def setUp(self):
+        _last_suspect_guids.clear()
+        _costume_reconciled_guids.clear()
+
     async def _setup_criminal_record(self, confiscatable_amount=10000):
         """Create a character with an active criminal record."""
         player = await sync_to_async(PlayerFactory)()
@@ -1583,3 +1593,214 @@ class CriminalRecordDecayTests(TestCase):
         await tick_criminal_record_decay(mock_http_mod)
 
         mock_make_suspect.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# clear_suspect integration
+# ---------------------------------------------------------------------------
+
+@patch("amc.criminals.clear_suspect", new_callable=AsyncMock)
+@patch("amc.criminals.make_suspect", new_callable=AsyncMock)
+class ClearSuspectTests(TestCase):
+    """Tests for the clear_suspect wiring in criminals.py.
+
+    clear_suspect is emitted in two places:
+      1. tick_wanted_countdown — when a wanted record expires naturally and
+         the player is online, we proactively drop the in-game suspect GE so
+         the blue overlay and Net_Suspects entry disappear immediately rather
+         than waiting up to ~70 s for the last-applied GE duration.
+      2. refresh_suspect_tags — transition-out pass: GUIDs flagged on the
+         previous tick but not the current one are no longer wanted or
+         costume criminals, so we clear the GE.
+    """
+
+    def setUp(self):
+        _last_star_notified.clear()
+        _last_escape_msg_sent.clear()
+        _last_suspect_guids.clear()
+        _costume_reconciled_guids.clear()
+
+    async def _setup_criminal(self, wanted_remaining=300):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+        )
+        await character.asave(update_fields=["last_online"])
+        await Wanted.objects.acreate(
+            character=character,
+            wanted_remaining=wanted_remaining,
+        )
+        return character
+
+    # -----------------------------------------------------------------------
+    # tick_wanted_countdown → clear_suspect on natural expiry
+    # -----------------------------------------------------------------------
+
+    async def test_wanted_expiry_calls_clear_suspect(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """When a wanted record expires naturally, clear_suspect is invoked."""
+        # Start at 1 tick remaining so a single tick drives it to 0
+        criminal = await self._setup_criminal(wanted_remaining=BASE_DECAY_PER_TICK * TICK_INTERVAL)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.refresh_player_name", new_callable=AsyncMock), \
+             patch("amc.criminals.announce", new_callable=AsyncMock), \
+             patch("amc.criminals.announce_money_secured", new_callable=AsyncMock):
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertIsNotNone(wanted.expired_at)
+        mock_clear_suspect.assert_any_await(mock_http_mod, criminal.guid)
+
+    async def test_wanted_not_expired_no_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """clear_suspect is not called when the wanted record is still active."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.refresh_player_name", new_callable=AsyncMock):
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        mock_clear_suspect.assert_not_called()
+
+    async def test_wanted_expiry_clear_failure_does_not_crash_tick(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A mod-server failure during clear_suspect is logged, not propagated."""
+        mock_clear_suspect.side_effect = Exception("mod server down")
+        criminal = await self._setup_criminal(wanted_remaining=BASE_DECAY_PER_TICK * TICK_INTERVAL)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http = AsyncMock()
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.refresh_player_name", new_callable=AsyncMock), \
+             patch("amc.criminals.announce", new_callable=AsyncMock), \
+             patch("amc.criminals.announce_money_secured", new_callable=AsyncMock):
+            # Should not raise
+            await tick_wanted_countdown(mock_http, mock_http_mod)
+
+        wanted = await Wanted.objects.aget(character=criminal)
+        self.assertIsNotNone(wanted.expired_at)
+
+    # -----------------------------------------------------------------------
+    # refresh_suspect_tags → transition-out clears
+    # -----------------------------------------------------------------------
+
+    async def test_refresh_suspect_tags_no_prior_flag_no_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """First tick with no previously-flagged guids: no clear calls."""
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]):
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_clear_suspect.assert_not_called()
+
+    async def test_refresh_suspect_tags_transition_out_calls_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A guid flagged last tick but not this tick gets clear_suspect."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        # Tick 1: wanted is active → make_suspect called, guid added to
+        # _last_suspect_guids.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+        self.assertIn(criminal.guid, _last_suspect_guids)
+        mock_clear_suspect.assert_not_called()
+
+        # Expire the wanted record between ticks — this simulates what happens
+        # when tick_wanted_countdown zeroes it out (or an external clear).
+        await Wanted.objects.filter(character=criminal).aupdate(
+            wanted_remaining=0,
+            expired_at=timezone.now(),
+        )
+
+        # Tick 2: no active wanted, not a costume criminal → clear_suspect
+        # called for the transitioned-out guid.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_clear_suspect.assert_any_await(mock_http_mod, criminal.guid)
+        self.assertNotIn(criminal.guid, _last_suspect_guids)
+
+    async def test_refresh_suspect_tags_still_flagged_no_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A guid still in the wanted set across ticks is not cleared."""
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list(
+            [_make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_clear_suspect.assert_not_called()
+        self.assertIn(criminal.guid, _last_suspect_guids)
+
+    async def test_refresh_suspect_tags_clear_failure_continues(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A clear_suspect failure during transition-out is logged, not raised."""
+        criminal_a = await self._setup_criminal(wanted_remaining=300)
+        criminal_b = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list([
+            _make_player_data(criminal_a.player.unique_id, criminal_a.guid, *_SUSPECT_LOC),
+            _make_player_data(criminal_b.player.unique_id, criminal_b.guid, 6000, 6000, 0),
+        ])
+        mock_http_mod = AsyncMock()
+        mock_clear_suspect.side_effect = Exception("mod server down")
+
+        # Tick 1: both flagged
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # Expire both wanteds
+        await Wanted.objects.filter(
+            character__in=[criminal_a, criminal_b],
+        ).aupdate(wanted_remaining=0, expired_at=timezone.now())
+
+        # Tick 2: both transition out — clear_suspect raises for each,
+        # but the loop continues and the call count reflects both attempts.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
+            await refresh_suspect_tags(mock_http_mod)
+
+        self.assertEqual(mock_clear_suspect.call_count, 2)

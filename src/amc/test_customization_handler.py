@@ -102,6 +102,69 @@ class CostumeUnequipTests(TestCase):
         self.assertIsNone(character.costume_item_key)
         mock_suspect.assert_not_called()
 
+    async def test_costume_unequipped_from_suspect_calls_clear_suspect(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, wearing_costume=True, costume_item_key="Costume_Police_01",
+        )
+        await character.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+        event = _make_event(
+            unequipped=[{"Slot": 4, "ItemKey": "Costume_Police_01"}],
+            character_guid=character.guid,
+        )
+        ctx = _make_ctx()
+
+        with patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock), \
+             patch("amc.handlers.customization.clear_suspect", new_callable=AsyncMock) as mock_clear:
+            await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
+
+        await character.arefresh_from_db()
+        self.assertFalse(character.wearing_costume)
+        mock_clear.assert_called_once_with(ctx.http_client_mod, character.guid)
+
+    async def test_costume_change_from_suspect_to_non_suspect_calls_clear_suspect(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, wearing_costume=True, costume_item_key="Costume_Butcher_01",
+        )
+        await character.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+        event = _make_event(
+            equipped=[{"Slot": 4, "ItemKey": "Costume_Police_01"}],
+            character_guid=character.guid,
+        )
+        ctx = _make_ctx()
+
+        with patch("amc.handlers.customization.settings.SUSPECT_COSTUMES", frozenset({"Costume_Butcher_01"})), \
+             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock), \
+             patch("amc.handlers.customization.clear_suspect", new_callable=AsyncMock) as mock_clear:
+            await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
+
+        await character.arefresh_from_db()
+        self.assertFalse(character.wearing_costume)
+        mock_clear.assert_called_once_with(ctx.http_client_mod, character.guid)
+
+    async def test_non_suspect_costume_change_does_not_call_clear_suspect(self):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player, wearing_costume=False, costume_item_key=None,
+        )
+        await character.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+        event = _make_event(
+            equipped=[{"Slot": 4, "ItemKey": "Costume_Police_01"}],
+            character_guid=character.guid,
+        )
+        ctx = _make_ctx()
+
+        with patch("amc.handlers.customization.settings.SUSPECT_COSTUMES", frozenset({"Costume_Butcher_01"})), \
+             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock), \
+             patch("amc.handlers.customization.clear_suspect", new_callable=AsyncMock) as mock_clear:
+            await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
+
+        mock_clear.assert_not_called()
+
 
 class NonCostumeSlotTests(TestCase):
     async def test_hat_slot_ignored(self):
