@@ -97,7 +97,7 @@ class GameEventFactory(DjangoModelFactory):
         model = GameEvent
 
     name = Faker("company")
-    guid = Faker("company")
+    guid = LazyAttribute(lambda _: uuid.uuid4().hex[:32])
     state = LazyAttribute(lambda _: random.randint(1, 3))
     discord_message_id = LazyAttribute(
         lambda _: str(random.randint(100000000000000000, 999999999999999999))
