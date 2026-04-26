@@ -452,9 +452,9 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 # Proximity slows decay: divide by (1 + factor)
                 effective_decay = (BASE_DECAY_PER_TICK / (1 + proximity_factor)) * TICK_INTERVAL
 
-                # Bounty grows proportionally to police proximity (1/r, capped at $500/s)
-                bounty_factor = min(1.0, Wanted.REF_DISTANCE / clamped_dist)
-                wanted.amount += int(BOUNTY_GROWTH_PER_TICK * bounty_factor)
+                # DEPRECATED: Bounty growth from police proximity — disabled 2026-04-26
+                # bounty_factor = min(1.0, Wanted.REF_DISTANCE / clamped_dist)
+                # wanted.amount += int(BOUNTY_GROWTH_PER_TICK * bounty_factor)
 
         # Apply decay
         if near_police:

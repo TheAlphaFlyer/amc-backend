@@ -23,7 +23,6 @@ from django.utils import timezone
 from amc.criminals import (
     BASE_DECAY_PER_TICK,
     BASE_WANTED_DURATION,
-    BOUNTY_GROWTH_PER_TICK,
     CRIMINAL_RECORD_DECAY_FACTOR,
     ESCAPE_DISTANCE,
     ESCAPE_FLOOR,
@@ -375,32 +374,6 @@ class WantedCountdownTickTests(TestCase):
         expected = 200 - 10 * BASE_DECAY_PER_TICK * TICK_INTERVAL
         self.assertAlmostEqual(wanted.wanted_remaining, expected, delta=0.5)
         self.assertIsNone(wanted.expired_at)
-
-    async def test_bounty_grows_near_police(
-        self,
-        mock_sys_msg,
-        mock_refresh,
-    ):
-        """Bounty (amount) grows proportionally to police proximity."""
-        criminal = await self._setup_criminal(wanted_remaining=200)
-        officer = await self._setup_police()
-
-        sx, sy, sz = _SUSPECT_LOC
-        cx, cy, cz = _COP_MED  # 100m → factor=1.0
-        players = _make_players_list([
-            _make_player_data(officer.player.unique_id, officer.guid, cx, cy, cz),
-            _make_player_data(criminal.player.unique_id, criminal.guid, sx, sy, sz),
-        ])
-        mock_http = AsyncMock()
-        mock_http_mod = AsyncMock()
-
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players):
-            for _ in range(5):
-                await tick_wanted_countdown(mock_http, mock_http_mod)
-
-        wanted = await Wanted.objects.aget(character=criminal)
-        # factor=1.0 at 100m, 5 ticks → amount += 5 × BOUNTY_GROWTH_PER_TICK
-        self.assertGreaterEqual(wanted.amount, 5 * BOUNTY_GROWTH_PER_TICK)
 
     async def test_bounty_does_not_grow_without_police(
         self,
