@@ -138,11 +138,6 @@ async def execute_arrest(
                 wanted.expired_at = timezone.now()
                 await wanted.asave(update_fields=["wanted_remaining", "expired_at"])
 
-                # Strip the wanted star tag from the player's display name
-                asyncio.create_task(
-                    refresh_player_name(suspect_char, http_client_mod)
-                )
-
             # Delivery confiscation: use confiscatable_amount from active CriminalRecord
             from amc.models import CriminalRecord
 
@@ -160,19 +155,20 @@ async def execute_arrest(
                 amount=confiscated_amount,
             )
 
-            # Clear the CriminalRecord and refresh tag (removes [C] indicator)
+            # Clear the CriminalRecord (removes [C] indicator)
             if active_record:
                 active_record.cleared_at = timezone.now()
                 active_record.cleared_by_arrest = confiscation
                 await active_record.asave(update_fields=["cleared_at", "cleared_by_arrest"])
-                # Refresh tag to remove [C] (Wanted refresh above only fires if wanted existed)
-                if not wanted:
-                    asyncio.create_task(
-                        refresh_player_name(suspect_char, http_client_mod)
-                    )
                 suspect_char.wearing_costume  = False
                 suspect_char.costume_item_key = None
                 await suspect_char.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+            # Refresh display name now that wanted + criminal record state are finalized
+            if wanted or active_record:
+                asyncio.create_task(
+                    refresh_player_name(suspect_char, http_client_mod)
+                )
 
             # Drop the in-game suspect GE proactively — both the wanted and the
             # costume-criminal paths are now cleared above, so the reconciliation
