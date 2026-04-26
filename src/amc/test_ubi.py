@@ -17,7 +17,7 @@ def _make_ctx(http_client=None, http_client_mod=None):
 
 
 class HandoutUbiLoanRepaymentTest(TestCase):
-    """Test that UBI auto-repays loans when a character has an outstanding balance."""
+    """Test that UBI goes through on_player_profit pipeline."""
 
     def setUp(self):
         self.player = Player.objects.create(unique_id=9999)
@@ -47,23 +47,22 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         )
         return amount
 
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_no_loan_no_repayment(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
+        mock_on_player_profit,
     ):
-        """When no loan exists, UBI is paid normally with no repayment."""
+        """When no loan exists, UBI is paid and on_player_profit is called."""
         mock_treasury_balance.return_value = Decimal(50_000_000)
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = Decimal(0)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
@@ -76,26 +75,24 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         mock_send.assert_called_once()
         mock_transfer.assert_called_once()
         assert mock_transfer.call_args[0][1] > 0
+        mock_on_player_profit.assert_called_once()
 
-    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_loan_larger_than_ubi(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
-        mock_repay,
+        mock_on_player_profit,
     ):
-        """When loan > UBI, repay_loan_for_profit is called with full UBI as override."""
+        """When loan > UBI, on_player_profit handles repayment via pipeline."""
         mock_treasury_balance.return_value = Decimal(50_000_000)
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = Decimal(1_000_000)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
@@ -105,33 +102,29 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         ):
             await handout_ubi(ctx)
 
-        expected = self._expected_amount()
+        expected = int(self._expected_amount())
 
-        mock_repay.assert_called_once()
-        call_kwargs = mock_repay.call_args
-        self.assertEqual(call_kwargs[1]["repayment_override"], expected)
-        self.assertIsNotNone(call_kwargs[1]["game_session"])
+        mock_on_player_profit.assert_called_once()
+        call_args = mock_on_player_profit.call_args
+        self.assertEqual(call_args[1]["subsidy"], 0)
+        self.assertEqual(call_args[1]["base_payment"], expected)
 
-    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_loan_smaller_than_ubi(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
-        mock_repay,
+        mock_on_player_profit,
     ):
-        """When loan < UBI, repayment_override is capped to loan balance."""
+        """When loan < UBI, on_player_profit handles partial repayment via pipeline."""
         mock_treasury_balance.return_value = Decimal(50_000_000)
-        small_loan = Decimal(100)
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = small_loan
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
@@ -141,32 +134,27 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         ):
             await handout_ubi(ctx)
 
-        mock_repay.assert_called_once()
-        call_kwargs = mock_repay.call_args
-        self.assertEqual(call_kwargs[1]["repayment_override"], small_loan)
+        mock_on_player_profit.assert_called_once()
 
-    @patch("amc.ubi.repay_loan_for_profit", new_callable=AsyncMock)
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_gov_employee_with_loan(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
-        mock_repay,
+        mock_on_player_profit,
     ):
-        """Gov employee gets 2x UBI, full amount goes to repayment."""
+        """Gov employee gets 2x UBI, on_player_profit handles gov redirect."""
         mock_treasury_balance.return_value = Decimal(50_000_000)
         self.character.gov_employee_until = timezone.now() + timedelta(hours=12)
         await self.character.asave()
 
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = Decimal(1_000_000)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
@@ -176,30 +164,29 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         ):
             await handout_ubi(ctx)
 
-        expected_base = self._expected_amount()
+        expected_base = int(self._expected_amount())
         expected_gov = expected_base * 2
 
-        mock_repay.assert_called_once()
-        call_kwargs = mock_repay.call_args
-        self.assertEqual(call_kwargs[1]["repayment_override"], expected_gov)
+        mock_on_player_profit.assert_called_once()
+        call_args = mock_on_player_profit.call_args
+        self.assertEqual(call_args[1]["base_payment"], expected_gov)
 
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_ubi_stops_below_floor(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
+        mock_on_player_profit,
     ):
         """When treasury is at or below floor, no UBI is paid."""
         mock_treasury_balance.return_value = Decimal(5_000_000)
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = Decimal(0)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
@@ -211,24 +198,24 @@ class HandoutUbiLoanRepaymentTest(TestCase):
 
         mock_send.assert_not_called()
         mock_transfer.assert_not_called()
+        mock_on_player_profit.assert_not_called()
 
+    @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)
     @patch("amc.ubi.send_fund_to_player_wallet", new_callable=AsyncMock)
-    @patch("amc.ubi.get_player_loan_balance", new_callable=AsyncMock)
     @patch("amc.ubi.get_players", new_callable=AsyncMock)
     @patch("amc.ubi.get_treasury_fund_balance", new_callable=AsyncMock)
     async def test_ubi_scales_with_treasury(
         self,
         mock_treasury_balance,
         mock_get_players,
-        mock_loan_balance,
         mock_send,
         mock_transfer,
+        mock_on_player_profit,
     ):
         """When treasury is between floor and ceiling, UBI scales linearly."""
         mock_treasury_balance.return_value = Decimal(17_500_000)
         mock_get_players.return_value = self._mock_players()
-        mock_loan_balance.return_value = Decimal(0)
 
         ctx = _make_ctx(http_client_mod=mock_transfer)
         with patch(
