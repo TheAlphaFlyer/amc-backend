@@ -43,6 +43,7 @@ async def on_player_profit(
     session,
     http_client=None,
     contract_payment=0,
+    skip_gov_redirect=False,
 ):
     """Process a player's profit after party splitting.
 
@@ -54,11 +55,13 @@ async def on_player_profit(
         contract_payment: Contract completion payment deposited into wallet.
         session: HTTP client for mod server calls.
         http_client: HTTP client for API calls.
+        skip_gov_redirect: If True, skip the gov employee income redirect
+            (e.g. for UBI/salary which is already a government payment).
     """
     if character.reject_ubi:
         subsidy = 0
 
-    if character.is_gov_employee:
+    if character.is_gov_employee and not skip_gov_redirect:
         from amc.gov_employee import redirect_income_to_treasury
 
         wallet_confiscation = base_payment + contract_payment

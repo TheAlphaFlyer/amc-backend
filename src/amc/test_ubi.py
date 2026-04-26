@@ -149,7 +149,7 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         mock_transfer,
         mock_on_player_profit,
     ):
-        """Gov employee gets 2x UBI, on_player_profit handles gov redirect."""
+        """Gov employee gets 2x UBI with skip_gov_redirect=True so salary is kept."""
         mock_treasury_balance.return_value = Decimal(50_000_000)
         self.character.gov_employee_until = timezone.now() + timedelta(hours=12)
         await self.character.asave()
@@ -170,6 +170,7 @@ class HandoutUbiLoanRepaymentTest(TestCase):
         mock_on_player_profit.assert_called_once()
         call_args = mock_on_player_profit.call_args
         self.assertEqual(call_args[1]["base_payment"], expected_gov)
+        self.assertTrue(call_args[1]["skip_gov_redirect"])
 
     @patch("amc.ubi.on_player_profit", new_callable=AsyncMock)
     @patch("amc.ubi.transfer_money", new_callable=AsyncMock)

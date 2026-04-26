@@ -108,6 +108,7 @@ async def handout_ubi(ctx):
                 base_payment=int(amount),
                 session=http_client_mod,
                 http_client=http_client,
+                skip_gov_redirect=True,
             )
         except Exception as e:
             print(f"Error handing out UBI to player {player_id}: {e}")
