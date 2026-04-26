@@ -310,6 +310,17 @@ class Character(models.Model):
     # Criminal
     criminal_laundered_total = models.PositiveBigIntegerField(default=0)
 
+    # Costume tracking (updated by ServerSetEquipmentInventory webhook)
+    wearing_costume = models.BooleanField(
+        default=False,
+        help_text="Tracks whether the character is currently wearing a costume "
+                  "(EquipmentSlot=4). Updated by ServerSetEquipmentInventory webhook.",
+    )
+    costume_item_key = models.CharField(
+        max_length=100, null=True, blank=True,
+        help_text="Item key of the worn costume; NULL when not wearing one.",
+    )
+
     # Police
     police_confiscated_total = models.PositiveBigIntegerField(default=0)
 

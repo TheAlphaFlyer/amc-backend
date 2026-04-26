@@ -169,6 +169,9 @@ async def execute_arrest(
                     asyncio.create_task(
                         refresh_player_name(suspect_char, http_client_mod)
                     )
+                suspect_char.wearing_costume  = False
+                suspect_char.costume_item_key = None
+                await suspect_char.asave(update_fields=["wearing_costume", "costume_item_key"])
 
             if confiscated_amount > 0:
                 # --- Legitimate arrest: confiscate delivery earnings from laundered total ---

@@ -357,6 +357,18 @@ async def set_decal(session, player_id, decal):
             raise Exception("Failed to set decal")
 
 
+async def get_player_customization(session, character_guid):
+    async with session.get(
+        f"/players/{character_guid}/customization", timeout=FAST_TIMEOUT
+    ) as resp:
+        if resp.status == 404:
+            return None
+        if resp.status != 200:
+            raise Exception(f"Failed to get customization ({resp.status})")
+        data = await resp.json()
+        return data.get("data")
+
+
 async def get_player_last_vehicle(session, character_guid):
     async with session.get(
         f"/player_vehicles/{character_guid}/last", timeout=FAST_TIMEOUT

@@ -12,7 +12,7 @@ from amc.commands.faction import _build_player_locations, _distance_3d, execute_
 from amc.game_server import announce, get_players
 from amc.models import CriminalRecord, PoliceSession, Wanted
 from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
-from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
+from amc.mod_server import get_player_customization, get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured, WANTED_MIN_BOUNTY
 
@@ -58,6 +58,10 @@ _last_star_notified: dict[str, int] = {}
 
 # Tracks when the last escape popup was sent per character guid (monotonic clock)
 _last_escape_msg_sent: dict[str, float] = {}
+
+# Tracks GUIDs that have had costume state reconciled against the mod server
+# (one-shot per backend process to self-heal stale DB state on restart).
+_costume_reconciled_guids: set[str] = set()
 
 
 def _calculate_logout_heat(min_police_distance: float) -> float:
@@ -571,11 +575,14 @@ CRIMINAL_SUSPECT_DURATION = 70  # seconds — slightly > tick interval (60s) for
 
 
 async def refresh_suspect_tags(http_client_mod) -> None:
-    """Re-apply the suspect flag to every online wanted player.
+    """Re-apply the suspect flag to every online wanted player and to every
+    online active criminal wearing a costume.
 
     Called every 10 seconds via arq cron, decoupled from the 1-second wanted
     countdown tick so that suspect-tagging cadence can be tuned independently.
     """
+    # --- Wanted pass ---
+    wanted_guids = set()
     wanted_list = [
         w
         async for w in Wanted.objects.filter(
@@ -583,8 +590,6 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             wanted_remaining__gt=0,
         ).select_related("character")
     ]
-    if not wanted_list:
-        return
 
     players = await get_players(http_client_mod)
     locations = _build_player_locations(players) if players else {}
@@ -593,9 +598,6 @@ async def refresh_suspect_tags(http_client_mod) -> None:
         sus_guid = wanted.character.guid
         if not sus_guid or sus_guid not in locations:
             continue
-        # Time left at base decay rate (no police).  Police nearby slow decay,
-        # so the actual expiry may be later — the 10-second refresh loop will
-        # renew the flag before then.
         duration_seconds = math.ceil(
             wanted.wanted_remaining / BASE_DECAY_PER_TICK * TICK_INTERVAL
         )
@@ -603,8 +605,63 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             await make_suspect(
                 http_client_mod, sus_guid, duration_seconds=max(1, duration_seconds)
             )
+            wanted_guids.add(sus_guid)
         except Exception:
             logger.warning("Failed to make suspect for %s", wanted.character.name)
+
+    # --- Costume criminal pass ---
+    online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+    costume_criminals = CriminalRecord.objects.filter(
+        cleared_at__isnull=True,
+        character__wearing_costume=True,
+        character__guid__isnull=False,
+        character__last_online__gte=online_cutoff,
+    ).select_related("character")
+
+    async for rec in costume_criminals:
+        guid = rec.character.guid
+        if guid in wanted_guids:
+            continue
+        if guid not in locations:
+            continue
+        try:
+            await make_suspect(
+                http_client_mod, guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
+            )
+        except Exception:
+            logger.warning("costume make_suspect failed for %s", rec.character.name)
+
+    # --- Reconciliation: one-shot costume hydration for online criminals ---
+    unreconciled_criminals = CriminalRecord.objects.filter(
+        cleared_at__isnull=True,
+        character__guid__isnull=False,
+        character__last_online__gte=online_cutoff,
+    ).exclude(
+        character__guid__in=_costume_reconciled_guids,
+    ).select_related("character")
+
+    async for rec in unreconciled_criminals:
+        guid = rec.character.guid
+        _costume_reconciled_guids.add(guid)
+        try:
+            customization = await get_player_customization(http_client_mod, guid)
+            if customization is None:
+                continue
+            costume_key = customization.get("Costume") or None
+            wearing = bool(costume_key)
+            if wearing != rec.character.wearing_costume or costume_key != rec.character.costume_item_key:
+                rec.character.wearing_costume = wearing
+                rec.character.costume_item_key = costume_key
+                await rec.character.asave(update_fields=["wearing_costume", "costume_item_key"])
+                if wearing and guid not in wanted_guids and guid in locations:
+                    try:
+                        await make_suspect(
+                            http_client_mod, guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
+                        )
+                    except Exception:
+                        logger.warning("reconciliation make_suspect failed for %s", rec.character.name)
+        except Exception:
+            logger.debug("reconciliation poll failed for %s", rec.character.name)
 
 
 async def tick_police_suspect_locations(http_client, http_client_mod) -> None:
@@ -706,28 +763,6 @@ async def tick_criminal_record_decay(http_client_mod=None) -> None:
     The `amount` field is NEVER decayed — it is a permanent audit trail.
     """
     online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
-
-    if http_client_mod:
-        suspect_records = [
-            r
-            async for r in CriminalRecord.objects.filter(
-                cleared_at__isnull=True,
-                character__guid__isnull=False,
-                character__last_online__gte=online_cutoff,
-            ).select_related("character")
-        ]
-        for rec in suspect_records:
-            try:
-                await make_suspect(
-                    http_client_mod,
-                    rec.character.guid,
-                    duration_seconds=CRIMINAL_SUSPECT_DURATION,
-                )
-            except Exception:
-                logger.warning(
-                    "make_suspect failed for criminal %s (guid=%s)",
-                    rec.character.name, rec.character.guid, exc_info=True,
-                )
 
     records = [
         r

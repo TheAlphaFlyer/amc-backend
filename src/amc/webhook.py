@@ -33,6 +33,7 @@ import amc.handlers.teleport  # noqa: F401
 import amc.handlers.smuggling  # noqa: F401
 import amc.handlers.events  # noqa: F401
 import amc.handlers.chat  # noqa: F401
+import amc.handlers.customization  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports — symbols imported by other modules or

@@ -30,6 +30,7 @@ from amc.criminals import (
     ESCAPE_MESSAGE,
     TICK_INTERVAL,
     _compute_stars,
+    _costume_reconciled_guids,
     _last_escape_msg_sent,
     _last_star_notified,
     refresh_suspect_tags,
@@ -1140,6 +1141,145 @@ class RefreshSuspectTagsTests(TestCase):
         self.assertEqual(calls[criminal_a.guid], math.ceil(300 / BASE_DECAY_PER_TICK * TICK_INTERVAL))
         self.assertEqual(calls[criminal_b.guid], math.ceil(200 / BASE_DECAY_PER_TICK * TICK_INTERVAL))
 
+    # -------------------------------------------------------------------
+    # Costume criminal pass
+    # -------------------------------------------------------------------
+
+    async def _setup_costume_criminal(self, wearing_costume=True):
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=wearing_costume,
+            costume_item_key="Costume_Police_01" if wearing_costume else None,
+        )
+        await character.asave(update_fields=["last_online", "wearing_costume", "costume_item_key"])
+        await CriminalRecord.objects.acreate(character=character, reason="Test", confiscatable_amount=1000)
+        return character
+
+    async def test_costume_criminal_online_gets_suspect(
+        self,
+        mock_make_suspect,
+    ):
+        _costume_reconciled_guids.clear()
+        character = await self._setup_costume_criminal(wearing_costume=True)
+        players = _make_players_list(
+            [_make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        costume_calls = [
+            c for c in mock_make_suspect.call_args_list
+            if c.kwargs.get("duration_seconds") == CRIMINAL_SUSPECT_DURATION
+        ]
+        self.assertGreaterEqual(len(costume_calls), 1)
+
+    async def test_costume_criminal_not_wearing_no_suspect(
+        self,
+        mock_make_suspect,
+    ):
+        _costume_reconciled_guids.clear()
+        character = await self._setup_costume_criminal(wearing_costume=False)
+        players = _make_players_list(
+            [_make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        costume_calls = [
+            c for c in mock_make_suspect.call_args_list
+            if c.args[1] == character.guid and c.kwargs.get("duration_seconds") == CRIMINAL_SUSPECT_DURATION
+        ]
+        self.assertEqual(len(costume_calls), 0)
+
+    async def test_costume_criminal_offline_no_suspect(
+        self,
+        mock_make_suspect,
+    ):
+        _costume_reconciled_guids.clear()
+        character = await self._setup_costume_criminal(wearing_costume=True)
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        costume_calls = [
+            c for c in mock_make_suspect.call_args_list
+            if c.args[1] == character.guid and c.kwargs.get("duration_seconds") == CRIMINAL_SUSPECT_DURATION
+        ]
+        self.assertEqual(len(costume_calls), 0)
+
+    async def test_wanted_and_costume_criminal_called_once(
+        self,
+        mock_make_suspect,
+    ):
+        _costume_reconciled_guids.clear()
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
+        )
+        await character.asave(update_fields=["last_online", "wearing_costume", "costume_item_key"])
+        await CriminalRecord.objects.acreate(character=character, reason="Test", confiscatable_amount=1000)
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
+
+        players = _make_players_list(
+            [_make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == character.guid]
+        self.assertEqual(len(guid_calls), 1)
+
+    async def test_reconciliation_hydrates_costume_state(
+        self,
+        mock_make_suspect,
+    ):
+        _costume_reconciled_guids.clear()
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=False,
+            costume_item_key=None,
+        )
+        await character.asave(update_fields=["last_online", "wearing_costume", "costume_item_key"])
+        await CriminalRecord.objects.acreate(character=character, reason="Test", confiscatable_amount=1000)
+
+        players = _make_players_list(
+            [_make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)]
+        )
+        mock_http_mod = AsyncMock()
+        customization_data = {"Costume": "Costume_Police_01"}
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=customization_data):
+            await refresh_suspect_tags(mock_http_mod)
+
+        await character.arefresh_from_db()
+        self.assertTrue(character.wearing_costume)
+        self.assertEqual(character.costume_item_key, "Costume_Police_01")
+
+        costume_calls = [
+            c for c in mock_make_suspect.call_args_list
+            if c.args[1] == character.guid and c.kwargs.get("duration_seconds") == CRIMINAL_SUSPECT_DURATION
+        ]
+        self.assertGreaterEqual(len(costume_calls), 1)
+
 
 class PoliceSuspectLocationsTests(TestCase):
     """Tests for tick_police_suspect_locations."""
@@ -1365,35 +1505,44 @@ class CriminalRecordDecayTests(TestCase):
         record = await CriminalRecord.objects.aget(pk=record.pk)
         self.assertEqual(record.confiscatable_amount, 10000)
 
-    async def test_applies_suspect_to_online_criminals(
+    async def test_applies_suspect_to_online_criminals_via_refresh_suspect_tags(
         self,
         mock_make_suspect,
     ):
-        """Online active criminals with a guid get make_suspect called."""
+        """Online active criminals wearing a costume get make_suspect called via refresh_suspect_tags."""
+        _costume_reconciled_guids.clear()
         record = await self._setup_criminal_record(confiscatable_amount=10000)
+        record.character.wearing_costume = True
+        record.character.costume_item_key = "Costume_Police_01"
+        await record.character.asave(update_fields=["wearing_costume", "costume_item_key"])
+
+        players = _make_players_list(
+            [_make_player_data(record.character.player.unique_id, record.character.guid, *_SUSPECT_LOC)]
+        )
         mock_http_mod = AsyncMock()
 
-        with patch("amc.mod_server.get_player", new_callable=AsyncMock, return_value={"bAFK": False}), \
-             patch("amc.mod_server.get_player_last_vehicle", new_callable=AsyncMock, return_value={"vehicle": {"id": 1}}), \
-             patch("amc.mod_server.get_player_last_vehicle_parts", new_callable=AsyncMock, return_value={"parts": []}), \
-             patch("amc.mod_detection.detect_custom_parts", return_value=[]):
-            await tick_criminal_record_decay(mock_http_mod)
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
 
         mock_make_suspect.assert_any_call(
             mock_http_mod, record.character.guid, duration_seconds=CRIMINAL_SUSPECT_DURATION
         )
 
-    async def test_skips_suspect_for_offline_criminals(
+    async def test_skips_suspect_for_offline_criminals_via_refresh_suspect_tags(
         self,
         mock_make_suspect,
     ):
-        """Offline criminals are not made suspect."""
+        """Offline criminals are not made suspect via refresh_suspect_tags."""
+        _costume_reconciled_guids.clear()
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
             player=player,
             last_online=timezone.now() - timedelta(minutes=5),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
         )
-        await character.asave(update_fields=["last_online"])
+        await character.asave(update_fields=["last_online", "wearing_costume", "costume_item_key"])
         await CriminalRecord.objects.acreate(
             character=character,
             reason="Test",
@@ -1401,9 +1550,15 @@ class CriminalRecordDecayTests(TestCase):
         )
         mock_http_mod = AsyncMock()
 
-        await tick_criminal_record_decay(mock_http_mod)
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
 
-        mock_make_suspect.assert_not_called()
+        costume_calls = [
+            c for c in mock_make_suspect.call_args_list
+            if c.args[1] == character.guid and c.kwargs.get("duration_seconds") == CRIMINAL_SUSPECT_DURATION
+        ]
+        self.assertEqual(len(costume_calls), 0)
 
     async def test_skips_suspect_for_criminals_without_guid(
         self,
