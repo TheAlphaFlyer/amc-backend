@@ -58,7 +58,9 @@ async def handle_reset_vehicle(event, player, character, ctx):
 
 @register("ServerTeleportCharacter")
 async def _handle_teleport_character(event, player, character, ctx):
-    return await _handle_teleport_or_respawn(event, character, ctx)
+    result = await _handle_teleport_or_respawn(event, character, ctx)
+    await _redirect_police_near_wanted(character, player, ctx, "Teleport")
+    return result
 
 
 @register("ServerTeleportVehicle")
@@ -69,27 +71,34 @@ async def _handle_teleport_vehicle(event, player, character, ctx):
 @register("ServerRespawnCharacter")
 async def _handle_respawn_character(event, player, character, ctx):
     result = await _handle_teleport_or_respawn(event, character, ctx)
+    await _redirect_police_near_wanted(character, player, ctx, "Respawn")
+    return result
 
-    # Police who respawn near wanted players are redirected to the nearest
-    # police station to prevent exploiting respawns to catch suspects.
+
+async def _redirect_police_near_wanted(character, player, ctx, action_label):
+    """Redirect on-duty police to the nearest station if they landed near a wanted suspect.
+
+    Used after ServerTeleportCharacter and ServerRespawnCharacter to prevent
+    exploiting teleports/respawns to catch suspects.
+    """
     is_police = await PoliceSession.objects.filter(
         character=character, ended_at__isnull=True
     ).aexists()
     if not is_police or not ctx.http_client or not ctx.http_client_mod:
-        return result
+        return
 
     from amc.commands.faction import _build_player_locations
     from amc.commands.police import SETWANTED_MIN_DISTANCE
 
     players_list = await get_players(ctx.http_client)
     if not players_list:
-        return result
+        return
 
     locations = _build_player_locations(players_list)
 
     officer_entry = locations.get(str(character.guid))
     if not officer_entry:
-        return result
+        return
     _officer_name, officer_loc, _officer_vehicle = officer_entry
 
     wanted_nearby = False
@@ -108,7 +117,7 @@ async def _handle_respawn_character(event, player, character, ctx):
             break
 
     if not wanted_nearby:
-        return result
+        return
 
     nearest = None
     min_dist = float("inf")
@@ -128,12 +137,9 @@ async def _handle_respawn_character(event, player, character, ctx):
         )
         await send_system_message(
             ctx.http_client_mod,
-            "Respawn redirected — too close to a wanted suspect.",
+            f"{action_label} redirected — too close to a wanted suspect.",
             character_guid=character.guid,
         )
-
-    return result
-
 
 
 async def _handle_teleport_or_respawn(event, character, ctx):

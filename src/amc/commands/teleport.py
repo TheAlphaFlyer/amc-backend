@@ -12,6 +12,7 @@ from amc.mod_server import (
     show_popup,
     enter_last_vehicle,
 )
+from amc.game_server import get_players
 from amc.police import is_police_vehicle
 from django.conf import settings
 from django.db.models import Q
@@ -66,6 +67,63 @@ async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mo
         logger.exception(
             "auto_arrest_wanted_criminal: unexpected error for %s", character.name
         )
+
+
+POLICE_TP_NEAR_WANTED_MESSAGE = (
+    "<Title>Teleport Blocked</>\n"
+    "<Warning>Destination is too close to a wanted suspect!</>\n"
+    "Police cannot teleport within range of wanted criminals."
+)
+
+
+async def _check_police_tp_near_wanted(ctx: CommandContext, location: dict) -> bool:
+    """Check if an on-duty police officer is teleporting near a wanted suspect.
+
+    Returns True if the teleport should be blocked (officer near wanted suspect).
+    """
+    is_on_duty = await PoliceSession.objects.filter(
+        character=ctx.character, ended_at__isnull=True
+    ).aexists()
+    if not is_on_duty or not ctx.http_client:
+        return False
+
+    from amc.commands.faction import _build_player_locations
+    from amc.commands.police import SETWANTED_MIN_DISTANCE
+
+    players_list = await get_players(ctx.http_client)
+    if not players_list:
+        return False
+
+    locations = _build_player_locations(players_list)
+
+    dest = (location["X"], location["Y"], location["Z"])
+
+    async for wanted in Wanted.objects.filter(
+        expired_at__isnull=True, wanted_remaining__gt=0
+    ).select_related("character"):
+        guid = wanted.character.guid
+        if not guid or guid == str(ctx.character.guid):
+            continue
+        entry = locations.get(guid)
+        if not entry:
+            continue
+        _name, suspect_loc, _vehicle = entry
+        if _distance_3d(dest, suspect_loc) < SETWANTED_MIN_DISTANCE:
+            asyncio.create_task(
+                show_popup(
+                    ctx.http_client_mod,
+                    _(POLICE_TP_NEAR_WANTED_MESSAGE),
+                    character_guid=ctx.character.guid,
+                    player_id=str(ctx.player.unique_id),
+                )
+            )
+            return True
+
+    return False
+
+
+def _distance_3d(a, b):
+    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
 
 @registry.register(
@@ -330,7 +388,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                     mod_player_info = await get_player(
                         ctx.http_client_mod, str(ctx.player.unique_id)
                     )
-                    if mod_player_info and mod_player_info.get("CustomDestinationAbsoluteLocation"):
+                    if mod_player_info and mod_player_info.get(
+                        "CustomDestinationAbsoluteLocation"
+                    ):
                         player_info = {**player_info, **mod_player_info}
                 except Exception:
                     pass
@@ -385,6 +445,9 @@ async def cmd_tp_name(ctx: CommandContext, name: str = ""):
                 player_id=str(ctx.player.unique_id),
             )
         )
+        return
+
+    if await _check_police_tp_near_wanted(ctx, location):
         return
 
     await teleport_player(
