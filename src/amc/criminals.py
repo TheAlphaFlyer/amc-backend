@@ -5,6 +5,7 @@ import time
 
 from datetime import timedelta
 
+from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
@@ -15,6 +16,8 @@ from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.mod_server import get_player_customization, get_player_last_vehicle, get_player_last_vehicle_parts, make_suspect, send_system_message
 from amc.player_tags import refresh_player_name
 from amc.special_cargo import announce_money_secured, WANTED_MIN_BOUNTY
+
+SUSPECT_COSTUMES = getattr(settings, "SUSPECT_COSTUMES", frozenset())
 
 logger = logging.getLogger("amc.criminals")
 
@@ -648,7 +651,7 @@ async def refresh_suspect_tags(http_client_mod) -> None:
             if customization is None:
                 continue
             costume_key = customization.get("Costume") or None
-            wearing = bool(costume_key)
+            wearing = costume_key in SUSPECT_COSTUMES
             if wearing != rec.character.wearing_costume or costume_key != rec.character.costume_item_key:
                 rec.character.wearing_costume = wearing
                 rec.character.costume_item_key = costume_key

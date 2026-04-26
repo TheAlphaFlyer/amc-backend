@@ -1,5 +1,7 @@
 import logging
 
+from django.conf import settings
+
 from amc.handlers import register
 from amc.mod_server import make_suspect
 from amc.models import CriminalRecord
@@ -24,7 +26,7 @@ async def handle_set_equipment_inventory(event, player, character, ctx):
 
     if costume_equipped:
         new_key = costume_equipped.get("ItemKey") or None
-        character.wearing_costume  = True
+        character.wearing_costume  = new_key in settings.SUSPECT_COSTUMES
         character.costume_item_key = new_key
     else:
         character.wearing_costume  = False

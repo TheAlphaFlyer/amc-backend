@@ -431,3 +431,5 @@ TP_VEHICLE_USE_TELEPORT_FALLBACK = bool(
 )
 
 IS_TEST_SERVER = bool(os.environ.get("IS_TEST_SERVER", ""))
+
+SUSPECT_COSTUMES = frozenset(os.environ.get("SUSPECT_COSTUMES", "Costume_Butcher_01").split(","))
