@@ -111,9 +111,36 @@ async def cmd_police(ctx: CommandContext):
         if pdata and pdata.get("location"):
             try:
                 loc = parse_location_string(pdata["location"])
+
+                suspect_locations = []
+                async for wanted in Wanted.objects.filter(
+                    expired_at__isnull=True,
+                    wanted_remaining__gt=0,
+                ):
+                    entry = next(
+                        (
+                            p
+                            for pid, p in players
+                            if p.get("character_guid") == str(wanted.character_id)
+                        ),
+                        None,
+                    )
+                    if entry and entry.get("location"):
+                        try:
+                            suspect_locations.append(
+                                parse_location_string(entry["location"])
+                            )
+                        except ValueError:
+                            pass
+
                 nearest = None
                 min_dist = float("inf")
                 for name, tx, ty, tz in POLICE_STATIONS:
+                    if any(
+                        _distance_3d(sloc, (tx, ty, tz)) < SETWANTED_MIN_DISTANCE
+                        for sloc in suspect_locations
+                    ):
+                        continue
                     dist = _distance_3d(loc, (tx, ty, tz))
                     if dist < min_dist:
                         min_dist = dist
