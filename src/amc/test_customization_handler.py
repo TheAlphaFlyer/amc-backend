@@ -49,7 +49,8 @@ class CostumeEquipWithRecordTests(TestCase):
         )
         ctx = _make_ctx()
 
-        with patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect:
+        with patch("amc.handlers.customization.settings.SUSPECT_COSTUMES", frozenset({"Costume_Police_01"})), \
+             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect:
             await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
 
         await character.arefresh_from_db()
@@ -69,7 +70,8 @@ class CostumeEquipWithRecordTests(TestCase):
         )
         ctx = _make_ctx()
 
-        with patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect:
+        with patch("amc.handlers.customization.settings.SUSPECT_COSTUMES", frozenset({"Costume_Police_01"})), \
+             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect:
             await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
 
         await character.arefresh_from_db()

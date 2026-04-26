@@ -22,6 +22,7 @@ from amc.models import (
     Delivery,
     SubsidyRule,
     Cargo,
+    PoliceSession,
 )
 from decimal import Decimal
 from django.utils import timezone
@@ -715,6 +716,7 @@ class ProcessEventTests(TestCase):
         mock_show_popup.assert_called_once()
         self.assertIn("profits were zeroed out", mock_show_popup.call_args[0][1])
 
+    @patch("amc.handlers.smuggling.ensure_criminal_record", new_callable=AsyncMock)
     @patch("amc.mod_server.send_system_message", new_callable=AsyncMock)
     @patch("amc.player_tags.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.detect_custom_parts")
@@ -729,6 +731,7 @@ class ProcessEventTests(TestCase):
         mock_detect,
         mock_refresh,
         mock_send_sys_msg,
+        mock_ensure_criminal,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
@@ -764,7 +767,9 @@ class ProcessEventTests(TestCase):
         self.assertIn(
             "now allowed to use modified vehicles", mock_show_popup.call_args[0][1]
         )
+        mock_ensure_criminal.assert_called_once()
 
+    @patch("amc.handlers.smuggling.ensure_criminal_record", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
     @patch(
         "amc.handlers.smuggling._announce_smuggling_tipoff_after_delay",
@@ -779,6 +784,7 @@ class ProcessEventTests(TestCase):
         mock_get_parts,
         mock_detect,
         mock_announce_tipoff,
+        mock_ensure_criminal,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
@@ -816,6 +822,7 @@ class ProcessEventTests(TestCase):
 
         mock_announce_tipoff.assert_called_once_with(http_client, delay=15)
 
+    @patch("amc.handlers.smuggling.ensure_criminal_record", new_callable=AsyncMock)
     @patch("amc.handlers.smuggling.SMUGGLING_TIPOFF_ENABLED", True)
     @patch(
         "amc.handlers.smuggling._announce_smuggling_tipoff_after_delay",
@@ -830,6 +837,7 @@ class ProcessEventTests(TestCase):
         mock_get_parts,
         mock_detect,
         mock_announce_tipoff,
+        mock_ensure_criminal,
         mock_get_treasury,
         mock_get_rp_mode,
     ):
@@ -879,6 +887,79 @@ class ProcessEventTests(TestCase):
         await asyncio.sleep(0)
 
         mock_announce_tipoff.assert_not_called()
+
+    @patch("amc.handlers.smuggling.ensure_criminal_record", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle", new_callable=AsyncMock)
+    async def test_load_cargo_contraband_marks_criminal(
+        self,
+        mock_get_last_vehicle,
+        mock_get_parts,
+        mock_ensure_criminal,
+        mock_get_treasury,
+        mock_get_rp_mode,
+    ):
+        """Loading non-Money illicit cargo (e.g. Cocaine) marks player as criminal."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {"Net_CargoKey": "Cocaine", "Net_Payment": 5_000},
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        mock_ensure_criminal.assert_called_once_with(
+            character,
+            reason="Cocaine cargo loaded",
+            http_client_mod=http_client_mod,
+        )
+
+    @patch("amc.handlers.smuggling.ensure_criminal_record", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle_parts", new_callable=AsyncMock)
+    @patch("amc.handlers.smuggling.get_player_last_vehicle", new_callable=AsyncMock)
+    async def test_load_cargo_police_exempt_from_criminal_record(
+        self,
+        mock_get_last_vehicle,
+        mock_get_parts,
+        mock_ensure_criminal,
+        mock_get_treasury,
+        mock_get_rp_mode,
+    ):
+        """Active police officers loading illicit cargo are NOT marked as criminals."""
+        mock_get_rp_mode.return_value = False
+        mock_get_treasury.return_value = 100_000
+        mock_get_last_vehicle.return_value = {"vehicle": None}
+        mock_get_parts.return_value = {"parts": []}
+
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        await PoliceSession.objects.acreate(character=character)
+
+        event = {
+            "hook": "ServerLoadCargo",
+            "timestamp": int(time.time()),
+            "data": {
+                "Cargo": {"Net_CargoKey": "Money", "Net_Payment": 10_000},
+                "PlayerId": str(player.unique_id),
+                "CharacterGuid": str(character.guid),
+            },
+        }
+        http_client_mod = MagicMock()
+        await process_event(event, player, character, http_client_mod=http_client_mod)
+
+        mock_ensure_criminal.assert_not_called()
 
 
 @patch("amc.webhook.get_rp_mode", new_callable=AsyncMock)

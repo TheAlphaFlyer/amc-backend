@@ -16,6 +16,7 @@ from amc.mod_detection import detect_custom_parts, POLICE_DUTY_WHITELIST
 from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts, show_popup
 from amc.game_server import announce
 from amc.models import PoliceSession
+from amc.special_cargo import ILLICIT_CARGO_KEYS, ensure_criminal_record
 
 logger = logging.getLogger("amc.webhook.handlers.smuggling")
 
@@ -34,8 +35,21 @@ async def handle_load_cargo(event, player, character, ctx):
         return 0, 0, 0, 0
 
     cargo = event["data"].get("Cargo", {})
-    if cargo.get("Net_CargoKey") != "Money":
+    cargo_key = cargo.get("Net_CargoKey", "")
+    if cargo_key not in ILLICIT_CARGO_KEYS:
         return 0, 0, 0, 0
+
+    is_on_duty = await PoliceSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).aexists()
+
+    # Mark as criminal when loading illicit cargo (unless active police)
+    if not is_on_duty:
+        await ensure_criminal_record(
+            character,
+            reason=f"{cargo_key} cargo loaded",
+            http_client_mod=ctx.http_client_mod,
+        )
 
     # Throttled smuggling tip-off announcement
     if SMUGGLING_TIPOFF_ENABLED and ctx.http_client:
@@ -63,9 +77,6 @@ async def handle_load_cargo(event, player, character, ctx):
 
         # Whitelist police parts for officers on active duty
         whitelist = None
-        is_on_duty = await PoliceSession.objects.filter(
-            character=character, ended_at__isnull=True
-        ).aexists()
         if is_on_duty:
             whitelist = POLICE_DUTY_WHITELIST
         custom_parts = detect_custom_parts(

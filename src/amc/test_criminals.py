@@ -1266,7 +1266,8 @@ class RefreshSuspectTagsTests(TestCase):
         mock_http_mod = AsyncMock()
         customization_data = {"Costume": "Costume_Police_01"}
 
-        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+        with patch("amc.criminals.SUSPECT_COSTUMES", frozenset({"Costume_Police_01"})), \
+             patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
              patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=customization_data):
             await refresh_suspect_tags(mock_http_mod)
 
