@@ -301,11 +301,17 @@ async def add_discord_verified_role(client, discord_user_id, player_id):
     await member.add_roles(role, reason=f"Action performed by {player_id}")
 
 
-async def countdown(http_client, start=3, delay=2.0):
+async def countdown(http_client, http_client_mod, player_id, start=3, delay=2.0):
+    from amc.mod_server import send_message_as_player
+
+    CHAT_CATEGORY_SMALL_AREA = 7
     await announce("Get ready!", http_client)
     for i in range(start, -1, -1):
         await asyncio.sleep(delay)
-        await announce(str(i) if i > 0 else "GO!!", http_client, clear_banner=False)
+        msg = str(i) if i > 0 else "GO!!"
+        await send_message_as_player(
+            http_client_mod, msg, player_id, category=CHAT_CATEGORY_SMALL_AREA
+        )
 
 
 def game_units_to_metres(units: float) -> int:

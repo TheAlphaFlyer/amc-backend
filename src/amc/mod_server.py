@@ -101,11 +101,13 @@ async def list_player_vehicles(session, player_id, active=None, complete=None):
     return {}
 
 
-async def send_message_as_player(session, message, player_id):
+async def send_message_as_player(session, message, player_id, category=None):
     await _write_limiter.acquire()
     data = {
         "Message": message,
     }
+    if category is not None:
+        data["Category"] = category
     async with session.post(f"/players/{player_id}/chat", json=data) as resp:
         if resp.status != 204:
             raise Exception("Failed to send message")

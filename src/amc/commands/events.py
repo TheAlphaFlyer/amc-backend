@@ -165,4 +165,6 @@ Use <Highlight>/setup_event {event.id}</>
     category="Events",
 )
 async def cmd_countdown(ctx: CommandContext):
-    asyncio.create_task(countdown(ctx.http_client))
+    asyncio.create_task(
+        countdown(ctx.http_client, ctx.http_client_mod, str(ctx.player.unique_id))
+    )
