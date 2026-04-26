@@ -673,6 +673,33 @@ async def cmd_unmute(ctx: CommandContext, target_player_name: str):
 
 
 @registry.register(
+    "/spawn_asset",
+    description=gettext_lazy("Spawn an asset at your location (Admin)"),
+    category="Admin",
+)
+async def cmd_spawn_asset(ctx: CommandContext, asset_path: str):
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    loc = {
+      'X': ctx.player_info["Location"].X,
+      'Y': ctx.player_info["Location"].Y,
+      'Z': ctx.player_info["Location"].Z - 100,
+    }
+    player_data = await get_player(
+        ctx.http_client_mod, str(ctx.player.unique_id), force_refresh=True
+    )
+    rot = player_data.get("Rotation", {}) if player_data else {}
+
+    await spawn_assets(
+        ctx.http_client_mod,
+        [{"AssetPath": asset_path, "Location": loc, "Rotation": rot}],
+    )
+    await ctx.reply(_("Spawned asset: {path}").format(path=asset_path))
+
+
+@registry.register(
     "/admin",
     description=gettext_lazy("Toggle admin status (test server only)"),
     category="Admin",
