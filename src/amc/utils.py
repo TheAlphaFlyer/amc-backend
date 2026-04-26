@@ -9,7 +9,6 @@ import discord
 from django.utils import timezone
 from django.core.signing import Signer
 from django.conf import settings
-from amc.game_server import announce
 
 
 def skip_if_running(func):
@@ -301,11 +300,13 @@ async def add_discord_verified_role(client, discord_user_id, player_id):
     await member.add_roles(role, reason=f"Action performed by {player_id}")
 
 
-async def countdown(http_client, http_client_mod, player_id, start=3, delay=2.0):
+async def countdown(http_client_mod, player_id, start=3, delay=2.0):
     from amc.mod_server import send_message_as_player
 
     CHAT_CATEGORY_SMALL_AREA = 7
-    await announce("Get ready!", http_client)
+    await send_message_as_player(
+        http_client_mod, "Get ready!", player_id, category=CHAT_CATEGORY_SMALL_AREA
+    )
     for i in range(start, -1, -1):
         await asyncio.sleep(delay)
         msg = str(i) if i > 0 else "GO!!"
