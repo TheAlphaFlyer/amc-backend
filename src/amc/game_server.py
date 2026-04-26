@@ -40,7 +40,7 @@ async def get_players(session, password="", force_refresh=False):
             return cached
 
     data = await game_api_request(session, "/player/list")
-    if "data" not in data:
+    if not data or "data" not in data:
         return []
     players = [
         (player["unique_id"], player)
