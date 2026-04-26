@@ -3,16 +3,12 @@ import logging
 import math
 import re
 
-from django.core.cache import cache
 from django.utils import timezone
 from django.utils.translation import gettext as gettext, gettext_lazy
 
 from amc.command_framework import registry, CommandContext
-from amc.game_server import announce, get_players
+from amc.game_server import announce
 from amc.models import (
-    ArrestZone,
-    Character,
-    PoliceSession,
     TeleportPoint,
     Confiscation,
     Wanted,
@@ -31,7 +27,6 @@ from amc_finance.services import (
 from amc.pipeline.profit import on_player_profit
 from amc.police import (
     get_active_police_characters,
-    is_police_vehicle,
     record_confiscation_for_level,
 )
 from datetime import timedelta
@@ -353,291 +348,15 @@ async def perform_arrest(
 
 @registry.register(
     ["/arrest", "/a"],
-    description=gettext_lazy("Arrest nearby suspects (Cops only)"),
+    description=gettext_lazy("Arrest nearby suspects (Cops only) — DEPRECATED"),
     category="Faction",
-    featured=True,
 )
 async def cmd_arrest(ctx: CommandContext):
-    """Arrest nearby suspects.
-
-    Unlike auto-arrest, manual /arrest can arrest any nearby suspect
-    regardless of Wanted status.  Confiscation only applies if the
-    suspect has an active Wanted record (handled inside execute_arrest).
-    """
-    # 1. Verify active police session
-    is_cop = await PoliceSession.objects.filter(
-        character=ctx.character, ended_at__isnull=True
-    ).aexists()
-    if not is_cop:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext(
-                "You must be on police duty to use this command. Use /police to start."
-            ),
-            character_guid=ctx.character.guid,
+    """DEPRECATED: Manual /arrest has been removed. Auto-arrest is now the only mechanism."""
+    await ctx.reply(
+        gettext(
+            "<Title>Command Deprecated</>\n\n"
+            "/arrest is no longer available. Suspects are now arrested automatically "
+            "when they log out near police, enter restricted zones, or use modded vehicles."
         )
-        return
-
-    # 2. Cooldown check
-    cooldown_key = f"arrest_cooldown:{ctx.player.unique_id}"
-    if cache.get(cooldown_key):
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("You must wait before making another arrest."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    # 3. Initial poll — get all player positions
-    players = await get_players(ctx.http_client)
-    if not players:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("Could not fetch player data."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    locations = _build_player_locations(players)
-
-    # Find cop's own position
-    cop_guid = ctx.character.guid
-    if cop_guid not in locations:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("Could not determine your position."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    cop_uid, cop_loc, cop_has_vehicle = locations[cop_guid]
-
-    # 3a. Police vehicle check — cop in non-police vehicle cannot arrest
-    if cop_has_vehicle:
-        vehicle_names: dict[str, str | None] = {}
-        for _uid, pdata in players:
-            guid = pdata.get("character_guid")
-            if guid:
-                vehicle = pdata.get("vehicle")
-                if isinstance(vehicle, dict):
-                    vehicle_names[guid] = vehicle.get("name")
-                else:
-                    vehicle_names[guid] = vehicle if vehicle else None
-        if not is_police_vehicle(vehicle_names.get(cop_guid)):
-            await send_system_message(
-                ctx.http_client_mod,
-                gettext(
-                    "You must be on foot or in a police vehicle to make an arrest."
-                ),
-                character_guid=ctx.character.guid,
-            )
-            return
-
-    # 3b. Zone check — cop must be inside an active ArrestZone
-    from django.contrib.gis.geos import Point
-
-    cop_point = Point(cop_loc[0], cop_loc[1], srid=3857)
-    zones_exist = await ArrestZone.objects.filter(active=True).aexists()
-    if zones_exist:
-        in_zone = await ArrestZone.objects.filter(
-            active=True, polygon__contains=cop_point
-        ).aexists()
-        if not in_zone:
-            await send_system_message(
-                ctx.http_client_mod,
-                gettext("Arrests can only be made in designated arrest zones."),
-                character_guid=ctx.character.guid,
-            )
-            return
-
-    # 4. Find nearby non-police players
-    other_guids = [g for g in locations if g != cop_guid]
-    if not other_guids:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("No players nearby."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    # Batch query: exclude characters who have active police sessions
-    cop_guids = set()
-    async for char in Character.objects.filter(guid__in=other_guids):
-        has_session = await PoliceSession.objects.filter(
-            character=char, ended_at__isnull=True
-        ).aexists()
-        if has_session:
-            cop_guids.add(char.guid)
-
-    suspect_guids = [g for g in other_guids if g not in cop_guids]
-
-    if not suspect_guids:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("No suspects nearby."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    # Filter to suspects within arrest radius (depends on whether cop is on foot or in vehicle)
-    arrest_radius = (
-        ARREST_RADIUS_IN_VEHICLE if cop_has_vehicle else ARREST_RADIUS_ON_FOOT
     )
-    targets = {}  # guid → (unique_id, initial_loc, has_vehicle)
-    for guid in suspect_guids:
-        if guid not in locations:
-            continue
-        dist = _distance_3d(cop_loc, locations[guid][1])
-        if dist <= arrest_radius:
-            targets[guid] = locations[guid]
-
-    if not targets:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("No suspects within arrest range."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    # Look up Character models for all targets
-    target_chars = {}
-    async for char in Character.objects.filter(guid__in=targets.keys()).select_related(
-        "player"
-    ):
-        target_chars[char.guid] = char
-
-    if not targets:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("No suspects within arrest range."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    target_names = [target_chars[g].name for g in targets if g in target_chars]
-    names_str = ", ".join(target_names)
-
-    # 5. Notify cop
-    await send_system_message(
-        ctx.http_client_mod,
-        gettext("Arresting {names}… stay close for {seconds} seconds.").format(
-            names=names_str, seconds=ARREST_POLL_COUNT
-        ),
-        character_guid=ctx.character.guid,
-    )
-
-    # Track previous suspect positions for speed check
-    prev_suspect_locs = {guid: targets[guid][1] for guid in targets}
-
-    # 6. Poll loop — check every second for 3 seconds
-    for i in range(ARREST_POLL_COUNT):
-        await asyncio.sleep(ARREST_POLL_INTERVAL)
-
-        players = await get_players(ctx.http_client)
-        if not players:
-            await send_system_message(
-                ctx.http_client_mod,
-                gettext("Lost connection to server. Arrest cancelled."),
-                character_guid=ctx.character.guid,
-            )
-            return
-
-        current_locations = _build_player_locations(players)
-
-        # Check cop still online
-        if cop_guid not in current_locations:
-            return  # cop disconnected, silently abort
-
-        cop_uid_now, current_cop_loc, cop_veh = current_locations[cop_guid]
-
-        # Check each target criminal
-        for guid in list(targets.keys()):
-            if guid not in current_locations:
-                # Criminal went offline — remove from targets
-                name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext("{name} went offline. Removed from arrest.").format(
-                        name=name
-                    ),
-                    character_guid=ctx.character.guid,
-                )
-                del targets[guid]
-                prev_suspect_locs.pop(guid, None)
-                continue
-
-            crim_uid, current_criminal_loc, crim_veh = current_locations[guid]
-
-            # Speed check: only for suspects in vehicles (on-foot suspects
-            # are always arrestable within radius regardless of speed)
-            prev_loc = prev_suspect_locs[guid]
-            distance_moved = _distance_3d(prev_loc, current_criminal_loc)
-            speed_per_second = distance_moved / ARREST_POLL_INTERVAL
-            if crim_veh and speed_per_second > SUSPECT_SPEED_LIMIT:
-                name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext("{name} is moving too fast. Removed from arrest.").format(
-                        name=name
-                    ),
-                    character_guid=ctx.character.guid,
-                )
-                del targets[guid]
-                prev_suspect_locs.pop(guid, None)
-                continue
-
-            # Proximity check: cop must stay within radius of suspect
-            current_radius = (
-                ARREST_RADIUS_IN_VEHICLE if cop_veh else ARREST_RADIUS_ON_FOOT
-            )
-            if _distance_3d(current_cop_loc, current_criminal_loc) > current_radius:
-                name = target_chars[guid].name if guid in target_chars else "Unknown"
-                await send_system_message(
-                    ctx.http_client_mod,
-                    gettext(
-                        "{name} is no longer within range. Removed from arrest."
-                    ).format(name=name),
-                    character_guid=ctx.character.guid,
-                )
-                del targets[guid]
-                prev_suspect_locs.pop(guid, None)
-                continue
-
-            # Update for next tick
-            prev_suspect_locs[guid] = current_criminal_loc
-            targets[guid] = (crim_uid, current_criminal_loc, crim_veh)
-
-        if not targets:
-            await send_system_message(
-                ctx.http_client_mod,
-                gettext("All targets escaped. Arrest cancelled."),
-                character_guid=ctx.character.guid,
-            )
-            return
-
-    # 7. Execute arrests
-    try:
-        arrested_names, total_confiscated = await perform_arrest(
-            officer_character=ctx.character,
-            targets=targets,
-            target_chars=target_chars,
-            http_client=ctx.http_client,
-            http_client_mod=ctx.http_client_mod,
-            officer_message_format=gettext("{names} arrested and sent to jail."),
-        )
-    except ValueError as e:
-        await send_system_message(
-            ctx.http_client_mod, gettext(str(e)), character_guid=ctx.character.guid
-        )
-        return
-
-    if not arrested_names:
-        await send_system_message(
-            ctx.http_client_mod,
-            gettext("All targets escaped. Arrest cancelled."),
-            character_guid=ctx.character.guid,
-        )
-        return
-
-    # Set cooldown
-    cache.set(cooldown_key, True, timeout=ARREST_COOLDOWN)

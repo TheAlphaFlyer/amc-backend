@@ -126,7 +126,6 @@ To begin your police shift, type <Highlight>/police</> in chat.
 This will activate your [Pn] tag and enable police commands.
 
 <Bold>Commands (while on duty)</>
-- <Highlight>/arrest</> — Arrest nearby suspects
 - <Highlight>/tp vehicle</> — Teleport to your police car
 - <Highlight>/police</> — End your shift
 
