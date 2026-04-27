@@ -185,6 +185,28 @@ async def cmd_bot(ctx: CommandContext, prompt: str):
 
 
 @registry.register(
+    "/tags",
+    description=gettext_lazy("Explain player name tags"),
+    category="General",
+)
+async def cmd_tags(ctx: CommandContext):
+    await ctx.reply(
+        _(
+            "<Title>Player Tags</>\n\n"
+            "Tags appear in brackets before your name, e.g. [RM***C2G3] Player\n\n"
+            "<Highlight>[R]</> RP Mode — You are in roleplay mode\n"
+            "<Highlight>[M]</> Modded Parts — Your current vehicle has custom/modded parts\n"
+            "<Highlight>[P#]</> Police — On police duty (number = level)\n"
+            "<Highlight>[*]</> Wanted — Wanted level (1–5 stars)\n"
+            "<Highlight>[C#]</> Criminal — Active criminal record (number = level; hidden when on police duty)\n"
+            "<Highlight>[G#]</> Government — Government employee (number = level)\n"
+            "<Highlight>[DOT]</> DOT — Permanent tag for Department of Transport members\n\n"
+            "<Secondary>Tags are automatically updated based on your status. Use /rp_mode to toggle RP, /police to toggle police duty, /workforgov to become a government employee.</>"
+        )
+    )
+
+
+@registry.register(
     ["/song_request", "/songrequest"],
     description=gettext_lazy("Request a song for the radio"),
     category="General",
