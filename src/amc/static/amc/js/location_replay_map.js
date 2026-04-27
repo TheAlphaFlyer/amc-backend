@@ -123,7 +123,7 @@ var isReversed = false;
 var playbackSpeed = 1;
 var currentFrame = 0;
 var playInterval = null;
-var BASE_INTERVAL_MS = 500;
+var BASE_INTERVAL_MS = 1000;
 
 var endTimeInput = document.getElementById('end-time');
 var durationSlider = document.getElementById('duration-slider');
