@@ -39,7 +39,8 @@ from amc.mod_server import (
 from amc.fraud_detection import validate_cargo_payment
 from amc.pipeline.discord import post_discord_delivery_embed
 from amc.pipeline.delivery import atomic_process_delivery
-from amc.subsidies import get_subsidy_for_cargo
+from amc.police import SECURITY_BONUS_RATE, SECURITY_BONUS_MAX, get_active_police_count
+from amc.subsidies import get_subsidy_for_cargo, subsidise_player
 from amc_finance.services import record_ministry_subsidy_spend
 from asgiref.sync import sync_to_async
 
@@ -289,6 +290,18 @@ async def handle_cargo_arrived(event, player, character, ctx):
             )
 
         total_subsidy += delivery_subsidy
+
+        # Risk premium for Money deliveries
+        if cargo_key == "Money" and ctx.http_client_mod:
+            active_police = await get_active_police_count()
+            if active_police > 0:
+                bonus_pct = min(active_police * SECURITY_BONUS_RATE, SECURITY_BONUS_MAX)
+                risk_premium = int(payment * quantity * bonus_pct)
+                if risk_premium > 0:
+                    await subsidise_player(
+                        risk_premium, character, ctx.http_client_mod,
+                        message="Risk Premium",
+                    )
 
     return total_payment, total_subsidy, 0, 0
 
