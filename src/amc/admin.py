@@ -567,6 +567,11 @@ class CharacterLocationAdmin(admin.ModelAdmin):
         except (ValueError, TypeError):
             return JsonResponse({"error": "Invalid datetime format"}, status=400)
 
+        if end_time - start_time > timedelta(hours=6):
+            return JsonResponse(
+                {"error": "Time range cannot exceed 6 hours"}, status=400
+            )
+
         MAP_REAL_X_LEFT = -1280000
         MAP_REAL_Y_TOP = -320000
         MAP_REAL_SIZE = 2200000
