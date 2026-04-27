@@ -39,7 +39,7 @@ from amc.mod_server import (
 from amc.fraud_detection import validate_cargo_payment
 from amc.pipeline.discord import post_discord_delivery_embed
 from amc.pipeline.delivery import atomic_process_delivery
-from amc.subsidies import get_subsidy_for_cargo, subsidise_player
+from amc.subsidies import get_subsidy_for_cargo
 from amc_finance.services import record_ministry_subsidy_spend
 from asgiref.sync import sync_to_async
 
@@ -83,11 +83,6 @@ async def handle_cargo_arrived(event, player, character, ctx):
     from amc.cargo import get_cargo_bonus
     from amc.special_cargo import run_special_cargo_handlers
     from amc.supply_chain import check_and_record_contribution
-    from amc.police import (
-        get_active_police_count,
-        SECURITY_BONUS_RATE,
-        SECURITY_BONUS_MAX,
-    )
 
     timestamp = _parse_timestamp(event)
 
@@ -145,23 +140,27 @@ async def handle_cargo_arrived(event, player, character, ctx):
         delivery_source = group_list[0].sender_point
         delivery_destination = group_list[0].destination_point
 
-        cargo_subsidy_res = await get_subsidy_for_cargo(
-            group_list[0], treasury_balance=ctx.treasury_balance
-        )
-        cargo_subsidy = cargo_subsidy_res[0] * quantity
-        rule = cargo_subsidy_res[2]
-        if rule and cargo_subsidy > 0:
-            await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
-                spent=F("spent") + cargo_subsidy
+        is_illicit = cargo_key in ILLICIT_CARGO_KEYS
+
+        cargo_subsidy = 0
+        if not is_illicit:
+            cargo_subsidy_res = await get_subsidy_for_cargo(
+                group_list[0], treasury_balance=ctx.treasury_balance
             )
-            if ctx.active_term:
-                await record_ministry_subsidy_spend(cargo_subsidy, ctx.active_term.id)
+            cargo_subsidy = cargo_subsidy_res[0] * quantity
+            rule = cargo_subsidy_res[2]
+            if rule and cargo_subsidy > 0:
+                await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
+                    spent=F("spent") + cargo_subsidy
+                )
+                if ctx.active_term:
+                    await record_ministry_subsidy_spend(cargo_subsidy, ctx.active_term.id)
 
         cargo_name = group_list[0].get_cargo_key_display()
 
         # Modded vehicle / on-foot detection for illicit cargo
         is_modded = False
-        if cargo_key in ILLICIT_CARGO_KEYS and ctx.http_client_mod:
+        if is_illicit and ctx.http_client_mod:
             is_modded = await _check_modded_vehicle(
                 character, ctx.http_client_mod
             )
@@ -214,32 +213,20 @@ async def handle_cargo_arrived(event, player, character, ctx):
         delivery_obj = await Delivery.objects.filter(
             character=character, cargo_key=cargo_key, timestamp=timestamp
         ).afirst()
-        sc_bonus = await check_and_record_contribution(
-            delivery=delivery_obj,
-            character=character,
-            cargo_key=cargo_key,
-            quantity=quantity,
-            destination_point=delivery_destination,
-            source_point=delivery_source,
-        )
+        sc_bonus = 0
+        if not is_illicit:
+            sc_bonus = await check_and_record_contribution(
+                delivery=delivery_obj,
+                character=character,
+                cargo_key=cargo_key,
+                quantity=quantity,
+                destination_point=delivery_destination,
+                source_point=delivery_source,
+            )
         delivery_subsidy = delivery_data["subsidy"] + sc_bonus
 
-        # Security bonus for Money + Wanted status
-        security_bonus = 0
-        if cargo_key == "Money":
-            police_count = await get_active_police_count()
-            bonus_rate = min(police_count * SECURITY_BONUS_RATE, SECURITY_BONUS_MAX)
-            security_bonus = int(payment * quantity * bonus_rate)
-            if security_bonus > 0 and character:
-                await subsidise_player(
-                    security_bonus,
-                    character,
-                    ctx.http_client_mod,
-                    message="Risk Premium",
-                )
-
         # Wanted status for all illicit cargo (skipped for modded criminals)
-        if cargo_key in ILLICIT_CARGO_KEYS and character and not is_modded:
+        if is_illicit and character and not is_modded:
             delivery_amount = payment * quantity
             # Accumulate within the debounce window so splitting across multiple
             # small deliveries (~5 s apart) is treated the same as one big one.
@@ -276,15 +263,15 @@ async def handle_cargo_arrived(event, player, character, ctx):
                             character.guid, ctx.http_client, delay=15
                         )
                     )
-                # Link delivery to the criminal record
-                if delivery_obj:
-                    await link_delivery_to_criminal_record(
-                        character, cargo_key, timestamp
-                    )
+            # Link delivery to the criminal record — always, not just when wanted triggers
+            if delivery_obj:
+                await link_delivery_to_criminal_record(
+                    character, cargo_key, timestamp
+                )
 
         # Discord notification — suppressed for illicit cargo to avoid revealing
         # criminal activity in a public channel.
-        if ctx.discord_client and cargo_key not in ILLICIT_CARGO_KEYS:
+        if ctx.discord_client and not is_illicit:
             asyncio.create_task(
                 post_discord_delivery_embed(
                     ctx.discord_client,
@@ -294,7 +281,7 @@ async def handle_cargo_arrived(event, player, character, ctx):
                     delivery_source,
                     delivery_destination,
                     payment * quantity,
-                    delivery_subsidy + security_bonus,
+                    delivery_subsidy,
                     vehicle_key,
                     job=job,
                     delivery_id=delivery_obj.id if delivery_obj else None,
