@@ -89,6 +89,7 @@ from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
 from amc.dashboard_services import get_ministry_dashboard_stats
 from .widgets import AMCOpenLayersWidget, AMCPointOpenLayersWidget
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import render
 
@@ -505,13 +506,23 @@ class RaceSetupAdmin(admin.ModelAdmin):
     inlines = [GameEventInlineAdmin]
 
 
+class NoCountPaginator(Paginator):
+    @property
+    def count(self):
+        return 999999999
+
+
 @admin.register(CharacterLocation)
 class CharacterLocationAdmin(admin.ModelAdmin):
-    list_display = ["timestamp", "character", "location", "map_link"]
+    list_display = ["timestamp", "character", "map_link"]
     list_select_related = ["character", "character__player"]
     readonly_fields = ["character", "map_link"]
     search_fields = ["character__name", "character__player__unique_id"]
     change_list_template = "admin/amc/characterlocation/change_list.html"
+    show_full_result_count = False
+    paginator = NoCountPaginator
+    list_per_page = 100
+    ordering = ["-timestamp"]
 
     @admin.display()
     def map_link(self, character_location):
