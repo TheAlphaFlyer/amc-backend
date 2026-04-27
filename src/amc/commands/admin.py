@@ -685,7 +685,7 @@ async def cmd_spawn_asset(ctx: CommandContext, asset_path: str):
     loc = {
       'X': ctx.player_info["Location"]['X'],
       'Y': ctx.player_info["Location"]['Y'],
-      'Z': ctx.player_info["Location"]['Z'] - 100,
+      'Z': ctx.player_info["Location"]['Z'] - 30,
     }
     player_data = await get_player(
         ctx.http_client_mod, str(ctx.player.unique_id), force_refresh=True
