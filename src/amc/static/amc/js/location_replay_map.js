@@ -125,8 +125,11 @@ var currentFrame = 0;
 var playInterval = null;
 var BASE_INTERVAL_MS = 500;
 
-var startTimeInput = document.getElementById('start-time');
 var endTimeInput = document.getElementById('end-time');
+var durationSlider = document.getElementById('duration-slider');
+var durationLabel = document.getElementById('duration-label');
+var btnEndNow = document.getElementById('btn-end-now');
+var rangeText = document.getElementById('range-text');
 var btnLoad = document.getElementById('btn-load');
 var btnPlay = document.getElementById('btn-play');
 var btnReverse = document.getElementById('btn-reverse');
@@ -144,12 +147,37 @@ function setToTimezoneOffset(d) {
     return local.toISOString().slice(0, 16);
 }
 
-(function setDefaults() {
-    var now = new Date();
-    var oneHourAgo = new Date(now.getTime() - 3600000);
-    startTimeInput.value = setToTimezoneOffset(oneHourAgo);
-    endTimeInput.value = setToTimezoneOffset(now);
-})();
+function formatDuration(minutes) {
+    var h = Math.floor(minutes / 60);
+    var m = minutes % 60;
+    if (h === 0) return m + 'm';
+    if (m === 0) return h + 'h';
+    return h + 'h ' + m + 'm';
+}
+
+function computeRange() {
+    var endDt = new Date(endTimeInput.value);
+    var minutes = parseInt(durationSlider.value);
+    var startDt = new Date(endDt.getTime() - minutes * 60000);
+    return { startDt: startDt, endDt: endDt };
+}
+
+function updateRangeDisplay() {
+    durationLabel.textContent = formatDuration(parseInt(durationSlider.value));
+    if (!endTimeInput.value) { rangeText.textContent = '\u2014'; return; }
+    var r = computeRange();
+    rangeText.textContent = r.startDt.toLocaleString() + '  \u2192  ' + r.endDt.toLocaleString();
+}
+
+btnEndNow.addEventListener('click', function() {
+    endTimeInput.value = setToTimezoneOffset(new Date());
+    updateRangeDisplay();
+});
+endTimeInput.addEventListener('input', updateRangeDisplay);
+durationSlider.addEventListener('input', updateRangeDisplay);
+
+endTimeInput.value = setToTimezoneOffset(new Date());
+updateRangeDisplay();
 
 function toLocalISOString(d) {
     var pad = function(n) { return n < 10 ? '0' + n : n; };
@@ -168,10 +196,8 @@ function bisectRight(arr, ts) {
 }
 
 btnLoad.addEventListener('click', function() {
-    var startVal = startTimeInput.value;
-    var endVal = endTimeInput.value;
-    if (!startVal || !endVal) {
-        alert('Please enter both start and end times.');
+    if (!endTimeInput.value) {
+        alert('Please set an end time.');
         return;
     }
 
@@ -183,10 +209,9 @@ btnLoad.addEventListener('click', function() {
     trailSource.clear();
     legendDiv.innerHTML = '';
 
-    var startDt = new Date(startVal);
-    var endDt = new Date(endVal);
-    var startISO = toLocalISOString(startDt);
-    var endISO = toLocalISOString(endDt);
+    var r = computeRange();
+    var startISO = toLocalISOString(r.startDt);
+    var endISO = toLocalISOString(r.endDt);
 
     loadingIndicator.style.display = 'inline';
 
@@ -275,6 +300,13 @@ btnLoad.addEventListener('click', function() {
 });
 
 var TELEPORT_THRESHOLD = 10000;
+var showTrailsCheckbox = document.getElementById('show-trails');
+var showTrails = true;
+
+showTrailsCheckbox.addEventListener('change', function() {
+    showTrails = showTrailsCheckbox.checked;
+    if (uniqueTimestamps.length > 0) showFrame(currentFrame);
+});
 
 function olDistance(c1, c2) {
     var dx = c1[0] - c2[0];
@@ -308,12 +340,14 @@ function showFrame(frameIndex) {
         }
         if (current.length >= 2) segments.push(current);
 
-        segments.forEach(function(seg) {
-            trailSource.addFeature(new ol.Feature({
-                geometry: new ol.geom.LineString(seg),
-                character_id: charId,
-            }));
-        });
+        if (showTrails) {
+            segments.forEach(function(seg) {
+                trailSource.addFeature(new ol.Feature({
+                    geometry: new ol.geom.LineString(seg),
+                    character_id: charId,
+                }));
+            });
+        }
 
         trailSource.addFeature(new ol.Feature({
             geometry: new ol.geom.Point(latestEntry.coords),
