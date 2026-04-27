@@ -1,6 +1,6 @@
 import aiohttp
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from asgiref.sync import async_to_sync
 from django.contrib import admin
 from django.http import JsonResponse
@@ -511,6 +511,7 @@ class CharacterLocationAdmin(admin.ModelAdmin):
     list_select_related = ["character", "character__player"]
     readonly_fields = ["character", "map_link"]
     search_fields = ["character__name", "character__player__unique_id"]
+    change_list_template = "admin/amc/characterlocation/change_list.html"
 
     @admin.display()
     def map_link(self, character_location):
@@ -522,6 +523,83 @@ class CharacterLocationAdmin(admin.ModelAdmin):
         pins_str = json.dumps([location])
         return mark_safe(
             f"<a href='https://www.aseanmotorclub.com/map?pins={pins_str}&focus_index=0' target='_blank'>Open on Map</a>"
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "replay-map/",
+                self.admin_site.admin_view(self.replay_map_view),
+                name="amc_characterlocation_replay_map",
+            ),
+            path(
+                "replay-geojson/",
+                self.admin_site.admin_view(self.replay_geojson_view),
+                name="amc_characterlocation_replay_geojson",
+            ),
+        ]
+        return custom_urls + urls
+
+    def replay_map_view(self, request):
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": "Location Replay",
+        }
+        return TemplateResponse(
+            request, "amc/admin/characterlocation/replay_map.html", context
+        )
+
+    def replay_geojson_view(self, request):
+        start_str = request.GET.get("start")
+        end_str = request.GET.get("end")
+        if not start_str or not end_str:
+            return JsonResponse({"error": "start and end parameters required"}, status=400)
+
+        try:
+            start_time = datetime.fromisoformat(start_str)
+            end_time = datetime.fromisoformat(end_str)
+            if start_time.tzinfo is None:
+                start_time = timezone.make_aware(start_time)
+            if end_time.tzinfo is None:
+                end_time = timezone.make_aware(end_time)
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Invalid datetime format"}, status=400)
+
+        MAP_REAL_X_LEFT = -1280000
+        MAP_REAL_Y_TOP = -320000
+        MAP_REAL_SIZE = 2200000
+
+        qs = (
+            CharacterLocation.objects.filter(
+                timestamp__gte=start_time, timestamp__lte=end_time
+            )
+            .select_related("character")
+            .order_by("timestamp")
+        )
+
+        features = []
+        for cl in qs:
+            if not cl.location:
+                continue
+            x = cl.location.x - MAP_REAL_X_LEFT
+            y = -(cl.location.y - MAP_REAL_Y_TOP) + MAP_REAL_SIZE
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [x, y]},
+                    "properties": {
+                        "id": cl.id,
+                        "character_name": cl.character.name,
+                        "character_id": cl.character_id,
+                        "timestamp": cl.timestamp.isoformat(),
+                    },
+                }
+            )
+
+        return JsonResponse(
+            {"type": "FeatureCollection", "features": features}
         )
 
 

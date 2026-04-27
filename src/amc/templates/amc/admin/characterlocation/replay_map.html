@@ -1,0 +1,198 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css">
+<link rel="stylesheet" href="/static/gis/css/ol3.css">
+<script src="https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js"></script>
+<style>
+    #replay-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 10px;
+        background: #f8f8f8;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    #replay-controls label {
+        font-size: 13px;
+        font-weight: 600;
+    }
+    #replay-controls input[type="datetime-local"] {
+        padding: 4px 8px;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+    }
+    #replay-controls button {
+        padding: 5px 12px;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        cursor: pointer;
+        background: #fff;
+    }
+    #replay-controls button:hover {
+        background: #e8e8e8;
+    }
+    #replay-controls button.active {
+        background: #417690;
+        color: #fff;
+        border-color: #365f78;
+    }
+    #replay-controls button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    #speed-control {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    #speed-control select {
+        padding: 4px;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+    }
+    #timeline-bar {
+        width: 100%;
+        margin-bottom: 6px;
+    }
+    #timeline-slider {
+        width: 100%;
+        cursor: pointer;
+    }
+    #timeline-label {
+        font-size: 12px;
+        color: #666;
+        text-align: center;
+    }
+    #replay-map {
+        width: 100%;
+        height: calc(100vh - 260px);
+        min-height: 400px;
+    }
+    #replay-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 6px;
+        font-size: 12px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .ol-popup {
+        position: absolute;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-size: 13px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        white-space: nowrap;
+        pointer-events: auto;
+    }
+    .ol-popup-closer {
+        text-decoration: none;
+        color: #666;
+        float: right;
+        margin-left: 8px;
+    }
+    .ol-popup-closer:hover {
+        color: #000;
+    }
+    #map-toolbar {
+        margin-bottom: 8px;
+    }
+    #map-toolbar a {
+        display: inline-block;
+        padding: 4px 12px;
+        background: #417690;
+        color: #fff;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 13px;
+    }
+    #map-toolbar a:hover {
+        background: #365f78;
+    }
+    #loading-indicator {
+        display: none;
+        font-size: 13px;
+        color: #417690;
+        margin-left: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% translate "Home" %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' 'amc' %}">AMC</a>
+    &rsaquo; <a href="{% url 'admin:amc_characterlocation_changelist' %}">Character Locations</a>
+    &rsaquo; Location Replay
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="map-toolbar">
+    <a href="{% url 'admin:amc_characterlocation_changelist' %}">Back to Character Location list</a>
+</div>
+
+<div id="replay-controls">
+    <label for="start-time">From:</label>
+    <input type="datetime-local" id="start-time" step="1">
+    <label for="end-time">To:</label>
+    <input type="datetime-local" id="end-time" step="1">
+    <button id="btn-load" type="button">Load</button>
+    <span id="loading-indicator">Loading...</span>
+    <span style="margin-left: auto;"></span>
+    <button id="btn-rewind" type="button" disabled title="Rewind to start">&#x23EE;</button>
+    <button id="btn-reverse" type="button" disabled title="Reverse">&#x23EA;</button>
+    <button id="btn-play" type="button" disabled title="Play">&#x25B6;</button>
+    <button id="btn-forward" type="button" disabled title="Forward to end">&#x23ED;</button>
+    <div id="speed-control">
+        <label for="speed-select">Speed:</label>
+        <select id="speed-select" disabled>
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+            <option value="30">30x</option>
+            <option value="60">60x</option>
+        </select>
+    </div>
+</div>
+
+<div id="timeline-bar">
+    <input type="range" id="timeline-slider" min="0" max="0" value="0" disabled>
+    <div id="timeline-label">No data loaded</div>
+</div>
+
+<div id="replay-map" class="dj_map"></div>
+
+<div id="popup" class="ol-popup">
+    <a href="#" id="popup-closer" class="ol-popup-closer">&times;</a>
+    <div id="popup-content"></div>
+</div>
+
+<div id="replay-legend"></div>
+
+<script>var geojsonUrl = "{% url 'admin:amc_characterlocation_replay_geojson' %}";</script>
+<script src="/static/amc/js/location_replay_map.js?v=1"></script>
+{% endblock %}
