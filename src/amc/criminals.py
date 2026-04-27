@@ -175,6 +175,7 @@ async def escalate_heat_on_logout(character, http_client, http_client_mod=None) 
                 target_chars=target_chars,
                 http_client=http_client,
                 http_client_mod=http_client_mod,
+                reason="Arrested for logging out while wanted near police.",
             )
             logger.info(
                 "logout arrest: %s — dist=%.0f confiscated=$%d",
@@ -383,6 +384,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                         target_chars=target_chars,
                         http_client=http_client,
                         http_client_mod=http_client_mod,
+                        reason="Arrested for going underwater while wanted.",
                     )
                     logger.info(
                         "underwater arrest: %s — z=%.0f confiscated=$%d",
@@ -438,6 +440,7 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                                     target_chars=target_chars,
                                     http_client=http_client,
                                     http_client_mod=http_client_mod,
+                                    reason="Arrested for using a modded vehicle while wanted.",
                                 )
                                 logger.info(
                                     "modded vehicle arrest: %s — confiscated=$%d",

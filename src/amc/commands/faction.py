@@ -83,6 +83,7 @@ async def execute_arrest(
     target_chars: dict,
     http_client,
     http_client_mod,
+    reason: str = "",
 ) -> tuple[list[str], int]:
     """Execute arrest: teleport to jail, confiscate money, announce.
 
@@ -94,6 +95,8 @@ async def execute_arrest(
         target_chars: guid -> Character model for each suspect.
         http_client: Game server HTTP client (for announcements).
         http_client_mod: Mod server HTTP client (for teleport, money, messages).
+        reason: Human-readable reason for the arrest, shown to the arrested
+            player.  Empty string for no reason display.
 
     Returns:
         (arrested_names, total_confiscated) tuple.
@@ -299,9 +302,12 @@ async def execute_arrest(
                 continue  # teleport failed but confiscation already recorded
 
         # Popup notification
+        popup_msg = "You have been arrested!"
+        if reason:
+            popup_msg += f"\n\nReason: {reason}"
         await show_popup(
             http_client_mod,
-            "You have been arrested!",
+            popup_msg,
             player_id=crim_uid,
         )
 
@@ -322,6 +328,7 @@ async def perform_arrest(
     http_client,
     http_client_mod,
     officer_message_format: str = "{names} arrested and sent to jail.",
+    reason: str = "",
 ) -> tuple[list[str], int]:
     """Execute arrest and send standard officer notification + server announcement.
 
@@ -337,6 +344,7 @@ async def perform_arrest(
         target_chars=target_chars,
         http_client=http_client,
         http_client_mod=http_client_mod,
+        reason=reason,
     )
 
     if arrested_names and officer_character:

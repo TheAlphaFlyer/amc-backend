@@ -134,6 +134,7 @@ async def handle_police_penalty(event, player, character, ctx):
             http_client=ctx.http_client,
             http_client_mod=ctx.http_client_mod,
             officer_message_format="{names} arrested and sent to jail.",
+            reason="Arrested by police during a traffic stop.",
         )
     except ValueError as e:
         logger.warning("Pull-over arrest skipped: %s", e)

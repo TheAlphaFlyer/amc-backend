@@ -27,7 +27,7 @@ WANTED_TELEPORT_BLOCKED_MESSAGE = (
 )
 
 
-async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mod):
+async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mod, reason: str = ""):
     """Run the full arrest flow when a wanted criminal attempts to teleport.
 
     Calls execute_arrest with officer_character=None (system arrest):
@@ -36,7 +36,7 @@ async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mo
       - Records confiscation to the treasury (no officer reward).
       - Teleports the criminal to jail.
       - Sets character.jailed_until for boundary enforcement.
-      - Shows a popup.
+      - Shows a popup with the arrest reason.
     """
     from amc.commands.faction import execute_arrest
 
@@ -59,6 +59,7 @@ async def _auto_arrest_wanted_criminal(wanted, character, player, http_client_mo
             target_chars=target_chars,
             http_client=None,
             http_client_mod=http_client_mod,
+            reason=reason,
         )
     except ValueError as exc:
         # Jail TeleportPoint not configured — log and bail

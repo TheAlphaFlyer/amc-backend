@@ -190,11 +190,13 @@ async def _handle_teleport_or_respawn(event, character, ctx):
 
     from amc.commands.teleport import _auto_arrest_wanted_criminal
 
+    hook_display = hook_name or "teleport"
     await _auto_arrest_wanted_criminal(
         wanted,
         character,
         character.player,
         ctx.http_client_mod,
+        reason=f"Arrested for teleporting ({hook_display}) while wanted.",
     )
 
     return 0, 0, 0, 0

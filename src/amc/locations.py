@@ -256,6 +256,7 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
                     character,
                     character.player,
                     http_client_mod,
+                    reason="Arrested for using a teleport portal while wanted.",
                 )
                 await asyncio.sleep(0.1)
                 continue
