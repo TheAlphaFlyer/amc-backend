@@ -1804,3 +1804,176 @@ class ClearSuspectTests(TestCase):
             await refresh_suspect_tags(mock_http_mod)
 
         self.assertEqual(mock_clear_suspect.call_count, 2)
+
+    # -----------------------------------------------------------------------
+    # Costume-only criminals are NOT tracked for transition-out clearing
+    # (regression tests for the "suspect GE flickers every 10s" bug).
+    # -----------------------------------------------------------------------
+
+    async def _setup_costume_only_criminal(self):
+        """A criminal wearing a suspect costume but with no wanted record."""
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
+        )
+        await character.asave(
+            update_fields=["last_online", "wearing_costume", "costume_item_key"]
+        )
+        await CriminalRecord.objects.acreate(
+            character=character, reason="Test", confiscatable_amount=1000,
+        )
+        return character
+
+    async def test_costume_only_guid_not_tracked_in_last_suspect_guids(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A costume-only (non-wanted) GUID is never added to _last_suspect_guids.
+
+        This is the core invariant that prevents the 10 s suspect-GE flicker
+        for costume criminals.  Clearing on costume removal is driven by the
+        ServerSetEquipmentInventory webhook, not by this tick.
+        """
+        character = await self._setup_costume_only_criminal()
+        players = _make_players_list([
+            _make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)
+        ])
+        mock_http_mod = AsyncMock()
+
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # The costume make_suspect call happened …
+        mock_make_suspect.assert_any_await(
+            mock_http_mod, character.guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
+        )
+        # … but the guid must NOT appear in the wanted-only tracking set.
+        self.assertNotIn(character.guid, _last_suspect_guids)
+
+    async def test_costume_only_intermittent_locations_miss_no_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """Regression: costume criminal dropping out of `locations` on a tick
+        does NOT trigger clear_suspect on the next tick.
+
+        Previously, the tick's transition-out pass would diff the combined
+        flagged set, so any tick where the mod server's player list omitted
+        the GUID would cause clear_suspect to fire on the following tick,
+        making the blue suspect GE flicker off every 10 s.
+        """
+        character = await self._setup_costume_only_criminal()
+        players_present = _make_players_list([
+            _make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)
+        ])
+        players_missing = _make_players_list([])
+        mock_http_mod = AsyncMock()
+
+        # Tick 1: player present → costume pass applies make_suspect.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players_present), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # Tick 2: locations map misses the GUID (transient mod-server miss).
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players_missing), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # Tick 3: player reappears.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players_present), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # clear_suspect must never have fired for this costume-only GUID.
+        mock_clear_suspect.assert_not_called()
+
+    async def test_costume_only_last_online_lag_no_clear(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """Regression: costume criminal whose `last_online` falls outside the
+        60 s window on a tick does NOT trigger clear_suspect on the next tick.
+        """
+        character = await self._setup_costume_only_criminal()
+        players = _make_players_list([
+            _make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)
+        ])
+        mock_http_mod = AsyncMock()
+
+        # Tick 1: fresh last_online → costume pass applies make_suspect.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # Push last_online outside the 60 s window — simulates mod-server lag
+        # in updating the character's heartbeat.
+        character.last_online = timezone.now() - timedelta(minutes=5)
+        await character.asave(update_fields=["last_online"])
+
+        # Tick 2: character is excluded from the costume queryset.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        # clear_suspect must never have fired for this costume-only GUID.
+        mock_clear_suspect.assert_not_called()
+
+    async def test_wanted_and_costume_criminal_wanted_cleared_clears_suspect(
+        self,
+        mock_make_suspect,
+        mock_clear_suspect,
+    ):
+        """A player who is both wanted AND wearing a costume: when the wanted
+        record is cleared externally, the next tick's transition-out pass
+        clears the suspect GE (even though the player is still wearing the
+        costume).  The costume pass will re-apply make_suspect, so the GE
+        reappears within ≤10 s — same as today's behaviour for the wanted
+        path.
+        """
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
+        )
+        await character.asave(
+            update_fields=["last_online", "wearing_costume", "costume_item_key"]
+        )
+        await CriminalRecord.objects.acreate(
+            character=character, reason="Test", confiscatable_amount=1000,
+        )
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
+
+        players = _make_players_list([
+            _make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)
+        ])
+        mock_http_mod = AsyncMock()
+
+        # Tick 1: wanted → guid flagged in _last_suspect_guids via wanted pass.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+        self.assertIn(character.guid, _last_suspect_guids)
+
+        # Clear the wanted record externally (e.g. admin command).
+        await Wanted.objects.filter(character=character).aupdate(
+            wanted_remaining=0, expired_at=timezone.now(),
+        )
+
+        # Tick 2: no active wanted → transition-out clears the GE.
+        with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+             patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+            await refresh_suspect_tags(mock_http_mod)
+
+        mock_clear_suspect.assert_any_await(mock_http_mod, character.guid)
+        # On tick 2 the costume pass re-applied make_suspect, but the guid
+        # is NOT tracked in _last_suspect_guids (costume-only from this tick).
+        self.assertNotIn(character.guid, _last_suspect_guids)
