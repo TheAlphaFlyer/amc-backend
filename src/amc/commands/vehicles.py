@@ -3,7 +3,7 @@ from amc.command_framework import registry, CommandContext
 import asyncio
 from amc.mod_server import get_player_last_vehicle, get_player_last_vehicle_parts
 from amc.game_server import get_players
-from amc.vehicles import format_vehicle_name
+from amc.vehicles import format_vehicle_name, format_vehicle_part_game
 from amc.mod_detection import (
     detect_custom_parts,
     detect_incompatible_parts,
@@ -161,3 +161,83 @@ async def cmd_check_mods(ctx: CommandContext, target_player_name: Optional[str] 
                 drive=drive_line,
             )
         )
+
+
+@registry.register(
+    "/check_parts",
+    description=gettext_lazy("List all parts on a player's vehicle"),
+    category="Vehicle Management",
+)
+async def cmd_check_parts(ctx: CommandContext, target_player_name: Optional[str] = None):
+    is_admin = ctx.player_info and ctx.player_info.get("bIsAdmin")
+    checking_self = not (target_player_name and is_admin)
+    if not checking_self:
+        players = await get_players(ctx.http_client)
+        target_pid = fuzzy_find_player(players, target_player_name)
+        if not target_pid:
+            await ctx.reply(
+                _(
+                    "<Title>Player not found</>"
+                    "\n\nCould not find a player matching that name."
+                )
+            )
+            return
+        target_character_guid = None
+        for pid, p_data in players:
+            if pid == target_pid:
+                target_character_guid = p_data.get("character_guid")
+                break
+    else:
+        target_character_guid = str(ctx.character.guid)
+        target_player_name = ctx.character.name
+
+    try:
+        last_vehicle, parts_data = await asyncio.gather(
+            get_player_last_vehicle(ctx.http_client_mod, target_character_guid),
+            get_player_last_vehicle_parts(ctx.http_client_mod, target_character_guid, complete=False),
+        )
+    except Exception:
+        await ctx.reply(
+            _("<Title>Error</>\n\nFailed to fetch vehicle data. Is the player online?")
+        )
+        return
+
+    vehicle = last_vehicle.get("vehicle")
+    if not vehicle:
+        await ctx.reply(
+            _("<Title>No Vehicle</>\n\n{name} has no active vehicle.").format(
+                name=target_player_name
+            )
+        )
+        return
+
+    vehicle_name = format_vehicle_name(vehicle["fullName"])
+    parts = parts_data.get("parts", [])
+
+    if not parts:
+        await ctx.reply(
+            _(
+                "<Title>Parts List</>"
+                "\n\n<Bold>{name}</> — {vehicle}"
+                "\n\nNo parts found."
+            ).format(
+                name=target_player_name,
+                vehicle=vehicle_name,
+            )
+        )
+        return
+
+    sorted_parts = sorted(parts, key=lambda p: p.get("Slot", 0))
+    parts_lines = "\n".join(format_vehicle_part_game(p) for p in sorted_parts)
+
+    await ctx.reply(
+        _(
+            "<Title>Parts List</>"
+            "\n\n<Bold>{name}</> — {vehicle}"
+            "\n\n{parts}"
+        ).format(
+            name=target_player_name,
+            vehicle=vehicle_name,
+            parts=parts_lines,
+        )
+    )
