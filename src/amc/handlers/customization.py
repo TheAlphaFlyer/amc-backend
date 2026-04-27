@@ -5,6 +5,7 @@ from django.conf import settings
 from amc.handlers import register
 from amc.mod_server import clear_suspect, make_suspect
 from amc.models import CriminalRecord, Wanted
+from amc.player_tags import refresh_player_name
 
 logger = logging.getLogger("amc.webhook.handlers.customization")
 
@@ -47,6 +48,11 @@ async def handle_set_equipment_inventory(event, player, character, ctx):
                 character=character,
                 reason="Wearing criminal costume",
             )
+            try:
+                await refresh_player_name(character, ctx.http_client_mod)
+            except Exception:
+                logger.warning("refresh_player_name (costume-equip) failed for %s",
+                               character.name, exc_info=True)
         try:
             await make_suspect(
                 ctx.http_client_mod,

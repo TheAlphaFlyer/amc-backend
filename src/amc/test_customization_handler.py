@@ -71,7 +71,8 @@ class CostumeEquipWithRecordTests(TestCase):
         ctx = _make_ctx()
 
         with patch("amc.handlers.customization.settings.SUSPECT_COSTUMES", frozenset({"Costume_Police_01"})), \
-             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect:
+             patch("amc.handlers.customization.make_suspect", new_callable=AsyncMock) as mock_suspect, \
+             patch("amc.handlers.customization.refresh_player_name", new_callable=AsyncMock) as mock_refresh:
             await dispatch("ServerSetEquipmentInventory", event, player, character, ctx)
 
         await character.arefresh_from_db()
@@ -81,6 +82,7 @@ class CostumeEquipWithRecordTests(TestCase):
         mock_suspect.assert_called_once_with(
             ctx.http_client_mod, character.guid, duration_seconds=70,
         )
+        mock_refresh.assert_called_once_with(character, ctx.http_client_mod)
 
 
 class CostumeUnequipTests(TestCase):
