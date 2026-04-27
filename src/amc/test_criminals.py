@@ -1261,6 +1261,127 @@ class RefreshSuspectTagsTests(TestCase):
         guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == character.guid]
         self.assertEqual(len(guid_calls), 1)
 
+    # -------------------------------------------------------------------
+    # Every-tick reapplication (mod clamps GE to 60 s; cron fires every 30 s)
+    # -------------------------------------------------------------------
+
+    async def test_wanted_only_make_suspect_called_every_tick(
+        self,
+        mock_make_suspect,
+    ):
+        """A wanted player (no costume) gets make_suspect called on every
+        refresh_suspect_tags tick.  Guards the 30 s reapplication cadence
+        required because the mod clamps the GE duration to ~60 s regardless
+        of the duration we pass.
+        """
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        players = _make_players_list([
+            _make_player_data(criminal.player.unique_id, criminal.guid, *_SUSPECT_LOC)
+        ])
+        mock_http_mod = AsyncMock()
+
+        # Run 3 consecutive ticks — expect a make_suspect call per tick.
+        for _ in range(3):
+            with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+                 patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+                await refresh_suspect_tags(mock_http_mod)
+
+        guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == criminal.guid]
+        self.assertEqual(len(guid_calls), 3)
+
+    async def test_wanted_with_costume_make_suspect_called_every_tick(
+        self,
+        mock_make_suspect,
+    ):
+        """A wanted player who is ALSO wearing a suspect costume still gets
+        make_suspect called exactly once per tick (via the wanted pass) and
+        does so on every tick — the costume pass must not short-circuit,
+        skip, or duplicate the call.
+        """
+        _costume_reconciled_guids.clear()
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
+        )
+        await character.asave(
+            update_fields=["last_online", "wearing_costume", "costume_item_key"]
+        )
+        await CriminalRecord.objects.acreate(
+            character=character, reason="Test", confiscatable_amount=1000,
+        )
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
+
+        players = _make_players_list([
+            _make_player_data(character.player.unique_id, character.guid, *_SUSPECT_LOC)
+        ])
+        mock_http_mod = AsyncMock()
+
+        for _ in range(3):
+            with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
+                 patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+                await refresh_suspect_tags(mock_http_mod)
+
+        guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == character.guid]
+        self.assertEqual(len(guid_calls), 3)
+
+    async def test_wanted_only_reapplied_when_mod_player_list_misses(
+        self,
+        mock_make_suspect,
+    ):
+        """Regression: the 30 s reapplication must NOT be gated on the mod
+        server's /players response.  Even when get_players returns an empty
+        list (cache miss, transient API hiccup), a wanted player whose DB
+        last_online is fresh still gets make_suspect called.
+        """
+        criminal = await self._setup_criminal(wanted_remaining=300)
+        mock_http_mod = AsyncMock()
+
+        # Simulate 3 ticks where the mod server's player list is empty.
+        for _ in range(3):
+            with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]), \
+                 patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+                await refresh_suspect_tags(mock_http_mod)
+
+        guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == criminal.guid]
+        self.assertEqual(len(guid_calls), 3)
+
+    async def test_wanted_with_costume_reapplied_when_mod_player_list_misses(
+        self,
+        mock_make_suspect,
+    ):
+        """Regression: a wanted+costume player also gets make_suspect
+        reapplied on every tick even when the mod's player list is empty.
+        Still exactly once per tick (wanted pass takes priority and the
+        costume pass must not fire a second time).
+        """
+        _costume_reconciled_guids.clear()
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(
+            player=player,
+            last_online=timezone.now(),
+            wearing_costume=True,
+            costume_item_key="Costume_Police_01",
+        )
+        await character.asave(
+            update_fields=["last_online", "wearing_costume", "costume_item_key"]
+        )
+        await CriminalRecord.objects.acreate(
+            character=character, reason="Test", confiscatable_amount=1000,
+        )
+        await Wanted.objects.acreate(character=character, wanted_remaining=300)
+        mock_http_mod = AsyncMock()
+
+        for _ in range(3):
+            with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]), \
+                 patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
+                await refresh_suspect_tags(mock_http_mod)
+
+        guid_calls = [c for c in mock_make_suspect.call_args_list if c.args[1] == character.guid]
+        self.assertEqual(len(guid_calls), 3)
+
     async def test_reconciliation_hydrates_costume_state(
         self,
         mock_make_suspect,
