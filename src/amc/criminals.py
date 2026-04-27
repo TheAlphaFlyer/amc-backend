@@ -70,14 +70,19 @@ _costume_reconciled_guids: set[str] = set()
 # refresh_suspect_tags on the previous tick.  Used to detect transition-out
 # for wanted players (e.g. a wanted record cleared externally or expired
 # between ticks) so we can proactively call clear_suspect instead of waiting
-# for the GE duration to expire naturally.
+# for the mod-side GE duration to expire naturally.
 #
-# Costume-only criminals are deliberately NOT tracked here: clearing the
-# suspect GE when a costume is removed is handled by the
-# ServerSetEquipmentInventory webhook in amc/handlers/customization.py.
-# Including them here would cause the GE to flicker every 10 s whenever the
-# costume pass's gating conditions (mod-server player-list miss, momentary
-# last_online lag) transiently exclude the GUID.
+# Costume-only criminals are deliberately NOT tracked here: a transient
+# `last_online` lag that drops them from the costume queryset for one tick
+# must not trigger a transition-out clear.  Clearing on costume removal is
+# driven by the ServerSetEquipmentInventory webhook in
+# amc/handlers/customization.py, which fires synchronously when the player
+# un-equips the costume.
+#
+# The transition-out pass, however, consults the *combined* suspect set
+# (wanted | costume) when deciding whether to clear.  This means a player
+# who was wanted last tick but is now only a costume suspect retains the
+# GE (no clear_suspect call) — only true transition-to-nothing clears.
 _last_suspect_guids: set[str] = set()
 
 
@@ -580,18 +585,46 @@ async def tick_wanted_countdown(http_client, http_client_mod) -> None:
                 logger.warning(f"Failed to announce money secured for {char.name}")
             # Immediately drop the in-game suspect GE so the blue overlay and
             # Net_Suspects entry disappear within the same tick rather than
-            # waiting up to ~70 s for the last-applied duration to expire.
-            # refresh_suspect_tags would also clear this on its next 10 s pass,
-            # but we want instant feedback when a chase ends.
+            # waiting up to ~60 s for the mod-side GE duration to expire.
+            # refresh_suspect_tags would also clear this on its next 30 s
+            # pass, but we want instant feedback when a chase ends.
+            #
+            # However, if the player is still wearing a suspect costume
+            # (active CriminalRecord + wearing_costume=True), the costume
+            # pass of refresh_suspect_tags will re-flag them within 30 s —
+            # clearing here would cause a visible gap in the blue overlay.
+            # Reapply make_suspect instead to reset the 60 s cap cleanly
+            # and keep them as a suspect.
             if http_client_mod:
-                try:
-                    await clear_suspect(http_client_mod, char.guid)
-                except Exception:
-                    logger.warning(
-                        "clear_suspect failed for %s after wanted expired",
-                        char.name,
-                    )
-                _last_suspect_guids.discard(char.guid)
+                still_costume_suspect = await CriminalRecord.objects.filter(
+                    character=char,
+                    cleared_at__isnull=True,
+                    character__wearing_costume=True,
+                ).aexists()
+                if still_costume_suspect:
+                    try:
+                        await make_suspect(
+                            http_client_mod,
+                            char.guid,
+                            duration_seconds=CRIMINAL_SUSPECT_DURATION,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "make_suspect (post-wanted costume) failed for %s",
+                            char.name,
+                        )
+                    # Still a suspect → stay in the tracked set so the next
+                    # refresh_suspect_tags transition-out pass doesn't clear us.
+                    _last_suspect_guids.add(char.guid)
+                else:
+                    try:
+                        await clear_suspect(http_client_mod, char.guid)
+                    except Exception:
+                        logger.warning(
+                            "clear_suspect failed for %s after wanted expired",
+                            char.name,
+                        )
+                    _last_suspect_guids.discard(char.guid)
 
 
 # ---------------------------------------------------------------------------
@@ -602,63 +635,75 @@ CRIMINAL_RECORD_HALF_LIFE_MINUTES = 120  # 2 hours of online time
 CRIMINAL_RECORD_DECAY_FACTOR = 0.5 ** (1 / CRIMINAL_RECORD_HALF_LIFE_MINUTES)
 CRIMINAL_RECORD_DECAY_FLOOR = 100  # confiscatable amounts below this are zeroed out
 ONLINE_THRESHOLD_SECONDS = 60  # character considered online if last_online < 60s ago
-CRIMINAL_SUSPECT_DURATION = 70  # seconds — slightly > tick interval (60s) for continuous overlap
+CRIMINAL_SUSPECT_DURATION = 70  # seconds — mod clamps to 60s; refresh_suspect_tags reapplies every 30s for overlap
 
 
 async def refresh_suspect_tags(http_client_mod) -> None:
     """Re-apply the suspect flag to every online wanted player and to every
     online active criminal wearing a costume.
 
-    Called every 10 seconds via arq cron, decoupled from the 1-second wanted
-    countdown tick so that suspect-tagging cadence can be tuned independently.
+    Called every 30 seconds via arq cron (see ``WorkerSettings.cron_jobs``).
+    The mod server currently caps the suspect GE duration at 60 s regardless
+    of the ``DurationSeconds`` we pass, so this cadence must be strictly
+    less than 60 s to prevent the status from lapsing between ticks.
 
-    Also emits ``clear_suspect`` for players who were flagged via the wanted
-    pass on the previous tick but no longer have an active wanted record —
-    this catches transitions (e.g. wanted state cleared externally or
-    mutated between the 1 s countdown tick and this 10 s tick) without
-    waiting for the last-applied GE duration to expire.
+    Gating is driven entirely off DB state (``character.last_online`` +
+    ``wearing_costume`` + active ``Wanted``/``CriminalRecord``) — not the
+    mod server's transient ``/players`` snapshot.  This avoids dropping
+    legitimate suspects when the mod's player list momentarily misses a
+    GUID (2 s cache miss, brief API hiccup, missing ``location`` field
+    while loading in, etc.) which previously caused the GE to expire.
 
-    Costume-only criminals are NOT tracked for transition-out clearing.
-    The costume pass's gating conditions (mod-server player-list miss,
-    momentary last_online lag) drop costume GUIDs out of the flagged set
-    intermittently, which previously caused the blue suspect GE to flicker
-    off every 10 s.  Clearing on costume removal is instead driven by the
-    ServerSetEquipmentInventory webhook in amc/handlers/customization.py,
-    which fires synchronously when the player un-equips the costume.
+    Emits ``clear_suspect`` only for players whose *combined* suspect
+    status (wanted OR wearing-costume) transitioned to cleared — so a
+    wanted→not-wanted transition while the player is still wearing a
+    costume preserves the suspect GE.
     """
+    online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+
     # --- Wanted pass ---
+    # DB is the source of truth.  Every online wanted player is re-flagged
+    # every tick regardless of whether the mod's player list currently
+    # reports them.
     wanted_guids: set[str] = set()
     wanted_list = [
         w
         async for w in Wanted.objects.filter(
             expired_at__isnull=True,
             wanted_remaining__gt=0,
+            character__guid__isnull=False,
+            character__last_online__gte=online_cutoff,
         ).select_related("character")
     ]
 
-    players = await get_players(http_client_mod)
-    locations = _build_player_locations(players) if players else {}
-
     for wanted in wanted_list:
         sus_guid = wanted.character.guid
-        if not sus_guid or sus_guid not in locations:
+        if not sus_guid:
             continue
+        # Pass at least CRIMINAL_SUSPECT_DURATION so the duration never
+        # collapses to 1 s at the escape floor (wanted_remaining=0.1).  The
+        # mod currently clamps to 60 s anyway, but this future-proofs the
+        # call for when it honours the passed value.
         duration_seconds = math.ceil(
             wanted.wanted_remaining / BASE_DECAY_PER_TICK * TICK_INTERVAL
         )
         try:
             await make_suspect(
-                http_client_mod, sus_guid, duration_seconds=max(1, duration_seconds)
+                http_client_mod,
+                sus_guid,
+                duration_seconds=max(CRIMINAL_SUSPECT_DURATION, duration_seconds),
             )
             wanted_guids.add(sus_guid)
         except Exception:
             logger.warning("Failed to make suspect for %s", wanted.character.name)
 
     # --- Costume criminal pass ---
-    # Note: costume GUIDs are NOT added to _last_suspect_guids; see the
-    # module-level comment on that set.  Intermittent gating misses here
-    # must not trigger transition-out clears.
-    online_cutoff = timezone.now() - timedelta(seconds=ONLINE_THRESHOLD_SECONDS)
+    # DB-gated: active CriminalRecord + wearing_costume=True + online.
+    # Note: costume GUIDs are NOT added to _last_suspect_guids (see the
+    # module-level comment on that set).  They ARE collected into
+    # costume_guids for use by the transition-out pass below, which
+    # consults the combined wanted|costume set to decide whether to clear.
+    costume_guids: set[str] = set()
     costume_criminals = CriminalRecord.objects.filter(
         cleared_at__isnull=True,
         character__wearing_costume=True,
@@ -668,11 +713,12 @@ async def refresh_suspect_tags(http_client_mod) -> None:
 
     async for rec in costume_criminals:
         guid = rec.character.guid
+        costume_guids.add(guid)
         if guid in wanted_guids:
             # Already refreshed via the wanted pass with the wanted-derived
-            # duration; skip the costume re-apply.
-            continue
-        if guid not in locations:
+            # duration; skip the costume re-apply but keep the guid in
+            # costume_guids so the transition-out set sees it as "still
+            # costume-suspect" if the wanted record clears before next tick.
             continue
         try:
             await make_suspect(
@@ -703,23 +749,30 @@ async def refresh_suspect_tags(http_client_mod) -> None:
                 rec.character.wearing_costume = wearing
                 rec.character.costume_item_key = costume_key
                 await rec.character.asave(update_fields=["wearing_costume", "costume_item_key"])
-                if wearing and guid not in wanted_guids and guid in locations:
+                if wearing and guid not in wanted_guids and guid not in costume_guids:
                     try:
                         await make_suspect(
                             http_client_mod, guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
                         )
+                        costume_guids.add(guid)
                     except Exception:
                         logger.warning("reconciliation make_suspect failed for %s", rec.character.name)
         except Exception:
             logger.debug("reconciliation poll failed for %s", rec.character.name)
 
-    # --- Transition-out pass (wanted-only) ---
-    # GUIDs flagged via the wanted pass last tick but not this tick no longer
-    # have an active wanted record — call clear_suspect so the blue overlay
-    # and Net_Suspects entry drop immediately.  Costume-only GUIDs are
-    # deliberately excluded here (see module-level comment on
-    # _last_suspect_guids).
-    transitioned_out = _last_suspect_guids - wanted_guids
+    # --- Transition-out pass ---
+    # A GUID only transitions out when it is NEITHER wanted nor wearing a
+    # costume this tick.  This prevents clearing the suspect GE from a
+    # wanted player who also happens to be wearing a costume (or vice
+    # versa) when one of the two conditions clears but the other is still
+    # active.
+    #
+    # The tracking set itself (_last_suspect_guids) is wanted-only — see the
+    # module-level comment.  This keeps costume criminals immune to the
+    # last_online-lag flicker bug while still preventing false clears on
+    # wanted-to-costume transitions via the combined diff here.
+    currently_suspect = wanted_guids | costume_guids
+    transitioned_out = _last_suspect_guids - currently_suspect
     for guid in transitioned_out:
         try:
             await clear_suspect(http_client_mod, guid)

@@ -1100,8 +1100,12 @@ class RefreshSuspectTagsTests(TestCase):
         self,
         mock_make_suspect,
     ):
-        """Offline wanted players are skipped."""
-        await self._setup_criminal(wanted_remaining=300)
+        """Offline wanted players (last_online beyond the freshness window)
+        are skipped by the wanted-pass query."""
+        character = await self._setup_criminal(wanted_remaining=300)
+        # Mark as offline per DB (older than ONLINE_THRESHOLD_SECONDS).
+        character.last_online = timezone.now() - timedelta(seconds=300)
+        await character.asave(update_fields=["last_online"])
         players = _make_players_list([])
         mock_http_mod = AsyncMock()
 
@@ -1209,8 +1213,14 @@ class RefreshSuspectTagsTests(TestCase):
         self,
         mock_make_suspect,
     ):
+        """A costume criminal whose DB last_online is beyond the freshness
+        window is filtered out by the costume-pass query — no make_suspect.
+        """
         _costume_reconciled_guids.clear()
         character = await self._setup_costume_criminal(wearing_costume=True)
+        # Mark as offline per DB (older than ONLINE_THRESHOLD_SECONDS).
+        character.last_online = timezone.now() - timedelta(seconds=300)
+        await character.asave(update_fields=["last_online"])
         mock_http_mod = AsyncMock()
 
         with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=[]), \
@@ -1925,17 +1935,16 @@ class ClearSuspectTests(TestCase):
         # clear_suspect must never have fired for this costume-only GUID.
         mock_clear_suspect.assert_not_called()
 
-    async def test_wanted_and_costume_criminal_wanted_cleared_clears_suspect(
+    async def test_wanted_and_costume_criminal_wanted_cleared_preserves_suspect(
         self,
         mock_make_suspect,
         mock_clear_suspect,
     ):
         """A player who is both wanted AND wearing a costume: when the wanted
         record is cleared externally, the next tick's transition-out pass
-        clears the suspect GE (even though the player is still wearing the
-        costume).  The costume pass will re-apply make_suspect, so the GE
-        reappears within ≤10 s — same as today's behaviour for the wanted
-        path.
+        must NOT call clear_suspect because the player is still a costume
+        suspect.  The costume pass re-applies make_suspect to keep the GE
+        alive with no visible gap in the blue overlay.
         """
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(
@@ -1968,12 +1977,19 @@ class ClearSuspectTests(TestCase):
             wanted_remaining=0, expired_at=timezone.now(),
         )
 
-        # Tick 2: no active wanted → transition-out clears the GE.
+        # Tick 2: no active wanted, but costume still on → costume pass
+        # re-applies make_suspect and the transition-out diff (wanted |
+        # costume) keeps the GE alive.
+        mock_clear_suspect.reset_mock()
         with patch("amc.criminals.get_players", new_callable=AsyncMock, return_value=players), \
              patch("amc.criminals.get_player_customization", new_callable=AsyncMock, return_value=None):
             await refresh_suspect_tags(mock_http_mod)
 
-        mock_clear_suspect.assert_any_await(mock_http_mod, character.guid)
-        # On tick 2 the costume pass re-applied make_suspect, but the guid
-        # is NOT tracked in _last_suspect_guids (costume-only from this tick).
+        mock_clear_suspect.assert_not_called()
+        # make_suspect was re-applied via the costume pass.
+        mock_make_suspect.assert_any_await(
+            mock_http_mod, character.guid, duration_seconds=CRIMINAL_SUSPECT_DURATION,
+        )
+        # The guid is NOT tracked in _last_suspect_guids (costume-only path
+        # doesn't add to the set — see module comment on _last_suspect_guids).
         self.assertNotIn(character.guid, _last_suspect_guids)

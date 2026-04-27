@@ -9,7 +9,7 @@ from amc.models import CriminalRecord, Wanted
 logger = logging.getLogger("amc.webhook.handlers.customization")
 
 COSTUME_SLOT = 4
-CRIMINAL_SUSPECT_DURATION = 70  # seconds — slightly > tick interval (60s) for continuous overlap
+CRIMINAL_SUSPECT_DURATION = 70  # seconds — mod clamps to 60s; refresh_suspect_tags reapplies every 30s for overlap
 
 
 @register("ServerSetEquipmentInventory")
