@@ -49,8 +49,7 @@ const CHAR_COLORS = [
 ];
 
 function getCharacterColor(charId) {
-    let idx = charId % CHAR_COLORS.length;
-    return CHAR_COLORS[idx];
+    return CHAR_COLORS[charId % CHAR_COLORS.length];
 }
 
 const trailSource = new ol.source.Vector();
@@ -82,11 +81,11 @@ const trailLayer = new ol.layer.Vector({
 });
 map.addLayer(trailLayer);
 
-const popup = document.getElementById('popup');
-const popupContent = document.getElementById('popup-content');
-const popupCloser = document.getElementById('popup-closer');
+var popup = document.getElementById('popup');
+var popupContent = document.getElementById('popup-content');
+var popupCloser = document.getElementById('popup-closer');
 
-const overlay = new ol.Overlay({
+var overlay = new ol.Overlay({
     element: popup,
     autoPan: true,
     autoPanAnimation: { duration: 250 },
@@ -116,13 +115,13 @@ map.on('pointermove', function(ev) {
     map.getTargetElement().style.cursor = hit ? 'pointer' : '';
 });
 
-var allFeatures = [];
 var characterNames = {};
-var timelineEntries = [];
+var characterTimeline = {};
+var uniqueTimestamps = [];
 var isPlaying = false;
 var isReversed = false;
 var playbackSpeed = 1;
-var currentStep = 0;
+var currentFrame = 0;
 var playInterval = null;
 var BASE_INTERVAL_MS = 500;
 
@@ -139,10 +138,9 @@ var timelineLabel = document.getElementById('timeline-label');
 var loadingIndicator = document.getElementById('loading-indicator');
 var legendDiv = document.getElementById('replay-legend');
 
-function setToTimezoneOffset(input) {
-    var now = new Date();
-    var offset = now.getTimezoneOffset() * 60000;
-    var local = new Date(now.getTime() - offset);
+function setToTimezoneOffset(d) {
+    var offset = d.getTimezoneOffset() * 60000;
+    var local = new Date(d.getTime() - offset);
     return local.toISOString().slice(0, 16);
 }
 
@@ -159,6 +157,16 @@ function toLocalISOString(d) {
         'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 }
 
+function bisectRight(arr, ts) {
+    var lo = 0, hi = arr.length;
+    while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        if (arr[mid] <= ts) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo;
+}
+
 btnLoad.addEventListener('click', function() {
     var startVal = startTimeInput.value;
     var endVal = endTimeInput.value;
@@ -168,10 +176,10 @@ btnLoad.addEventListener('click', function() {
     }
 
     stopPlayback();
-    allFeatures = [];
     characterNames = {};
-    timelineEntries = [];
-    currentStep = 0;
+    characterTimeline = {};
+    uniqueTimestamps = [];
+    currentFrame = 0;
     trailSource.clear();
     legendDiv.innerHTML = '';
 
@@ -196,24 +204,31 @@ btnLoad.addEventListener('click', function() {
                 featureProjection: customProjection,
             });
 
-            allFeatures = features;
             if (features.length === 0) {
                 timelineLabel.textContent = 'No locations found in this time range.';
                 loadingIndicator.style.display = 'none';
                 return;
             }
 
-            var charIds = new Set();
+            var tsSet = new Set();
             features.forEach(function(f) {
                 var cid = f.get('character_id');
-                charIds.add(cid);
-                if (!characterNames[cid]) {
-                    characterNames[cid] = f.get('character_name');
-                }
+                var ts = f.get('timestamp');
+                var coords = f.getGeometry().getCoordinates();
+                if (!characterTimeline[cid]) characterTimeline[cid] = [];
+                characterTimeline[cid].push({ ts: ts, tsMs: new Date(ts).getTime(), coords: coords });
+                if (!characterNames[cid]) characterNames[cid] = f.get('character_name');
+                tsSet.add(ts);
             });
 
-            var sortedChars = Array.from(charIds).sort(function(a, b) { return a - b; });
-            sortedChars.forEach(function(cid) {
+            Object.keys(characterTimeline).forEach(function(cid) {
+                characterTimeline[cid].sort(function(a, b) { return a.tsMs - b.tsMs; });
+            });
+
+            uniqueTimestamps = Array.from(tsSet).sort();
+            var charIds = Object.keys(characterTimeline).map(Number).sort(function(a, b) { return a - b; });
+
+            charIds.forEach(function(cid) {
                 var color = getCharacterColor(cid);
                 var name = characterNames[cid] || ('Char ' + cid);
                 var item = document.createElement('span');
@@ -222,22 +237,14 @@ btnLoad.addEventListener('click', function() {
                 legendDiv.appendChild(item);
             });
 
-            timelineEntries = features.map(function(f) {
-                return {
-                    timestamp: new Date(f.get('timestamp')),
-                    feature: f,
-                };
-            });
-            timelineEntries.sort(function(a, b) { return a.timestamp - b.timestamp; });
-
             timelineSlider.min = 0;
-            timelineSlider.max = timelineEntries.length - 1;
+            timelineSlider.max = uniqueTimestamps.length - 1;
             timelineSlider.value = 0;
             timelineSlider.disabled = false;
-            currentStep = 0;
+            currentFrame = 0;
 
             updateTimelineLabel();
-            showStep(0);
+            showFrame(0);
 
             btnPlay.disabled = false;
             btnReverse.disabled = false;
@@ -245,14 +252,17 @@ btnLoad.addEventListener('click', function() {
             btnForward.disabled = false;
             speedSelect.disabled = false;
 
-            if (features.length > 0) {
-                var extent = trailSource.getExtent();
-                if (extent[0] === Infinity) {
-                    extent = features[0].getGeometry().getExtent().slice();
-                    features.forEach(function(f) {
-                        ol.extent.extend(extent, f.getGeometry().getExtent());
-                    });
-                }
+            var allCoords = [];
+            Object.keys(characterTimeline).forEach(function(cid) {
+                characterTimeline[cid].forEach(function(entry) {
+                    allCoords.push(entry.coords);
+                });
+            });
+            if (allCoords.length > 0) {
+                var extent = allCoords.reduce(function(ext, coords) {
+                    ol.extent.extend(ext, new ol.geom.Point(coords).getExtent());
+                    return ext;
+                }, ol.extent.createEmpty());
                 map.getView().fit(extent, { minResolution: 1, padding: [40, 40, 40, 40] });
             }
 
@@ -264,73 +274,63 @@ btnLoad.addEventListener('click', function() {
         });
 });
 
-var characterLastCoords = {};
-var characterTrails = {};
+var TELEPORT_THRESHOLD = 10000;
 
-function showStep(step) {
+function olDistance(c1, c2) {
+    var dx = c1[0] - c2[0];
+    var dy = c1[1] - c2[1];
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function showFrame(frameIndex) {
     trailSource.clear();
-    characterLastCoords = {};
+    var frameTsMs = new Date(uniqueTimestamps[frameIndex]).getTime();
 
-    var entriesToShow = isReversed
-        ? timelineEntries.slice(step)
-        : timelineEntries.slice(0, step + 1);
+    Object.keys(characterTimeline).forEach(function(cid) {
+        var entries = characterTimeline[cid];
+        var tsMsArr = entries.map(function(e) { return e.tsMs; });
+        var idx = bisectRight(tsMsArr, frameTsMs);
+        if (idx === 0) return;
 
-    entriesToShow.forEach(function(entry) {
-        var f = entry.feature;
-        var cid = f.get('character_id');
-        var coords = f.getGeometry().getCoordinates();
-        characterLastCoords[cid] = coords;
-    });
+        var visibleEntries = entries.slice(0, idx);
+        var latestEntry = visibleEntries[visibleEntries.length - 1];
+        var charId = parseInt(cid);
 
-    var currentEntries = isReversed
-        ? timelineEntries.slice(step)
-        : timelineEntries.slice(0, step + 1);
-
-    var charLines = {};
-    currentEntries.forEach(function(entry) {
-        var cid = entry.feature.get('character_id');
-        var coords = entry.feature.getGeometry().getCoordinates();
-        if (!charLines[cid]) charLines[cid] = [];
-        charLines[cid].push(coords);
-    });
-
-    Object.keys(charLines).forEach(function(cid) {
-        var coords = charLines[cid];
-        if (coords.length >= 2) {
-            var lineFeature = new ol.Feature({
-                geometry: new ol.geom.LineString(coords),
-                character_id: parseInt(cid),
-            });
-            trailSource.addFeature(lineFeature);
+        var segments = [];
+        var current = [visibleEntries[0].coords];
+        for (var i = 1; i < visibleEntries.length; i++) {
+            if (olDistance(visibleEntries[i - 1].coords, visibleEntries[i].coords) > TELEPORT_THRESHOLD) {
+                if (current.length >= 2) segments.push(current);
+                current = [visibleEntries[i].coords];
+            } else {
+                current.push(visibleEntries[i].coords);
+            }
         }
-    });
+        if (current.length >= 2) segments.push(current);
 
-    Object.keys(characterLastCoords).forEach(function(cid) {
-        var coords = characterLastCoords[cid];
-        var lastEntry = isReversed
-            ? timelineEntries[step]
-            : timelineEntries[step];
-        var name = characterNames[cid] || '';
-        var pointFeature = new ol.Feature({
-            geometry: new ol.geom.Point(coords),
-            character_id: parseInt(cid),
-            character_name: name,
-            timestamp: lastEntry ? lastEntry.feature.get('timestamp') : '',
+        segments.forEach(function(seg) {
+            trailSource.addFeature(new ol.Feature({
+                geometry: new ol.geom.LineString(seg),
+                character_id: charId,
+            }));
         });
-        trailSource.addFeature(pointFeature);
+
+        trailSource.addFeature(new ol.Feature({
+            geometry: new ol.geom.Point(latestEntry.coords),
+            character_id: charId,
+            character_name: characterNames[cid] || '',
+            timestamp: latestEntry.ts,
+        }));
     });
 }
 
 function updateTimelineLabel() {
-    if (timelineEntries.length === 0) {
+    if (uniqueTimestamps.length === 0) {
         timelineLabel.textContent = 'No data loaded';
         return;
     }
-    var entry = timelineEntries[currentStep];
-    if (entry) {
-        timelineLabel.textContent = entry.feature.get('timestamp') +
-            '  (' + (currentStep + 1) + ' / ' + timelineEntries.length + ')';
-    }
+    timelineLabel.textContent = uniqueTimestamps[currentFrame] +
+        '  (' + (currentFrame + 1) + ' / ' + uniqueTimestamps.length + ')';
 }
 
 function stopPlayback() {
@@ -357,22 +357,22 @@ function startPlayback() {
     var intervalMs = BASE_INTERVAL_MS / playbackSpeed;
     playInterval = setInterval(function() {
         if (isReversed) {
-            currentStep--;
-            if (currentStep < 0) {
-                currentStep = 0;
+            currentFrame--;
+            if (currentFrame < 0) {
+                currentFrame = 0;
                 stopPlayback();
                 return;
             }
         } else {
-            currentStep++;
-            if (currentStep >= timelineEntries.length) {
-                currentStep = timelineEntries.length - 1;
+            currentFrame++;
+            if (currentFrame >= uniqueTimestamps.length) {
+                currentFrame = uniqueTimestamps.length - 1;
                 stopPlayback();
                 return;
             }
         }
-        timelineSlider.value = currentStep;
-        showStep(currentStep);
+        timelineSlider.value = currentFrame;
+        showFrame(currentFrame);
         updateTimelineLabel();
     }, intervalMs);
 }
@@ -383,8 +383,8 @@ btnPlay.addEventListener('click', function() {
         return;
     }
     isReversed = false;
-    if (currentStep >= timelineEntries.length - 1) {
-        currentStep = 0;
+    if (currentFrame >= uniqueTimestamps.length - 1) {
+        currentFrame = 0;
     }
     startPlayback();
 });
@@ -395,27 +395,27 @@ btnReverse.addEventListener('click', function() {
         return;
     }
     isReversed = true;
-    if (currentStep <= 0) {
-        currentStep = timelineEntries.length - 1;
+    if (currentFrame <= 0) {
+        currentFrame = uniqueTimestamps.length - 1;
     }
     startPlayback();
 });
 
 btnRewind.addEventListener('click', function() {
     stopPlayback();
-    currentStep = 0;
+    currentFrame = 0;
     isReversed = false;
     timelineSlider.value = 0;
-    showStep(0);
+    showFrame(0);
     updateTimelineLabel();
 });
 
 btnForward.addEventListener('click', function() {
     stopPlayback();
-    currentStep = timelineEntries.length - 1;
+    currentFrame = uniqueTimestamps.length - 1;
     isReversed = false;
-    timelineSlider.value = currentStep;
-    showStep(currentStep);
+    timelineSlider.value = currentFrame;
+    showFrame(currentFrame);
     updateTimelineLabel();
 });
 
@@ -427,7 +427,7 @@ speedSelect.addEventListener('change', function() {
 });
 
 timelineSlider.addEventListener('input', function() {
-    currentStep = parseInt(timelineSlider.value);
-    showStep(currentStep);
+    currentFrame = parseInt(timelineSlider.value);
+    showFrame(currentFrame);
     updateTimelineLabel();
 });
