@@ -10,6 +10,7 @@ from amc.models import (
     Character,
     CharacterLocation,
     ShortcutZone,
+    TeleportPortal,
 )
 from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
@@ -61,31 +62,6 @@ For any other purposes, <Highlight>please contact the admins on the discord</>.
 
 {settings.CREDITS_TEXT}
 """,
-    ),
-]
-
-portals = [
-    # Meehoi house
-    (
-        Point(**{"x": 69664.27, "y": 651361.93, "z": -8214.26}),
-        150,
-        Point(**{"x": 68205.77, "y": 651084.19, "z": -7000.43}),
-    ),
-    (
-        Point(**{"x": 68119.18, "y": 650502.15, "z": -6909.83}),
-        120,
-        Point(**{"x": 67912.23, "y": 650236.37, "z": -8512.19}),
-    ),
-    # Rooftop Bar
-    (
-        Point(**{"x": -67173.12, "y": 150561.7, "z": -20646.4}),
-        150,
-        Point(**{"x": -66531.100038674, "y": 150471.72884842, "z": -19706.865}),
-    ),
-    (
-        Point(**{"x": -66733.74, "y": 150411.51, "z": -19703.15}),
-        120,
-        Point(**{"x": -67245.74, "y": 150831.6, "z": -20646.85}),
     ),
 ]
 
@@ -249,7 +225,10 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
             await show_popup(http_client_mod, message, player_id=player_id)
             await asyncio.sleep(0.1)
 
-    for source_point, source_radius_meters, target_point in portals:
+    async for portal in TeleportPortal.objects.filter(active=True):
+        source_point = portal.source
+        target_point = portal.target
+        source_radius_meters = portal.source_radius
         distance_to_new = new_location.distance(source_point)
         distance_to_old = old_location.distance(source_point)
 

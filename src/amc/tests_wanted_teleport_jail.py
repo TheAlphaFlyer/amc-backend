@@ -31,7 +31,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from amc.factories import CharacterFactory, PlayerFactory
-from amc.models import TeleportPoint, Wanted
+from amc.models import TeleportPoint, TeleportPortal, Wanted
 
 
 # ---------------------------------------------------------------------------
@@ -217,16 +217,21 @@ class PortalWantedJailTests(TestCase):
     """Wanted criminals who enter a portal are arrested instead of teleported."""
 
     async def test_wanted_criminal_entering_portal_gets_arrested(self):
-        from amc.locations import _check_pois_and_portals, portals
-
-        if not portals:
-            self.skipTest("No portals configured")
+        from amc.locations import _check_pois_and_portals
 
         await _make_jail_tp()
         player, character, _ = await _make_wanted_character()
         ctx = {"http_client_mod": _make_http_client_mod()}
 
-        source_point, source_radius, target_point = portals[0]
+        portal = await TeleportPortal.objects.acreate(
+            name="Test Portal",
+            source=Point(100000, 200000, 30000, srid=0),
+            source_radius=120,
+            target=Point(50000, 60000, 7000, srid=0),
+            active=True,
+        )
+        source_point = portal.source
+        source_radius = portal.source_radius
         old_loc = Point(source_point.x + source_radius + 500, source_point.y, source_point.z, srid=0)
         new_loc = Point(source_point.x, source_point.y, source_point.z, srid=0)
 
@@ -255,15 +260,21 @@ class PortalWantedJailTests(TestCase):
         self.assertIsNotNone(character.jailed_until)
 
     async def test_clean_player_goes_through_portal_normally(self):
-        from amc.locations import _check_pois_and_portals, portals
-
-        if not portals:
-            self.skipTest("No portals configured")
+        from amc.locations import _check_pois_and_portals
 
         player, character = await _make_clean_character()
         ctx = {"http_client_mod": _make_http_client_mod()}
 
-        source_point, source_radius, target_point = portals[0]
+        portal = await TeleportPortal.objects.acreate(
+            name="Test Portal",
+            source=Point(100000, 200000, 30000, srid=0),
+            source_radius=120,
+            target=Point(50000, 60000, 7000, srid=0),
+            active=True,
+        )
+        source_point = portal.source
+        source_radius = portal.source_radius
+        target_point = portal.target
         old_loc = Point(source_point.x + source_radius + 500, source_point.y, source_point.z, srid=0)
         new_loc = Point(source_point.x, source_point.y, source_point.z, srid=0)
 

@@ -1730,6 +1730,18 @@ class TeleportPoint(models.Model):
 
 
 @final
+class TeleportPortal(models.Model):
+    name = models.CharField(max_length=200)
+    source = models.PointField(srid=0, dim=3)
+    source_radius = models.PositiveIntegerField(default=120)
+    target = models.PointField(srid=0, dim=3)
+    active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+@final
 class VehicleDealership(models.Model):
     vehicle_key = models.CharField(max_length=100, null=True, choices=VehicleKey)
     location = models.PointField(srid=0, dim=3)

@@ -50,6 +50,7 @@ from .models import (
     PolicePenaltyLog,
     PoliceShiftLog,
     TeleportPoint,
+    TeleportPortal,
     VehicleDealership,
     DeliveryJob,
     Cargo,
@@ -643,6 +644,13 @@ class TeleportPointAdmin(admin.ModelAdmin):
     list_select_related = ["character"]
     search_fields = ["character__name", "name", "character__player__unique_id"]
     autocomplete_fields = ["character"]
+
+
+@admin.register(TeleportPortal)
+class TeleportPortalAdmin(admin.ModelAdmin):
+    list_display = ["id", "name", "source", "source_radius", "target", "active"]
+    list_filter = ["active"]
+    search_fields = ["name"]
 
 
 @admin.register(VehicleDealership)
