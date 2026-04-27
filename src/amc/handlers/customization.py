@@ -42,16 +42,20 @@ async def handle_set_equipment_inventory(event, player, character, ctx):
         has_record = await CriminalRecord.objects.filter(
             character=character, cleared_at__isnull=True
         ).aexists()
-        if has_record:
-            try:
-                await make_suspect(
-                    ctx.http_client_mod,
-                    character.guid,
-                    duration_seconds=CRIMINAL_SUSPECT_DURATION,
-                )
-            except Exception:
-                logger.warning("make_suspect (costume-equip) failed for %s",
-                               character.name, exc_info=True)
+        if not has_record:
+            await CriminalRecord.objects.acreate(
+                character=character,
+                reason="Wearing criminal costume",
+            )
+        try:
+            await make_suspect(
+                ctx.http_client_mod,
+                character.guid,
+                duration_seconds=CRIMINAL_SUSPECT_DURATION,
+            )
+        except Exception:
+            logger.warning("make_suspect (costume-equip) failed for %s",
+                           character.name, exc_info=True)
 
     # Immediate suspect GE removal when the player stops wearing a suspect
     # costume — clears the blue overlay / Net_Suspects entry without waiting

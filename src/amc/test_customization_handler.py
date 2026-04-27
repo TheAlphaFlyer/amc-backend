@@ -60,7 +60,7 @@ class CostumeEquipWithRecordTests(TestCase):
             ctx.http_client_mod, character.guid, duration_seconds=70,
         )
 
-    async def test_costume_equipped_without_record_no_suspect(self):
+    async def test_costume_equipped_without_record_creates_record_and_makes_suspect(self):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
 
@@ -77,7 +77,10 @@ class CostumeEquipWithRecordTests(TestCase):
         await character.arefresh_from_db()
         self.assertTrue(character.wearing_costume)
         self.assertEqual(character.costume_item_key, "Costume_Police_01")
-        mock_suspect.assert_not_called()
+        self.assertTrue(await CriminalRecord.objects.filter(character=character, cleared_at__isnull=True).aexists())
+        mock_suspect.assert_called_once_with(
+            ctx.http_client_mod, character.guid, duration_seconds=70,
+        )
 
 
 class CostumeUnequipTests(TestCase):
