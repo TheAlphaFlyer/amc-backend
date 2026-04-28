@@ -42,13 +42,13 @@ class FindMatchingGuildVehicleTests(TestCase):
         return gv
 
     async def test_no_vehicles_returns_none(self):
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertIsNone(result)
 
     async def test_vehicle_key_match_no_parts(self):
         guild = await self._create_guild()
         gv = await self._create_vehicle(guild)
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, gv)
 
     async def test_unknown_vehicle_name_returns_none(self):
@@ -60,7 +60,7 @@ class FindMatchingGuildVehicleTests(TestCase):
     async def test_wrong_vehicle_returns_none(self):
         guild = await self._create_guild()
         await self._create_vehicle(guild, vehicle_key="Trophy2")
-        result = await _find_matching_guild_vehicle("Hana", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("1", "guid123", AsyncMock())
         self.assertIsNone(result)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -74,7 +74,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, gv)
         mock_parts.assert_awaited_once()
 
@@ -88,7 +88,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertIsNone(result)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -103,7 +103,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, no_parts_gv)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -118,7 +118,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, no_parts_gv)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -127,7 +127,7 @@ class FindMatchingGuildVehicleTests(TestCase):
         await self._create_vehicle(guild, parts=["Bike_I4_90HP"])
         mock_parts.side_effect = Exception("mod server down")
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertIsNone(result)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -135,7 +135,7 @@ class FindMatchingGuildVehicleTests(TestCase):
         guild = await self._create_guild()
         await self._create_vehicle(guild)
 
-        await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         mock_parts.assert_not_called()
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -150,7 +150,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, gv_b)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -167,7 +167,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, gv)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -180,7 +180,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertIsNone(result)
 
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
@@ -197,7 +197,7 @@ class FindMatchingGuildVehicleTests(TestCase):
             ]
         }
 
-        result = await _find_matching_guild_vehicle("Trophy 2", "guid123", AsyncMock())
+        result = await _find_matching_guild_vehicle("Trophy2", "guid123", AsyncMock())
         self.assertEqual(result, gv_specific)
 
 
@@ -386,7 +386,7 @@ class HandleGuildSessionTests(TestCase):
         await GuildVehicle.objects.acreate(guild=guild, vehicle_key="Trophy2")
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Trophy 2"
+            character, player, AsyncMock(), "ENTERED", "Trophy2"
         )
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
@@ -402,7 +402,7 @@ class HandleGuildSessionTests(TestCase):
         character = await sync_to_async(CharacterFactory)(player=player)
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Hana"
+            character, player, AsyncMock(), "ENTERED", "1"
         )
 
         count = await GuildSession.objects.filter(character=character).acount()
@@ -420,7 +420,7 @@ class HandleGuildSessionTests(TestCase):
         )
 
         await handle_guild_session(
-            character, player, AsyncMock(), "EXITED", "Trophy 2"
+            character, player, AsyncMock(), "EXITED", "Trophy2"
         )
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
@@ -438,7 +438,7 @@ class HandleGuildSessionTests(TestCase):
         )
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Hana"
+            character, player, AsyncMock(), "ENTERED", "1"
         )
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
@@ -465,7 +465,7 @@ class HandleGuildSessionTests(TestCase):
         mock_http = AsyncMock()
 
         await handle_guild_session(
-            character, player, mock_http, "ENTERED", "Trophy 2"
+            character, player, mock_http, "ENTERED", "Trophy2"
         )
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
@@ -487,7 +487,7 @@ class HandleGuildSessionTests(TestCase):
         }
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Trophy 2"
+            character, player, AsyncMock(), "ENTERED", "Trophy2"
         )
 
         count = await GuildSession.objects.filter(character=character).acount()
@@ -504,13 +504,13 @@ class HandleGuildSessionTests(TestCase):
         await GuildVehicle.objects.acreate(guild=guild_b, vehicle_key="1")
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Trophy 2"
+            character, player, AsyncMock(), "ENTERED", "Trophy2"
         )
         session_a = await GuildSession.objects.aget(character=character, guild=guild_a)
         self.assertIsNone(session_a.ended_at)
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Hana"
+            character, player, AsyncMock(), "ENTERED", "1"
         )
         await session_a.arefresh_from_db()
         self.assertIsNotNone(session_a.ended_at)
@@ -530,7 +530,7 @@ class HandleGuildSessionTests(TestCase):
         mock_decal.side_effect = Exception("unexpected")
 
         await handle_guild_session(
-            character, player, AsyncMock(), "ENTERED", "Trophy 2"
+            character, player, AsyncMock(), "ENTERED", "Trophy2"
         )
 
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
@@ -554,7 +554,7 @@ class HandleGuildSessionTests(TestCase):
         mock_http = AsyncMock()
 
         await handle_guild_session(
-            character, player, mock_http, "ENTERED", "Trophy 2"
+            character, player, mock_http, "ENTERED", "Trophy2"
         )
         mock_decal.assert_awaited_once_with(
             mock_http, str(player.unique_id), {"layers": ["a"]}

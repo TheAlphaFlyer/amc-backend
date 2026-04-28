@@ -2,7 +2,7 @@ import logging
 
 from django.utils import timezone
 
-from amc.enums import VehicleKeyByLabel
+from amc.enums import VehicleKey
 from amc.models import (
     Character,
     GuildCharacter,
@@ -18,13 +18,13 @@ logger = logging.getLogger("amc.guilds")
 async def _find_matching_guild_vehicle(
     vehicle_name: str, character_guid: str, http_client_mod
 ) -> GuildVehicle | None:
-    vehicle_key = VehicleKeyByLabel.get(vehicle_name)
-    if not vehicle_key:
+    # vehicle_name from game logs is already the VehicleKey value (e.g. "Trophy2")
+    if vehicle_name not in VehicleKey.values:
         return None
 
     candidates = [
         gv
-        async for gv in GuildVehicle.objects.filter(vehicle_key=vehicle_key)
+        async for gv in GuildVehicle.objects.filter(vehicle_key=vehicle_name)
         .select_related("guild", "decal")
         .prefetch_related("parts")
     ]
