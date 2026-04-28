@@ -74,3 +74,6 @@ api.add_router("/ac/", "amc.api.anticheat_routes.router")
 
 # Shortcut Zones
 api.add_router("/shortcut_zones/", "amc.api.routes.shortcut_zones_router")
+
+# Economy management — subsidy rules and job posting config (internal, Tailscale-only)
+api.add_router("/economy/", "amc.api.economy_routes.router")
