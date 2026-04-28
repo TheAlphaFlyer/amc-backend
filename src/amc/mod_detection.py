@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 GAME_DB_PATH = os.environ.get("GAME_DB_PATH", "/var/lib/motortown/gamedata.db")
 
 # Attachment slots (cosmetic) should not count as modded parts
-ATTACHMENT_SLOT_MIN = VehiclePartSlot.Attachment0.value  # 148
+ATTACHMENT_SLOT_MIN = VehiclePartSlot.Attachment0.value  # 217
 
 # Part key prefixes whitelisted for characters on active police duty
 POLICE_DUTY_WHITELIST: tuple[str, ...] = ("apf_", "pd_")
