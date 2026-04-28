@@ -267,6 +267,51 @@ def test_build_display_name_rp_mode_default_false():
     )
 
 
+# --- guild suffix ---
+
+
+def test_build_display_name_guild_only():
+    assert (
+        build_display_name("PlayerOne", guild_abbreviation="GOP")
+        == "PlayerOne[GOP]"
+    )
+
+
+def test_build_display_name_guild_with_mod():
+    assert (
+        build_display_name("PlayerOne", has_custom_parts=True, guild_abbreviation="GOP")
+        == "[M] PlayerOne[GOP]"
+    )
+
+
+def test_build_display_name_guild_with_mod_and_gov():
+    assert (
+        build_display_name(
+            "PlayerOne", has_custom_parts=True, gov_level=3, guild_abbreviation="RCL"
+        )
+        == "[MG3] PlayerOne[RCL]"
+    )
+
+
+def test_build_display_name_guild_with_all_flags():
+    assert (
+        build_display_name(
+            "PlayerOne",
+            rp_mode=True,
+            has_custom_parts=True,
+            police_level=1,
+            wanted_stars=2,
+            gov_level=3,
+            guild_abbreviation="TXI",
+        )
+        == "[RMP1**G3] PlayerOne[TXI]"
+    )
+
+
+def test_build_display_name_guild_none():
+    assert build_display_name("PlayerOne", guild_abbreviation=None) == "PlayerOne"
+
+
 # --- strip_all_tags ---
 
 
@@ -322,6 +367,17 @@ def test_strip_legacy_subscript_format():
 def test_strip_all_tags_preserves_base_name():
     assert strip_all_tags("PlayerOne [123]") == "PlayerOne [123]"
     assert strip_all_tags("PlayerOne") == "PlayerOne"
+
+
+def test_strip_guild_suffix():
+    assert strip_all_tags("PlayerOne[GOP]") == "PlayerOne"
+    assert strip_all_tags("[M] PlayerOne[GOP]") == "PlayerOne"
+    assert strip_all_tags("[RP1**G3] PlayerOne[TXI]") == "PlayerOne"
+
+
+def test_strip_guild_suffix_does_not_strip_permanent_tag():
+    """[DOT] is a permanent team tag, not a guild suffix."""
+    assert strip_all_tags("[DOT] PlayerOne") == "[DOT] PlayerOne"
 
 
 # --- refresh_player_name integration tests ---

@@ -24,12 +24,17 @@ TAG_PATTERNS = [
     # NOTE: [DOT] is intentionally NOT stripped — it is a permanent player tag.
 ]
 
+# Guild abbreviation suffix: e.g. "PlayerOne[GOP]" → "PlayerOne"
+GUILD_SUFFIX_PATTERN = re.compile(r"\[[A-Z]+\]$")
+
 
 def strip_all_tags(name: str) -> str:
     """Remove all known tag prefixes from a name."""
     clean_name = name
     for pattern in TAG_PATTERNS:
         clean_name = pattern.sub("", clean_name)
+    # Strip guild suffix
+    clean_name = GUILD_SUFFIX_PATTERN.sub("", clean_name)
     return clean_name.strip()
 
 
@@ -50,16 +55,18 @@ def build_display_name(
     gov_level: int = 0,
     wanted_stars: int = 0,
     rp_mode: bool = False,
+    guild_abbreviation: str | None = None,
 ) -> str:
     """Build the definitive display name with a single compact tag.
 
-    Tag format: [RMP1*****C1G3] BaseName  (order: R, M, P, stars, C, G)
+    Tag format: [RMP1*****C1G3] BaseName[ABV]  (order: R, M, P, stars, C, G; guild suffix at end)
       R = RP mode toggled on
       M = Modded vehicle parts
       P1 = Police level (active session)
       ***** = Wanted level (1–5 stars, based on wanted_remaining heat)
       C1 = Criminal level (suppressed when police is active)
       G3 = Government employee level
+      [ABV] = Guild abbreviation suffix (appended after base name)
 
     Args:
         base_name: The player's original name (stripped of any existing tags)
@@ -69,6 +76,7 @@ def build_display_name(
         gov_level: Government employee level (0 = not a gov employee)
         wanted_stars: Wanted level (0–5, 0 = not wanted)
         rp_mode: Whether the character is currently in RP mode
+        guild_abbreviation: Active guild abbreviation (e.g. "GOP"), or None
     """
     clean_name = strip_all_tags(base_name)
     tag = ""
@@ -92,9 +100,13 @@ def build_display_name(
     if gov_level > 0:
         tag += f"G{gov_level}"
 
+    display_name = clean_name
+    if guild_abbreviation:
+        display_name = f"{clean_name}[{guild_abbreviation}]"
+
     if tag:
-        return f"[{tag}] {clean_name}"
-    return clean_name
+        return f"[{tag}] {display_name}"
+    return display_name
 
 
 async def refresh_player_name(
@@ -163,6 +175,16 @@ async def refresh_player_name(
     if await check_police(character):
         police_level = calculate_police_level(character.police_confiscated_total)
 
+    # Determine GUILD state
+    from amc.models import GuildSession
+
+    guild_abbreviation = None
+    active_guild_session = await GuildSession.objects.filter(
+        character=character, ended_at__isnull=True
+    ).select_related("guild").afirst()
+    if active_guild_session:
+        guild_abbreviation = active_guild_session.guild.abbreviation
+
     # Reconstruct name
     new_name = build_display_name(
         character.name,
@@ -172,6 +194,7 @@ async def refresh_player_name(
         gov_level=gov_level,
         wanted_stars=wanted_stars,
         rp_mode=character.rp_mode,
+        guild_abbreviation=guild_abbreviation,
     )
 
     # Save to DB if changed

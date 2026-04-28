@@ -251,7 +251,8 @@ class ActivateGuildTests(TestCase):
             guild=guild, vehicle_key=vehicle_key, decal=decal
         )
 
-    async def test_creates_session_and_character(self):
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    async def test_creates_session_and_character(self, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -266,7 +267,8 @@ class ActivateGuildTests(TestCase):
         gc = await GuildCharacter.objects.aget(character=character, guild=guild)
         self.assertEqual(gc.level, 1)
 
-    async def test_no_duplicate_when_already_active(self):
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    async def test_no_duplicate_when_already_active(self, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -283,7 +285,8 @@ class ActivateGuildTests(TestCase):
         ).acount()
         self.assertEqual(count, 1)
 
-    async def test_switches_guild(self):
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    async def test_switches_guild(self, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild_a = await Guild.objects.acreate(name="Guild A", abbreviation="GA")
@@ -305,8 +308,9 @@ class ActivateGuildTests(TestCase):
         )
         self.assertIsNotNone(new_session)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
-    async def test_decal_applied(self, mock_set_decal):
+    async def test_decal_applied(self, mock_set_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal_config = {"layers": [{"type": "solid", "color": "FF0000"}]}
@@ -325,8 +329,9 @@ class ActivateGuildTests(TestCase):
             mock_session, str(player.unique_id), decal_config
         )
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
-    async def test_no_decal_when_none(self, mock_set_decal):
+    async def test_no_decal_when_none(self, mock_set_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -337,8 +342,9 @@ class ActivateGuildTests(TestCase):
 
         mock_set_decal.assert_not_called()
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
-    async def test_decal_failure_does_not_crash(self, mock_set_decal):
+    async def test_decal_failure_does_not_crash(self, mock_set_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal = await VehicleDecal.objects.acreate(
@@ -356,7 +362,8 @@ class ActivateGuildTests(TestCase):
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNone(session.ended_at)
 
-    async def test_guild_character_not_duplicated(self):
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    async def test_guild_character_not_duplicated(self, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -377,9 +384,10 @@ class ActivateGuildTests(TestCase):
 class HandleGuildSessionTests(TestCase):
     """Integration tests for handle_guild_session."""
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_matching_vehicle(self, mock_parts, mock_decal):
+    async def test_entered_matching_vehicle(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Trophy Club", abbreviation="TC")
@@ -395,9 +403,10 @@ class HandleGuildSessionTests(TestCase):
         self.assertEqual(gc.level, 1)
         mock_parts.assert_not_called()
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_non_matching_vehicle(self, mock_parts, mock_decal):
+    async def test_entered_non_matching_vehicle(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
 
@@ -408,9 +417,10 @@ class HandleGuildSessionTests(TestCase):
         count = await GuildSession.objects.filter(character=character).acount()
         self.assertEqual(count, 0)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_exited_ends_session(self, mock_parts, mock_decal):
+    async def test_exited_ends_session(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -426,9 +436,10 @@ class HandleGuildSessionTests(TestCase):
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNotNone(session.ended_at)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_different_vehicle_ends_session(self, mock_parts, mock_decal):
+    async def test_entered_different_vehicle_ends_session(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -444,9 +455,10 @@ class HandleGuildSessionTests(TestCase):
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNotNone(session.ended_at)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_with_part_match(self, mock_parts, mock_decal):
+    async def test_entered_with_part_match(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal = await VehicleDecal.objects.acreate(
@@ -472,9 +484,10 @@ class HandleGuildSessionTests(TestCase):
         self.assertIsNone(session.ended_at)
         mock_decal.assert_awaited_once()
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_with_part_mismatch(self, mock_parts, mock_decal):
+    async def test_entered_with_part_mismatch(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Engine Guild", abbreviation="ENG")
@@ -493,9 +506,10 @@ class HandleGuildSessionTests(TestCase):
         count = await GuildSession.objects.filter(character=character).acount()
         self.assertEqual(count, 0)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_switch_guild_on_vehicle_change(self, mock_parts, mock_decal):
+    async def test_switch_guild_on_vehicle_change(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild_a = await Guild.objects.acreate(name="Trophy Club", abbreviation="TC")
@@ -520,9 +534,10 @@ class HandleGuildSessionTests(TestCase):
         )
         self.assertIsNotNone(session_b)
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_exception_does_not_propagate(self, mock_parts, mock_decal):
+    async def test_exception_does_not_propagate(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
@@ -533,9 +548,10 @@ class HandleGuildSessionTests(TestCase):
             character, player, AsyncMock(), "ENTERED", "Trophy2"
         )
 
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_per_vehicle_decal_selection(self, mock_parts, mock_decal):
+    async def test_per_vehicle_decal_selection(self, mock_parts, mock_decal, mock_refresh):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal_a = await VehicleDecal.objects.acreate(

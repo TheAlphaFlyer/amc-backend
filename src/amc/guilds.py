@@ -11,6 +11,7 @@ from amc.models import (
     Player,
 )
 from amc.mod_server import get_player_last_vehicle_parts, set_decal
+from amc.player_tags import refresh_player_name
 
 logger = logging.getLogger("amc.guilds")
 
@@ -67,7 +68,7 @@ async def handle_guild_session(
 ):
     try:
         if action == "EXITED":
-            await _end_active_session(character)
+            await _end_active_session(character, http_client_mod)
             return
 
         guild_vehicle = await _find_matching_guild_vehicle(
@@ -77,18 +78,20 @@ async def handle_guild_session(
         if guild_vehicle:
             await _activate_guild(character, guild_vehicle, http_client_mod, str(player.unique_id))
         else:
-            await _end_active_session(character)
+            await _end_active_session(character, http_client_mod)
     except Exception:
         logger.exception(f"Error handling guild session for {character.name}")
 
 
-async def _end_active_session(character: Character):
+async def _end_active_session(character: Character, http_client_mod=None):
     now = timezone.now()
     updated = await GuildSession.objects.filter(
         character=character, ended_at__isnull=True
     ).aupdate(ended_at=now)
     if updated:
         logger.info(f"Ended guild session for {character.name}")
+        if http_client_mod:
+            await refresh_player_name(character, http_client_mod)
 
 
 async def _activate_guild(
@@ -106,7 +109,7 @@ async def _activate_guild(
     if existing:
         return
 
-    await _end_active_session(character)
+    await _end_active_session(character, http_client_mod)
 
     await GuildSession.objects.acreate(
         guild=guild,
@@ -119,6 +122,8 @@ async def _activate_guild(
         guild=guild,
         character=character,
     )
+
+    await refresh_player_name(character, http_client_mod)
 
     decal = guild_vehicle.decal
     if decal and decal.config:
