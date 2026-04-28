@@ -10,7 +10,7 @@ from amc.models import (
     GuildVehicle,
     Player,
 )
-from amc.mod_server import get_player_last_vehicle_parts, set_decal
+from amc.mod_server import get_decal, get_player_last_vehicle_parts, set_decal
 from amc.player_tags import refresh_player_name
 
 logger = logging.getLogger("amc.guilds")
@@ -128,7 +128,10 @@ async def _activate_guild(
     decal = guild_vehicle.decal
     if decal and decal.config:
         try:
-            await set_decal(http_client_mod, player_id, decal.config)
+            current = await get_decal(http_client_mod, player_id)
+            existing_layers = (current.get("decal") or {}).get("DecalLayers", [])
+            if not existing_layers:
+                await set_decal(http_client_mod, player_id, decal.config)
         except Exception as e:
             logger.error(f"Failed to apply guild decal for {character.name}: {e}")
 

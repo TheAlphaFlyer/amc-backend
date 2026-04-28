@@ -320,11 +320,13 @@ class ActivateGuildTests(TestCase):
         self.assertIsNotNone(new_session)
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
-    async def test_decal_applied(self, mock_set_decal, mock_refresh):
+    async def test_decal_applied(self, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.return_value = {"decal": {"DecalLayers": []}}
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
-        decal_config = {"layers": [{"type": "solid", "color": "FF0000"}]}
+        decal_config = {"decal": {"DecalLayers": [{"DecalKey": "test"}]}}
         decal = await VehicleDecal.objects.acreate(
             name="Guild Decal",
             hash="testhash123",
@@ -336,9 +338,31 @@ class ActivateGuildTests(TestCase):
 
         await _activate_guild(character, gv, mock_session, str(player.unique_id))
 
+        mock_get_decal.assert_awaited_once_with(mock_session, str(player.unique_id))
         mock_set_decal.assert_awaited_once_with(
             mock_session, str(player.unique_id), decal_config
         )
+
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
+    @patch("amc.guilds.set_decal", new_callable=AsyncMock)
+    async def test_decal_skipped_when_vehicle_has_decals(self, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.return_value = {"decal": {"DecalLayers": [{"DecalKey": "existing"}]}}
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        decal_config = {"decal": {"DecalLayers": [{"DecalKey": "guild"}]}}
+        decal = await VehicleDecal.objects.acreate(
+            name="Guild Decal",
+            hash="testhash789",
+            config=decal_config,
+        )
+        guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
+        gv = await self._create_vehicle(guild, decal=decal)
+        mock_session = AsyncMock()
+
+        await _activate_guild(character, gv, mock_session, str(player.unique_id))
+
+        mock_set_decal.assert_not_called()
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
@@ -354,14 +378,16 @@ class ActivateGuildTests(TestCase):
         mock_set_decal.assert_not_called()
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
-    async def test_decal_failure_does_not_crash(self, mock_set_decal, mock_refresh):
+    async def test_decal_failure_does_not_crash(self, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.return_value = {"decal": {"DecalLayers": []}}
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal = await VehicleDecal.objects.acreate(
             name="Guild Decal",
             hash="testhash456",
-            config={"layers": []},
+            config={"decal": {"DecalLayers": []}},
         )
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
         gv = await self._create_vehicle(guild, decal=decal)
@@ -372,6 +398,28 @@ class ActivateGuildTests(TestCase):
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNone(session.ended_at)
+
+    @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
+    @patch("amc.guilds.set_decal", new_callable=AsyncMock)
+    async def test_get_decal_failure_does_not_crash(self, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.side_effect = Exception("connection error")
+        player = await sync_to_async(PlayerFactory)()
+        character = await sync_to_async(CharacterFactory)(player=player)
+        decal = await VehicleDecal.objects.acreate(
+            name="Guild Decal",
+            hash="testhash999",
+            config={"decal": {"DecalLayers": [{"DecalKey": "test"}]}},
+        )
+        guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
+        gv = await self._create_vehicle(guild, decal=decal)
+        mock_session = AsyncMock()
+
+        await _activate_guild(character, gv, mock_session, str(player.unique_id))
+
+        session = await GuildSession.objects.aget(character=character, guild=guild)
+        self.assertIsNone(session.ended_at)
+        mock_set_decal.assert_not_called()
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     async def test_guild_character_not_duplicated(self, mock_refresh):
@@ -467,13 +515,15 @@ class HandleGuildSessionTests(TestCase):
         self.assertIsNotNone(session.ended_at)
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_entered_with_part_match(self, mock_parts, mock_decal, mock_refresh):
+    async def test_entered_with_part_match(self, mock_parts, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.return_value = {"decal": {"DecalLayers": []}}
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         decal = await VehicleDecal.objects.acreate(
-            name="Test Decal", hash="hash789", config={"layers": []}
+            name="Test Decal", hash="hash789", config={"decal": {"DecalLayers": []}}
         )
         guild = await Guild.objects.acreate(name="Engine Guild", abbreviation="ENG")
         gv = await GuildVehicle.objects.acreate(
@@ -493,7 +543,7 @@ class HandleGuildSessionTests(TestCase):
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNone(session.ended_at)
-        mock_decal.assert_awaited_once()
+        mock_set_decal.assert_awaited_once()
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
@@ -560,16 +610,20 @@ class HandleGuildSessionTests(TestCase):
         )
 
     @patch("amc.guilds.refresh_player_name", new_callable=AsyncMock)
+    @patch("amc.guilds.get_decal", new_callable=AsyncMock)
     @patch("amc.guilds.set_decal", new_callable=AsyncMock)
     @patch("amc.guilds.get_player_last_vehicle_parts", new_callable=AsyncMock)
-    async def test_per_vehicle_decal_selection(self, mock_parts, mock_decal, mock_refresh):
+    async def test_per_vehicle_decal_selection(self, mock_parts, mock_set_decal, mock_get_decal, mock_refresh):
+        mock_get_decal.return_value = {"decal": {"DecalLayers": []}}
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
+        decal_a_config = {"decal": {"DecalLayers": [{"DecalKey": "a"}]}}
+        decal_b_config = {"decal": {"DecalLayers": [{"DecalKey": "b"}]}}
         decal_a = await VehicleDecal.objects.acreate(
-            name="Decal A", hash="hash_a", config={"layers": ["a"]}
+            name="Decal A", hash="hash_a", config=decal_a_config
         )
         decal_b = await VehicleDecal.objects.acreate(
-            name="Decal B", hash="hash_b", config={"layers": ["b"]}
+            name="Decal B", hash="hash_b", config=decal_b_config
         )
         guild = await Guild.objects.acreate(name="Multi", abbreviation="MLT")
         await GuildVehicle.objects.acreate(
@@ -583,8 +637,8 @@ class HandleGuildSessionTests(TestCase):
         await handle_guild_session(
             character, player, mock_http, "ENTERED", "Trophy2"
         )
-        mock_decal.assert_awaited_once_with(
-            mock_http, str(player.unique_id), {"layers": ["a"]}
+        mock_set_decal.assert_awaited_once_with(
+            mock_http, str(player.unique_id), decal_a_config
         )
 
 
