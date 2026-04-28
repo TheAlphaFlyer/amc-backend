@@ -114,7 +114,6 @@ async def _activate_guild(
     await GuildSession.objects.acreate(
         guild=guild,
         character=character,
-        guild_vehicle=guild_vehicle,
         started_at=now,
     )
     logger.info(f"Started guild session: {character.name} → {guild.abbreviation}")
@@ -139,14 +138,14 @@ async def check_guild_cargo(
 ) -> tuple[GuildSession | None, int]:
     session = await (
         GuildSession.objects.filter(character=character, ended_at__isnull=True)
-        .select_related("guild_vehicle__cargo_requirement")
+        .select_related("guild__cargo_requirement")
         .afirst()
     )
-    if not session or not session.guild_vehicle:
+    if not session:
         return None, 0
 
     try:
-        req = session.guild_vehicle.cargo_requirement
+        req = session.guild.cargo_requirement
     except Exception:
         return None, 0
 
@@ -170,14 +169,14 @@ async def check_guild_passenger(
 ) -> tuple[GuildSession | None, int]:
     session = await (
         GuildSession.objects.filter(character=character, ended_at__isnull=True)
-        .select_related("guild_vehicle__passenger_requirement")
+        .select_related("guild__passenger_requirement")
         .afirst()
     )
-    if not session or not session.guild_vehicle:
+    if not session:
         return None, 0
 
     try:
-        req = session.guild_vehicle.passenger_requirement
+        req = session.guild.passenger_requirement
     except Exception:
         return None, 0
 

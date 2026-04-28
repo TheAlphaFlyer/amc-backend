@@ -22,12 +22,12 @@ from amc.models import (
     CharacterLocation,
     DeliveryPoint,
     Guild,
+    GuildCargoRequirement,
     GuildCharacter,
+    GuildPassengerRequirement,
     GuildSession,
     GuildVehicle,
-    GuildVehicleCargoRequirement,
     GuildVehiclePart,
-    GuildVehiclePassengerRequirement,
     ServerCargoArrivedLog,
     ServerPassengerArrivedLog,
     VehicleDecal,
@@ -274,7 +274,6 @@ class ActivateGuildTests(TestCase):
 
         session = await GuildSession.objects.aget(character=character, guild=guild)
         self.assertIsNone(session.ended_at)
-        self.assertEqual(session.guild_vehicle_id, gv.pk)
 
         gc = await GuildCharacter.objects.aget(character=character, guild=guild)
         self.assertEqual(gc.level, 1)
@@ -690,15 +689,14 @@ class CheckGuildCargoTests(TestCase):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        gv = await GuildVehicle.objects.acreate(guild=guild, vehicle_key="Trophy2")
         session = await GuildSession.objects.acreate(
-            guild=guild, character=character, guild_vehicle=gv, started_at=timezone.now()
+            guild=guild, character=character, started_at=timezone.now()
         )
         if cargo_req_kwargs is not None:
-            await GuildVehicleCargoRequirement.objects.acreate(
-                guild_vehicle=gv, **cargo_req_kwargs
+            await GuildCargoRequirement.objects.acreate(
+                guild=guild, **cargo_req_kwargs
             )
-        return character, gv, session
+        return character, session
 
     async def test_no_session_returns_none(self):
         player = await sync_to_async(PlayerFactory)()
@@ -707,25 +705,14 @@ class CheckGuildCargoTests(TestCase):
         self.assertIsNone(session)
         self.assertEqual(bonus, 0)
 
-    async def test_no_vehicle_returns_none(self):
-        player = await sync_to_async(PlayerFactory)()
-        character = await sync_to_async(CharacterFactory)(player=player)
-        guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        await GuildSession.objects.acreate(
-            guild=guild, character=character, started_at=timezone.now()
-        )
-        session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
-        self.assertIsNone(session)
-        self.assertEqual(bonus, 0)
-
     async def test_no_requirement_returns_none(self):
-        character, _, _ = await self._setup()
+        character, _ = await self._setup()
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
         self.assertIsNone(session)
         self.assertEqual(bonus, 0)
 
     async def test_allowed_cargo_key_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"allowed_cargo_keys": ["SmallBox", "AppleBox"], "bonus_pct": 10}
         )
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
@@ -733,7 +720,7 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 500)
 
     async def test_allowed_cargo_key_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"allowed_cargo_keys": ["SmallBox"], "bonus_pct": 10}
         )
         session, bonus = await check_guild_cargo(character, "AppleBox", 5000, 0)
@@ -741,13 +728,13 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_empty_allowed_list_accepts_any(self):
-        character, _, sess = await self._setup({"bonus_pct": 5})
+        character, sess = await self._setup({"bonus_pct": 5})
         session, bonus = await check_guild_cargo(character, "Anything", 10000, 0)
         self.assertEqual(session.pk, sess.pk)
         self.assertEqual(bonus, 500)
 
     async def test_excluded_cargo_key_blocks(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"excluded_cargo_keys": ["Ganja"], "bonus_pct": 10}
         )
         session, bonus = await check_guild_cargo(character, "Ganja", 5000, 0)
@@ -755,7 +742,7 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_excluded_cargo_key_allows_others(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"excluded_cargo_keys": ["Ganja"], "bonus_pct": 10}
         )
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
@@ -763,48 +750,48 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 500)
 
     async def test_max_damage_filter_passes(self):
-        character, _, sess = await self._setup({"max_damage": 0.5, "bonus_pct": 10})
+        character, sess = await self._setup({"max_damage": 0.5, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0.3)
         self.assertEqual(session.pk, sess.pk)
 
     async def test_max_damage_filter_fails(self):
-        character, _, _ = await self._setup({"max_damage": 0.5, "bonus_pct": 10})
+        character, _ = await self._setup({"max_damage": 0.5, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0.8)
         self.assertIsNone(session)
         self.assertEqual(bonus, 0)
 
     async def test_null_max_damage_accepts_any(self):
-        character, _, sess = await self._setup({"max_damage": None, "bonus_pct": 10})
+        character, sess = await self._setup({"max_damage": None, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 1.0)
         self.assertEqual(session.pk, sess.pk)
 
     async def test_min_payment_filter_passes(self):
-        character, _, sess = await self._setup({"min_payment": 1000, "bonus_pct": 10})
+        character, sess = await self._setup({"min_payment": 1000, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
         self.assertEqual(session.pk, sess.pk)
 
     async def test_min_payment_filter_fails(self):
-        character, _, _ = await self._setup({"min_payment": 10000, "bonus_pct": 10})
+        character, _ = await self._setup({"min_payment": 10000, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
         self.assertIsNone(session)
 
     async def test_max_payment_filter_passes(self):
-        character, _, sess = await self._setup({"max_payment": 10000, "bonus_pct": 10})
+        character, sess = await self._setup({"max_payment": 10000, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
         self.assertEqual(session.pk, sess.pk)
 
     async def test_max_payment_filter_fails(self):
-        character, _, _ = await self._setup({"max_payment": 1000, "bonus_pct": 10})
+        character, _ = await self._setup({"max_payment": 1000, "bonus_pct": 10})
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
         self.assertIsNone(session)
 
     async def test_bonus_calculation(self):
-        character, _, sess = await self._setup({"bonus_pct": 15})
+        character, sess = await self._setup({"bonus_pct": 15})
         session, bonus = await check_guild_cargo(character, "SmallBox", 10000, 0)
         self.assertEqual(bonus, 1500)
 
     async def test_zero_bonus_pct(self):
-        character, _, sess = await self._setup({"bonus_pct": 0})
+        character, sess = await self._setup({"bonus_pct": 0})
         session, bonus = await check_guild_cargo(character, "SmallBox", 10000, 0)
         self.assertEqual(session.pk, sess.pk)
         self.assertEqual(bonus, 0)
@@ -813,12 +800,11 @@ class CheckGuildCargoTests(TestCase):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        gv = await GuildVehicle.objects.acreate(guild=guild, vehicle_key="Trophy2")
-        await GuildVehicleCargoRequirement.objects.acreate(
-            guild_vehicle=gv, bonus_pct=10
+        await GuildCargoRequirement.objects.acreate(
+            guild=guild, bonus_pct=10
         )
         await GuildSession.objects.acreate(
-            guild=guild, character=character, guild_vehicle=gv,
+            guild=guild, character=character,
             started_at=timezone.now(), ended_at=timezone.now(),
         )
         session, bonus = await check_guild_cargo(character, "SmallBox", 5000, 0)
@@ -826,7 +812,7 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_combined_filters(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {
                 "allowed_cargo_keys": ["SmallBox", "Fuel"],
                 "excluded_cargo_keys": ["Fuel"],
@@ -841,7 +827,7 @@ class CheckGuildCargoTests(TestCase):
         self.assertEqual(bonus, 1000)
 
     async def test_combined_filters_one_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {
                 "allowed_cargo_keys": ["SmallBox", "Fuel"],
                 "max_damage": 0.3,
@@ -866,15 +852,14 @@ class CheckGuildPassengerTests(TestCase):
         player = await sync_to_async(PlayerFactory)()
         character = await sync_to_async(CharacterFactory)(player=player)
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        gv = await GuildVehicle.objects.acreate(guild=guild, vehicle_key="Trophy2")
         session = await GuildSession.objects.acreate(
-            guild=guild, character=character, guild_vehicle=gv, started_at=timezone.now()
+            guild=guild, character=character, started_at=timezone.now()
         )
         if passenger_req_kwargs is not None:
-            await GuildVehiclePassengerRequirement.objects.acreate(
-                guild_vehicle=gv, **passenger_req_kwargs
+            await GuildPassengerRequirement.objects.acreate(
+                guild=guild, **passenger_req_kwargs
             )
-        return character, gv, session
+        return character, session
 
     async def test_no_session_returns_none(self):
         player = await sync_to_async(PlayerFactory)()
@@ -886,7 +871,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_no_requirement_returns_none(self):
-        character, _, _ = await self._setup()
+        character, _ = await self._setup()
         session, bonus = await check_guild_passenger(
             character, 2, True, False, False, False, 3, 5000
         )
@@ -894,7 +879,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_allowed_passenger_type_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"allowed_passenger_types": [2, 3], "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -904,7 +889,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 500)
 
     async def test_allowed_passenger_type_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"allowed_passenger_types": [2], "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -913,7 +898,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_empty_allowed_list_accepts_any(self):
-        character, _, sess = await self._setup({"bonus_pct": 5})
+        character, sess = await self._setup({"bonus_pct": 5})
         session, bonus = await check_guild_passenger(
             character, 4, False, False, False, False, None, 10000
         )
@@ -921,7 +906,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 500)
 
     async def test_require_comfort_true_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"require_comfort": True, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -930,7 +915,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session.pk, sess.pk)
 
     async def test_require_comfort_true_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"require_comfort": True, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -939,7 +924,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_require_comfort_false_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"require_comfort": False, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -948,7 +933,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session.pk, sess.pk)
 
     async def test_require_comfort_null_accepts_any(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"require_comfort": None, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -961,7 +946,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session2.pk, sess.pk)
 
     async def test_require_urgent(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"require_urgent": True, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -970,7 +955,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_require_limo(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"require_limo": True, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -979,7 +964,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session.pk, sess.pk)
 
     async def test_require_offroad(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"require_offroad": True, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -988,7 +973,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_min_comfort_rating_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"min_comfort_rating": 3, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -997,7 +982,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session.pk, sess.pk)
 
     async def test_min_comfort_rating_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"min_comfort_rating": 3, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -1006,7 +991,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_max_comfort_rating_passes(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {"max_comfort_rating": 5, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -1015,7 +1000,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(session.pk, sess.pk)
 
     async def test_max_comfort_rating_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {"max_comfort_rating": 3, "bonus_pct": 10}
         )
         session, bonus = await check_guild_passenger(
@@ -1024,7 +1009,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertIsNone(session)
 
     async def test_bonus_calculation(self):
-        character, _, sess = await self._setup({"bonus_pct": 25})
+        character, sess = await self._setup({"bonus_pct": 25})
         session, bonus = await check_guild_passenger(
             character, 2, False, False, False, False, None, 8000
         )
@@ -1032,7 +1017,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 2000)
 
     async def test_zero_bonus_pct(self):
-        character, _, sess = await self._setup({"bonus_pct": 0})
+        character, sess = await self._setup({"bonus_pct": 0})
         session, bonus = await check_guild_passenger(
             character, 2, False, False, False, False, None, 8000
         )
@@ -1040,7 +1025,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 0)
 
     async def test_combined_flags(self):
-        character, _, sess = await self._setup(
+        character, sess = await self._setup(
             {
                 "allowed_passenger_types": [2],
                 "require_comfort": True,
@@ -1056,7 +1041,7 @@ class CheckGuildPassengerTests(TestCase):
         self.assertEqual(bonus, 1500)
 
     async def test_combined_flags_one_fails(self):
-        character, _, _ = await self._setup(
+        character, _ = await self._setup(
             {
                 "allowed_passenger_types": [2],
                 "require_comfort": True,
@@ -1095,15 +1080,14 @@ class CargoGuildBonusIntegrationTests(TestCase):
 
     async def _activate_guild_session(self, character, cargo_req_kwargs=None):
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        gv = await GuildVehicle.objects.acreate(guild=guild, vehicle_key="TestVehicle")
         if cargo_req_kwargs is not None:
-            await GuildVehicleCargoRequirement.objects.acreate(
-                guild_vehicle=gv, **cargo_req_kwargs
+            await GuildCargoRequirement.objects.acreate(
+                guild=guild, **cargo_req_kwargs
             )
         await GuildSession.objects.acreate(
-            guild=guild, character=character, guild_vehicle=gv, started_at=timezone.now()
+            guild=guild, character=character, started_at=timezone.now()
         )
-        return guild, gv
+        return guild
 
     def _cargo_event(self, character, player, cargo_key="SmallBox", payment=5000, damage=0.0):
         return {
@@ -1249,15 +1233,14 @@ class PassengerGuildBonusIntegrationTests(TestCase):
 
     async def _activate_guild_session(self, character, passenger_req_kwargs=None):
         guild = await Guild.objects.acreate(name="Test", abbreviation="TST")
-        gv = await GuildVehicle.objects.acreate(guild=guild, vehicle_key="TestVehicle")
         if passenger_req_kwargs is not None:
-            await GuildVehiclePassengerRequirement.objects.acreate(
-                guild_vehicle=gv, **passenger_req_kwargs
+            await GuildPassengerRequirement.objects.acreate(
+                guild=guild, **passenger_req_kwargs
             )
         await GuildSession.objects.acreate(
-            guild=guild, character=character, guild_vehicle=gv, started_at=timezone.now()
+            guild=guild, character=character, started_at=timezone.now()
         )
-        return guild, gv
+        return guild
 
     def _passenger_event(self, character, player, passenger_type=2, payment=3000):
         return {

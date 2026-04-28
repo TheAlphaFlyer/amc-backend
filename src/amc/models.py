@@ -2334,9 +2334,9 @@ class GuildVehiclePart(models.Model):
 
 
 @final
-class GuildVehicleCargoRequirement(models.Model):
-    guild_vehicle = models.OneToOneField(
-        GuildVehicle, on_delete=models.CASCADE, related_name="cargo_requirement"
+class GuildCargoRequirement(models.Model):
+    guild = models.OneToOneField(
+        Guild, on_delete=models.CASCADE, related_name="cargo_requirement"
     )
     allowed_cargo_keys = models.JSONField(default=list, blank=True)
     excluded_cargo_keys = models.JSONField(default=list, blank=True)
@@ -2347,13 +2347,13 @@ class GuildVehicleCargoRequirement(models.Model):
 
     @override
     def __str__(self):
-        return f"Cargo req — {self.guild_vehicle}"
+        return f"Cargo req — {self.guild}"
 
 
 @final
-class GuildVehiclePassengerRequirement(models.Model):
-    guild_vehicle = models.OneToOneField(
-        GuildVehicle, on_delete=models.CASCADE, related_name="passenger_requirement"
+class GuildPassengerRequirement(models.Model):
+    guild = models.OneToOneField(
+        Guild, on_delete=models.CASCADE, related_name="passenger_requirement"
     )
     allowed_passenger_types = models.JSONField(default=list, blank=True)
     require_comfort = models.BooleanField(null=True, blank=True)
@@ -2366,7 +2366,7 @@ class GuildVehiclePassengerRequirement(models.Model):
 
     @override
     def __str__(self):
-        return f"Passenger req — {self.guild_vehicle}"
+        return f"Passenger req — {self.guild}"
 
 
 @final
@@ -2374,9 +2374,6 @@ class GuildSession(models.Model):
     guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="sessions")
     character = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="guild_sessions"
-    )
-    guild_vehicle = models.ForeignKey(
-        GuildVehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
     )
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)

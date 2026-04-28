@@ -89,8 +89,8 @@ from .models import (
     GuildCharacter,
     GuildVehicle,
     GuildVehiclePart,
-    GuildVehicleCargoRequirement,
-    GuildVehiclePassengerRequirement,
+    GuildCargoRequirement,
+    GuildPassengerRequirement,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1523,28 +1523,28 @@ class GuildVehicleInline(admin.TabularInline):
     autocomplete_fields = ["decal"]
 
 
+class GuildCargoRequirementInline(admin.StackedInline):
+    model = GuildCargoRequirement
+    extra = 0
+    max_num = 1
+
+
+class GuildPassengerRequirementInline(admin.StackedInline):
+    model = GuildPassengerRequirement
+    extra = 0
+    max_num = 1
+
+
 @admin.register(Guild)
 class GuildAdmin(admin.ModelAdmin):
     list_display = ["name", "abbreviation"]
     search_fields = ["name", "abbreviation"]
-    inlines = [GuildVehicleInline]
+    inlines = [GuildVehicleInline, GuildCargoRequirementInline, GuildPassengerRequirementInline]
 
 
 class GuildVehiclePartInline(admin.TabularInline):
     model = GuildVehiclePart
     extra = 0
-
-
-class GuildVehicleCargoRequirementInline(admin.StackedInline):
-    model = GuildVehicleCargoRequirement
-    extra = 0
-    max_num = 1
-
-
-class GuildVehiclePassengerRequirementInline(admin.StackedInline):
-    model = GuildVehiclePassengerRequirement
-    extra = 0
-    max_num = 1
 
 
 @admin.register(GuildVehicle)
@@ -1554,7 +1554,7 @@ class GuildVehicleAdmin(admin.ModelAdmin):
     list_filter = ["guild", "vehicle_key"]
     search_fields = ["guild__name"]
     autocomplete_fields = ["decal"]
-    inlines = [GuildVehiclePartInline, GuildVehicleCargoRequirementInline, GuildVehiclePassengerRequirementInline]
+    inlines = [GuildVehiclePartInline]
 
 
 @admin.register(GuildSession)
