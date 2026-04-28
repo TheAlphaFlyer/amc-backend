@@ -854,6 +854,17 @@ async def process_log_event(
                         character, player, http_client_mod, action
                     )
                 )
+                from amc.guilds import handle_guild_session
+
+                asyncio.create_task(
+                    handle_guild_session(
+                        character,
+                        player,
+                        http_client_mod,
+                        action.label.upper(),
+                        vehicle_name,
+                    )
+                )
 
             #  asyncio.create_task(delay(register_player_vehicles(http_client_mod, character, player), 5))
             if action == PlayerVehicleLog.Action.BOUGHT and vehicle_name == "Vulcan":

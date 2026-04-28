@@ -2278,6 +2278,68 @@ class VehicleDecal(models.Model):
 
 
 @final
+class Guild(models.Model):
+    name = models.CharField(max_length=128, unique=True)
+    abbreviation = models.CharField(max_length=10, unique=True)
+    vehicle_key = models.CharField(max_length=100)
+    engine_part_key = models.CharField(max_length=200, null=True, blank=True)
+    decal = models.ForeignKey(
+        VehicleDecal, on_delete=models.SET_NULL, null=True, blank=True, related_name="guilds"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @override
+    def __str__(self):
+        return f"[{self.abbreviation}] {self.name}"
+
+
+@final
+class GuildSession(models.Model):
+    guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="sessions")
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="guild_sessions"
+    )
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["character", "ended_at"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["character"],
+                name="unique_active_guild_session",
+                condition=Q(ended_at__isnull=True),
+            ),
+        ]
+
+    @override
+    def __str__(self):
+        status = "active" if self.ended_at is None else f"ended {self.ended_at}"
+        return f"{self.guild.abbreviation} — {self.character.name} ({status})"
+
+
+@final
+class GuildCharacter(models.Model):
+    guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="characters")
+    character = models.ForeignKey(
+        Character, on_delete=models.CASCADE, related_name="guild_memberships"
+    )
+    level = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["guild", "character"], name="unique_guild_character"
+            ),
+        ]
+
+    @override
+    def __str__(self):
+        return f"{self.guild.abbreviation} — {self.character.name} (Lv{self.level})"
+
+
+@final
 class PlayerShift(models.Model):
     player = models.ForeignKey(
         Player, on_delete=models.SET_NULL, null=True, blank=True, related_name="shifts"

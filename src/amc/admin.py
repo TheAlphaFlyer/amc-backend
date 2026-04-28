@@ -84,6 +84,9 @@ from .models import (
     ArrestZone,
     PoliceSession,
     Wanted,
+    Guild,
+    GuildSession,
+    GuildCharacter,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1508,3 +1511,27 @@ class WantedAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description="Active")
     def is_active(self, obj):
         return obj.expired_at is None and obj.wanted_remaining > 0
+
+
+@admin.register(Guild)
+class GuildAdmin(admin.ModelAdmin):
+    list_display = ["name", "abbreviation", "vehicle_key", "engine_part_key"]
+    list_filter = ["vehicle_key"]
+    search_fields = ["name", "abbreviation"]
+
+
+@admin.register(GuildSession)
+class GuildSessionAdmin(admin.ModelAdmin):
+    list_display = ["guild", "character", "started_at", "ended_at"]
+    list_select_related = ["guild", "character", "character__player"]
+    list_filter = ["guild"]
+    search_fields = ["character__name", "character__player__unique_id"]
+    ordering = ["-started_at"]
+
+
+@admin.register(GuildCharacter)
+class GuildCharacterAdmin(admin.ModelAdmin):
+    list_display = ["guild", "character", "level"]
+    list_select_related = ["guild", "character"]
+    list_filter = ["guild"]
+    search_fields = ["character__name"]

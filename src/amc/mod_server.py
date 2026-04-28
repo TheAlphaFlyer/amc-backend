@@ -159,6 +159,30 @@ async def spawn_dealership(session, vehicle_key, location, yaw):
 
 _NEG_SENTINEL = "__none__"
 _inflight: dict[str, asyncio.Future] = {}
+_inflight_vehicle: dict[str, asyncio.Future] = {}
+
+
+async def _coalesce(key: str, store: dict[str, asyncio.Future], coro_fn):
+    """Share a single in-flight Future when multiple callers request the same key concurrently.
+
+    Follows the same pattern as get_player's _inflight deduplication.
+    """
+    pending = store.get(key)
+    if pending is not None:
+        return await pending
+
+    future = asyncio.get_running_loop().create_future()
+    store[key] = future
+    try:
+        result = await coro_fn()
+        future.set_result(result)
+        return result
+    except Exception as exc:
+        if not future.done():
+            future.set_exception(exc)
+        raise
+    finally:
+        store.pop(key, None)
 
 
 async def get_player(session, player_id, force_refresh=False):
@@ -372,12 +396,15 @@ async def get_player_customization(session, character_guid):
 
 
 async def get_player_last_vehicle(session, character_guid):
-    async with session.get(
-        f"/player_vehicles/{character_guid}/last", timeout=FAST_TIMEOUT
-    ) as resp:
-        if resp.status != 200:
-            raise Exception("Failed to get player last vehicle")
-        return await resp.json()
+    async def _fetch():
+        async with session.get(
+            f"/player_vehicles/{character_guid}/last", timeout=FAST_TIMEOUT
+        ) as resp:
+            if resp.status != 200:
+                raise Exception("Failed to get player last vehicle")
+            return await resp.json()
+
+    return await _coalesce(f"last_vehicle:{character_guid}", _inflight_vehicle, _fetch)
 
 
 async def get_player_last_vehicle_decals(session, character_guid):
@@ -393,10 +420,15 @@ async def get_player_last_vehicle_parts(session, character_guid, complete=False)
     url = f"/player_vehicles/{character_guid}/last/parts"
     if complete:
         url += "?complete=1"
-    async with session.get(url, timeout=FAST_TIMEOUT) as resp:
-        if resp.status != 200:
-            raise Exception("Failed to get player last vehicle parts")
-        return await resp.json()
+    cache_key = f"last_vehicle_parts:{character_guid}:{complete}"
+
+    async def _fetch():
+        async with session.get(url, timeout=FAST_TIMEOUT) as resp:
+            if resp.status != 200:
+                raise Exception("Failed to get player last vehicle parts")
+            return await resp.json()
+
+    return await _coalesce(cache_key, _inflight_vehicle, _fetch)
 
 
 async def despawn_player_vehicle(session, player_id, category="current"):
