@@ -190,9 +190,9 @@ async def check_guild_passenger(
         return None, 0
     if req.require_offroad is not None and offroad != req.require_offroad:
         return None, 0
-    if req.min_comfort_rating is not None and comfort_rating < req.min_comfort_rating:
+    if comfort and req.min_comfort_rating is not None and comfort_rating < req.min_comfort_rating:
         return None, 0
-    if req.max_comfort_rating is not None and comfort_rating > req.max_comfort_rating:
+    if comfort and req.max_comfort_rating is not None and comfort_rating > req.max_comfort_rating:
         return None, 0
 
     bonus = int(payment * req.bonus_pct / 100)

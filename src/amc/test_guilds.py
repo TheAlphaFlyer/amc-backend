@@ -1008,6 +1008,33 @@ class CheckGuildPassengerTests(TestCase):
         )
         self.assertIsNone(session)
 
+    async def test_comfort_rating_ignored_when_comfort_false(self):
+        character, sess = await self._setup(
+            {"min_comfort_rating": 3, "bonus_pct": 10}
+        )
+        session, bonus = await check_guild_passenger(
+            character, 2, False, False, False, False, 0, 5000
+        )
+        self.assertEqual(session.pk, sess.pk)
+
+    async def test_max_comfort_rating_zero_allows_comfort_false(self):
+        character, sess = await self._setup(
+            {"max_comfort_rating": 0, "bonus_pct": 10}
+        )
+        session, bonus = await check_guild_passenger(
+            character, 2, False, False, False, False, 3, 5000
+        )
+        self.assertEqual(session.pk, sess.pk)
+
+    async def test_max_comfort_rating_zero_blocks_comfort_true(self):
+        character, _ = await self._setup(
+            {"max_comfort_rating": 0, "bonus_pct": 10}
+        )
+        session, bonus = await check_guild_passenger(
+            character, 2, True, False, False, False, 3, 5000
+        )
+        self.assertIsNone(session)
+
     async def test_bonus_calculation(self):
         character, sess = await self._setup({"bonus_pct": 25})
         session, bonus = await check_guild_passenger(
