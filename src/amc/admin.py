@@ -87,6 +87,8 @@ from .models import (
     Guild,
     GuildSession,
     GuildCharacter,
+    GuildVehicle,
+    GuildVehiclePart,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1513,11 +1515,32 @@ class WantedAdmin(admin.ModelAdmin):
         return obj.expired_at is None and obj.wanted_remaining > 0
 
 
+class GuildVehicleInline(admin.TabularInline):
+    model = GuildVehicle
+    extra = 0
+    autocomplete_fields = ["decal"]
+
+
 @admin.register(Guild)
 class GuildAdmin(admin.ModelAdmin):
-    list_display = ["name", "abbreviation", "vehicle_key", "engine_part_key"]
-    list_filter = ["vehicle_key"]
+    list_display = ["name", "abbreviation"]
     search_fields = ["name", "abbreviation"]
+    inlines = [GuildVehicleInline]
+
+
+class GuildVehiclePartInline(admin.TabularInline):
+    model = GuildVehiclePart
+    extra = 0
+
+
+@admin.register(GuildVehicle)
+class GuildVehicleAdmin(admin.ModelAdmin):
+    list_display = ["guild", "vehicle_key", "decal"]
+    list_select_related = ["guild", "decal"]
+    list_filter = ["guild", "vehicle_key"]
+    search_fields = ["guild__name"]
+    autocomplete_fields = ["decal"]
+    inlines = [GuildVehiclePartInline]
 
 
 @admin.register(GuildSession)

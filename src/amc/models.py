@@ -2281,16 +2281,50 @@ class VehicleDecal(models.Model):
 class Guild(models.Model):
     name = models.CharField(max_length=128, unique=True)
     abbreviation = models.CharField(max_length=10, unique=True)
-    vehicle_key = models.CharField(max_length=100)
-    engine_part_key = models.CharField(max_length=200, null=True, blank=True)
-    decal = models.ForeignKey(
-        VehicleDecal, on_delete=models.SET_NULL, null=True, blank=True, related_name="guilds"
-    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     @override
     def __str__(self):
         return f"[{self.abbreviation}] {self.name}"
+
+
+@final
+class GuildVehicle(models.Model):
+    guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="vehicles")
+    vehicle_key = models.CharField(max_length=100)
+    decal = models.ForeignKey(
+        VehicleDecal, on_delete=models.SET_NULL, null=True, blank=True, related_name="guild_vehicles"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["guild", "vehicle_key"], name="unique_guild_vehicle_key"
+            ),
+        ]
+
+    @override
+    def __str__(self):
+        return f"{self.guild.abbreviation} — {self.vehicle_key}"
+
+
+@final
+class GuildVehiclePart(models.Model):
+    guild_vehicle = models.ForeignKey(
+        GuildVehicle, on_delete=models.CASCADE, related_name="parts"
+    )
+    part_key = models.CharField(max_length=200)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["guild_vehicle", "part_key"], name="unique_guild_vehicle_part"
+            ),
+        ]
+
+    @override
+    def __str__(self):
+        return f"{self.guild_vehicle} — {self.part_key}"
 
 
 @final

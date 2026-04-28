@@ -2,28 +2,37 @@ import logging
 
 from django.utils import timezone
 
-from amc.enums import VehicleKeyByLabel, VehiclePartSlot
-from amc.models import Character, Guild, GuildCharacter, GuildSession, Player
+from amc.enums import VehicleKeyByLabel
+from amc.models import (
+    Character,
+    GuildCharacter,
+    GuildSession,
+    GuildVehicle,
+    Player,
+)
 from amc.mod_server import get_player_last_vehicle_parts, set_decal
 
 logger = logging.getLogger("amc.guilds")
 
 
-async def _find_matching_guild_with_engine(
+async def _find_matching_guild_vehicle(
     vehicle_name: str, character_guid: str, http_client_mod
-) -> Guild | None:
+) -> GuildVehicle | None:
     vehicle_key = VehicleKeyByLabel.get(vehicle_name)
     if not vehicle_key:
         return None
 
     candidates = [
-        g async for g in Guild.objects.filter(vehicle_key=vehicle_key).select_related("decal")
+        gv
+        async for gv in GuildVehicle.objects.filter(vehicle_key=vehicle_key)
+        .select_related("guild", "decal")
+        .prefetch_related("parts")
     ]
     if not candidates:
         return None
 
-    needs_engine_check = [g for g in candidates if g.engine_part_key is not None]
-    if not needs_engine_check:
+    has_any_parts = any(gv.parts.all() for gv in candidates)
+    if not has_any_parts:
         return candidates[0]
 
     try:
@@ -34,23 +43,19 @@ async def _find_matching_guild_with_engine(
         logger.error(f"Failed to fetch vehicle parts for guild check ({character_guid}): {e}")
         return None
 
-    parts = parts_data.get("parts", [])
-    engine_key = None
-    for part in parts:
-        if part.get("Slot") == VehiclePartSlot.Engine.value:
-            engine_key = part.get("Key")
-            break
+    player_part_keys = {p["Key"] for p in parts_data.get("parts", [])}
 
-    if engine_key is None:
-        no_engine = [g for g in candidates if g.engine_part_key is None]
-        return no_engine[0] if no_engine else None
+    fallback_no_parts = None
+    for gv in candidates:
+        required = list(gv.parts.all())
+        if not required:
+            if fallback_no_parts is None:
+                fallback_no_parts = gv
+            continue
+        if all(rp.part_key in player_part_keys for rp in required):
+            return gv
 
-    for g in candidates:
-        if g.engine_part_key == engine_key:
-            return g
-
-    no_engine = [g for g in candidates if g.engine_part_key is None]
-    return no_engine[0] if no_engine else None
+    return fallback_no_parts
 
 
 async def handle_guild_session(
@@ -65,12 +70,12 @@ async def handle_guild_session(
             await _end_active_session(character)
             return
 
-        guild = await _find_matching_guild_with_engine(
+        guild_vehicle = await _find_matching_guild_vehicle(
             vehicle_name, str(character.guid), http_client_mod
         )
 
-        if guild:
-            await _activate_guild(character, guild, http_client_mod, str(player.unique_id))
+        if guild_vehicle:
+            await _activate_guild(character, guild_vehicle, http_client_mod, str(player.unique_id))
         else:
             await _end_active_session(character)
     except Exception:
@@ -88,11 +93,12 @@ async def _end_active_session(character: Character):
 
 async def _activate_guild(
     character: Character,
-    guild: Guild,
+    guild_vehicle: GuildVehicle,
     http_client_mod,
     player_id: str,
 ):
     now = timezone.now()
+    guild = guild_vehicle.guild
 
     existing = await GuildSession.objects.filter(
         character=character, guild=guild, ended_at__isnull=True
@@ -114,8 +120,9 @@ async def _activate_guild(
         character=character,
     )
 
-    if guild.decal and guild.decal.config:
+    decal = guild_vehicle.decal
+    if decal and decal.config:
         try:
-            await set_decal(http_client_mod, player_id, guild.decal.config)
+            await set_decal(http_client_mod, player_id, decal.config)
         except Exception as e:
             logger.error(f"Failed to apply guild decal for {character.name}: {e}")
