@@ -1597,6 +1597,9 @@ class ServerCargoArrivedLog(models.Model):
         related_name="deliveries_in",
     )
     data = models.JSONField(null=True, blank=True)
+    guild_session = models.ForeignKey(
+        "GuildSession", models.SET_NULL, null=True, blank=True, related_name="cargo_logs"
+    )
 
 
 @final
@@ -1642,6 +1645,9 @@ class ServerPassengerArrivedLog(models.Model):
     comfort_rating = models.IntegerField(null=True)
     urgent_rating = models.IntegerField(null=True)
     data = models.JSONField(null=True, blank=True)
+    guild_session = models.ForeignKey(
+        "GuildSession", models.SET_NULL, null=True, blank=True, related_name="passenger_logs"
+    )
 
 
 @final
@@ -2328,10 +2334,49 @@ class GuildVehiclePart(models.Model):
 
 
 @final
+class GuildVehicleCargoRequirement(models.Model):
+    guild_vehicle = models.OneToOneField(
+        GuildVehicle, on_delete=models.CASCADE, related_name="cargo_requirement"
+    )
+    allowed_cargo_keys = models.JSONField(default=list, blank=True)
+    excluded_cargo_keys = models.JSONField(default=list, blank=True)
+    max_damage = models.FloatField(null=True, blank=True)
+    min_payment = models.PositiveIntegerField(null=True, blank=True)
+    max_payment = models.PositiveIntegerField(null=True, blank=True)
+    bonus_pct = models.PositiveIntegerField(default=0)
+
+    @override
+    def __str__(self):
+        return f"Cargo req — {self.guild_vehicle}"
+
+
+@final
+class GuildVehiclePassengerRequirement(models.Model):
+    guild_vehicle = models.OneToOneField(
+        GuildVehicle, on_delete=models.CASCADE, related_name="passenger_requirement"
+    )
+    allowed_passenger_types = models.JSONField(default=list, blank=True)
+    require_comfort = models.BooleanField(null=True, blank=True)
+    require_urgent = models.BooleanField(null=True, blank=True)
+    require_limo = models.BooleanField(null=True, blank=True)
+    require_offroad = models.BooleanField(null=True, blank=True)
+    min_comfort_rating = models.IntegerField(null=True, blank=True)
+    max_comfort_rating = models.IntegerField(null=True, blank=True)
+    bonus_pct = models.PositiveIntegerField(default=0)
+
+    @override
+    def __str__(self):
+        return f"Passenger req — {self.guild_vehicle}"
+
+
+@final
 class GuildSession(models.Model):
     guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="sessions")
     character = models.ForeignKey(
         Character, on_delete=models.CASCADE, related_name="guild_sessions"
+    )
+    guild_vehicle = models.ForeignKey(
+        GuildVehicle, on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
     )
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)

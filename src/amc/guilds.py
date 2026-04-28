@@ -114,6 +114,7 @@ async def _activate_guild(
     await GuildSession.objects.acreate(
         guild=guild,
         character=character,
+        guild_vehicle=guild_vehicle,
         started_at=now,
     )
     logger.info(f"Started guild session: {character.name} → {guild.abbreviation}")
@@ -131,3 +132,69 @@ async def _activate_guild(
             await set_decal(http_client_mod, player_id, decal.config)
         except Exception as e:
             logger.error(f"Failed to apply guild decal for {character.name}: {e}")
+
+
+async def check_guild_cargo(
+    character, cargo_key, payment, damage
+) -> tuple[GuildSession | None, int]:
+    session = await (
+        GuildSession.objects.filter(character=character, ended_at__isnull=True)
+        .select_related("guild_vehicle__cargo_requirement")
+        .afirst()
+    )
+    if not session or not session.guild_vehicle:
+        return None, 0
+
+    try:
+        req = session.guild_vehicle.cargo_requirement
+    except Exception:
+        return None, 0
+
+    if req.allowed_cargo_keys and cargo_key not in req.allowed_cargo_keys:
+        return None, 0
+    if req.excluded_cargo_keys and cargo_key in req.excluded_cargo_keys:
+        return None, 0
+    if req.max_damage is not None and damage > req.max_damage:
+        return None, 0
+    if req.min_payment is not None and payment < req.min_payment:
+        return None, 0
+    if req.max_payment is not None and payment > req.max_payment:
+        return None, 0
+
+    bonus = int(payment * req.bonus_pct / 100)
+    return session, bonus
+
+
+async def check_guild_passenger(
+    character, passenger_type, comfort, urgent, limo, offroad, comfort_rating, payment
+) -> tuple[GuildSession | None, int]:
+    session = await (
+        GuildSession.objects.filter(character=character, ended_at__isnull=True)
+        .select_related("guild_vehicle__passenger_requirement")
+        .afirst()
+    )
+    if not session or not session.guild_vehicle:
+        return None, 0
+
+    try:
+        req = session.guild_vehicle.passenger_requirement
+    except Exception:
+        return None, 0
+
+    if req.allowed_passenger_types and passenger_type not in req.allowed_passenger_types:
+        return None, 0
+    if req.require_comfort is not None and comfort != req.require_comfort:
+        return None, 0
+    if req.require_urgent is not None and urgent != req.require_urgent:
+        return None, 0
+    if req.require_limo is not None and limo != req.require_limo:
+        return None, 0
+    if req.require_offroad is not None and offroad != req.require_offroad:
+        return None, 0
+    if req.min_comfort_rating is not None and comfort_rating < req.min_comfort_rating:
+        return None, 0
+    if req.max_comfort_rating is not None and comfort_rating > req.max_comfort_rating:
+        return None, 0
+
+    bonus = int(payment * req.bonus_pct / 100)
+    return session, bonus

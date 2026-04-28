@@ -124,6 +124,21 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
     await ServerCargoArrivedLog.objects.abulk_create(logs)
 
+    # --- 4b. Guild vehicle cargo requirement check ---
+    from amc.guilds import check_guild_cargo
+
+    guild_bonus_total = 0
+    for log in logs:
+        session, bonus = await check_guild_cargo(
+            character, log.cargo_key, log.payment, log.damage or 0
+        )
+        if session:
+            log.guild_session = session
+            log.payment += bonus
+            guild_bonus_total += bonus
+    if guild_bonus_total > 0:
+        await ServerCargoArrivedLog.objects.abulk_update(logs, ["guild_session", "payment"])
+
     # --- 5. Special cargo side effects are handled per-key inside the loop below
 
     # --- 6. Per-cargo-group: subsidy, delivery, job, supply chain ---

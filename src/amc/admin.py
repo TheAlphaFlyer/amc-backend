@@ -89,6 +89,8 @@ from .models import (
     GuildCharacter,
     GuildVehicle,
     GuildVehiclePart,
+    GuildVehicleCargoRequirement,
+    GuildVehiclePassengerRequirement,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1533,6 +1535,18 @@ class GuildVehiclePartInline(admin.TabularInline):
     extra = 0
 
 
+class GuildVehicleCargoRequirementInline(admin.StackedInline):
+    model = GuildVehicleCargoRequirement
+    extra = 0
+    max_num = 1
+
+
+class GuildVehiclePassengerRequirementInline(admin.StackedInline):
+    model = GuildVehiclePassengerRequirement
+    extra = 0
+    max_num = 1
+
+
 @admin.register(GuildVehicle)
 class GuildVehicleAdmin(admin.ModelAdmin):
     list_display = ["guild", "vehicle_key", "decal"]
@@ -1540,7 +1554,7 @@ class GuildVehicleAdmin(admin.ModelAdmin):
     list_filter = ["guild", "vehicle_key"]
     search_fields = ["guild__name"]
     autocomplete_fields = ["decal"]
-    inlines = [GuildVehiclePartInline]
+    inlines = [GuildVehiclePartInline, GuildVehicleCargoRequirementInline, GuildVehiclePassengerRequirementInline]
 
 
 @admin.register(GuildSession)
