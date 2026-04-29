@@ -100,9 +100,19 @@ def migrate_to_timescaledb(apps, schema_editor):
                 "RENAME TO amc_characterlocation_archive"
             )
             cursor.execute(
-                "ALTER TABLE amc_characterlocation_archive "
-                "DROP CONSTRAINT IF EXISTS fk_charloc_character"
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'amc_characterlocation_archive'::regclass"
             )
+            for (conname,) in cursor.fetchall():
+                cursor.execute(
+                    f'ALTER TABLE amc_characterlocation_archive DROP CONSTRAINT IF EXISTS "{conname}"'
+                )
+            cursor.execute(
+                "SELECT indexname FROM pg_indexes "
+                "WHERE tablename = 'amc_characterlocation_archive'"
+            )
+            for (indexname,) in cursor.fetchall():
+                cursor.execute(f'DROP INDEX IF EXISTS "{indexname}"')
             cursor.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
             _create_fresh_hypertable(cursor)
             _enable_compression(cursor)
