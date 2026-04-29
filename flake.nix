@@ -375,6 +375,7 @@
                 client_encoding = "UTF8";
                 timezone = "UTC";
                 listen_addresses = pkgs.lib.mkForce "*"; # Container-internal; host firewall limits exposure
+                shared_preload_libraries = "timescaledb";
               };
               authentication = pkgs.lib.mkOverride 10 ''
                 local all all trust
