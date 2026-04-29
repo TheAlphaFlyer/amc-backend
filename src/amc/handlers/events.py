@@ -13,12 +13,14 @@ on individual SSE events rather than a polled snapshot.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from amc.handlers import register
+from amc.mod_server import transfer_exp
 from amc.models import (
     Character,
     GameEvent,
@@ -27,6 +29,7 @@ from amc.models import (
     RaceSetup,
     ScheduledEvent,
 )
+from amc.utils import delay
 
 logger = logging.getLogger("amc.webhook.handlers.events")
 
@@ -237,6 +240,31 @@ async def _upsert_game_event_character(game_event, player_info: dict):
     return game_event_character
 
 
+async def _reward_event_exp(game_event_id: int, http_client_mod):
+    participants = GameEventCharacter.objects.filter(
+        game_event_id=game_event_id,
+    ).select_related("character__player")
+
+    async for p in participants:
+        if not p.character.player:
+            continue
+        player_id = p.character.player.unique_id
+        try:
+            await transfer_exp(
+                http_client_mod,
+                player_id,
+                level_type=4,
+                exp=1000,
+                message="Racing EXP reward",
+            )
+        except Exception:
+            logger.exception(
+                "Failed to grant EXP to player %s for event %s",
+                player_id,
+                game_event_id,
+            )
+
+
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
@@ -270,6 +298,11 @@ async def handle_change_event_state(event, player, character, ctx):
     # Process all players
     for player_info in event_data.get("Players", []):
         await _upsert_game_event_character(game_event, player_info)
+
+    if transition and transition[1] == 3:
+        asyncio.create_task(
+            delay(_reward_event_exp(game_event.pk, ctx.http_client_mod), 10)
+        )
 
     return 0, 0, 0, 0
 

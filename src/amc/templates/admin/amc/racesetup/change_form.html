@@ -1,0 +1,9 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block submit_buttons_bottom %}
+{{ block.super }}
+<div class="submit-row">
+    <input type="submit" value="Post Event to Mod Server" name="_post_event" class="default" style="background: var(--button-bg, #417690); color: var(--button-fg, #fff);">
+</div>
+{% endblock %}

@@ -564,6 +564,23 @@ async def set_world_vehicle_decal(
             raise Exception("Failed to set vehicle decals")
 
 
+async def set_custom_destination(session, character_guid, location):
+    """Set a player's custom destination marker.
+
+    Args:
+        character_guid: Character GUID (hex string).
+        location: dict with X, Y, Z floats.
+    """
+    await _write_limiter.acquire()
+    data = {"Location": location}
+    async with session.post(f"/players/{character_guid}/destination", json=data) as resp:
+        if resp.status not in (200, 204):
+            body = await resp.text()
+            raise Exception(
+                f"Failed to set custom destination (status={resp.status}, body={body[:200]})"
+            )
+
+
 async def spawn_assets(session, assets):
     await _write_limiter.acquire()
     data = assets
@@ -694,3 +711,41 @@ async def set_vehicle_parts_by_tag(session, tag, parts):
         if resp.status != 200:
             raise Exception(f"Failed to set parts on vehicle {tag}")
         return await resp.json()
+
+
+async def create_event(session, event_name, race_setup_config, event_guid=None):
+    """Create a player-less event on the mod server.
+
+    Transforms the RaceSetup.config into the format expected by the mod API
+    (waypoints use Translation instead of Location).
+    """
+    import uuid
+
+    await _write_limiter.acquire()
+    config = dict(race_setup_config)
+    config["Route"]["Waypoints"] = [
+        {
+            "Translation": wp["Location"],
+            "Scale3D": wp["Scale3D"],
+            "Rotation": wp["Rotation"],
+        }
+        for wp in config["Route"]["Waypoints"]
+    ]
+    if not config.get("VehicleKeys"):
+        config["VehicleKeys"] = []
+    if not config.get("EngineKeys"):
+        config["EngineKeys"] = []
+
+    data = {
+        "EventGuid": event_guid or str(uuid.uuid4()).replace("-", "").upper(),
+        "EventName": event_name,
+        "EventType": 1,
+        "RaceSetup": config,
+    }
+    async with session.post("/events", json=data) as resp:
+        if resp.status >= 400:
+            error_body = await resp.text()
+            raise Exception(
+                f"Failed to create event (status={resp.status}, body={error_body[:200]})"
+            )
+        return data["EventGuid"]

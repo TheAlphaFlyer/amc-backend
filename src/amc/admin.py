@@ -511,6 +511,51 @@ class RaceSetupAdmin(admin.ModelAdmin):
     list_display = ["hash", "route_name", "num_laps", "vehicles", "engines"]
     search_fields = ["hash", "name"]
     inlines = [GameEventInlineAdmin]
+    change_form_template = "admin/amc/racesetup/change_form.html"
+    actions = ["post_event"]
+
+    def response_change(self, request, obj):
+        if "_post_event" in request.POST:
+            from amc.mod_server import create_event
+
+            if obj.config is None:
+                self.message_user(request, "No config — cannot post event.", level="error")
+                return super().response_change(request, obj)
+
+            async def _post():
+                async with aiohttp.ClientSession(
+                    base_url=settings.MOD_SERVER_API_URL
+                ) as session:
+                    return await create_event(
+                        session,
+                        event_name=obj.route_name or str(obj),
+                        race_setup_config=obj.config,
+                    )
+
+            event_guid = async_to_sync(_post)()
+            self.message_user(request, f"Event posted: {event_guid}")
+            return super().response_change(request, obj)
+        return super().response_change(request, obj)
+
+    @admin.action(description="Post event to mod server")
+    def post_event(self, request, queryset):
+        from amc.mod_server import create_event
+
+        async def _post():
+            async with aiohttp.ClientSession(
+                base_url=settings.MOD_SERVER_API_URL
+            ) as session:
+                for race_setup in queryset:
+                    if race_setup.config is None:
+                        continue
+                    await create_event(
+                        session,
+                        event_name=race_setup.route_name or str(race_setup),
+                        race_setup_config=race_setup.config,
+                    )
+
+        async_to_sync(_post)()
+        self.message_user(request, f"Posted {queryset.count()} event(s) to mod server.")
 
 
 class NoCountPaginator(Paginator):
