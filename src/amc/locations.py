@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
+import math
 import os
+from datetime import datetime, timezone as dt_timezone
 
 import aiohttp
 from django.contrib.gis.geos import Point
@@ -325,6 +327,10 @@ async def _process_location_batch(ctx, players, has_telemetry):
                 "gear": player_info.get("Gear"),
             }
 
+        capture_ts = player_info.get("_capture_ts")
+        if capture_ts:
+            loc_kwargs["timestamp"] = capture_ts
+
         new_locations.append(
             CharacterLocation(
                 character=character,
@@ -354,6 +360,45 @@ async def _process_location_batch(ctx, players, has_telemetry):
                 "jailed_until",
             ],
         )
+
+
+def _transform_snapshots(snapshots):
+    """Transform C++ mod SSE snapshots into the player-info dicts expected by _process_location_batch.
+
+    Each snapshot has shape: {"timestamp_ms": N, "entries": [{"character_guid", "location": {x,y,z}, ...}]}
+    Output shape per player: {"CharacterGuid", "Location": {X,Y,Z}, "VehicleKey", "Yaw", "Speed", "Velocity": {X,Y,Z}, "RPM", "Gear", "_capture_ts"}
+    """
+    # Keep only the latest snapshot per character to avoid duplicate rows when
+    # multiple snapshots are buffered in one flush window.
+    latest = {}
+    for snap in snapshots:
+        ts_ms = snap.get("timestamp_ms", 0)
+        capture_ts = (
+            datetime.fromtimestamp(ts_ms / 1000.0, tz=dt_timezone.utc)
+            if ts_ms > 0
+            else None
+        )
+        for e in snap.get("entries", []):
+            guid = e.get("character_guid", "").upper()
+            if not guid:
+                continue
+            loc = e.get("location", {})
+            vel = e.get("velocity", {})
+            vx, vy, vz = vel.get("x", 0), vel.get("y", 0), vel.get("z", 0)
+            speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+            vehicle_key = e.get("vehicle_key", "") or None
+            latest[guid] = {
+                "CharacterGuid": guid,
+                "Location": {"X": loc["x"], "Y": loc["y"], "Z": loc["z"]},
+                "VehicleKey": vehicle_key,
+                "Yaw": e.get("yaw", 0),
+                "Speed": speed,
+                "Velocity": {"X": vx, "Y": vy, "Z": vz},
+                "RPM": e.get("rpm", 0),
+                "Gear": e.get("gear", 0),
+                "_capture_ts": capture_ts,
+            }
+    return list(latest.values())
 
 
 async def run_location_listener(ctx):
@@ -456,10 +501,10 @@ async def run_location_listener(ctx):
                                     current_lines = []
                                     if data_parts:
                                         try:
-                                            event_obj = json.loads(
+                                            snap = json.loads(
                                                 "\n".join(data_parts)
                                             )
-                                            event_buffer.append(event_obj)
+                                            event_buffer.append(snap)
                                         except json.JSONDecodeError:
                                             pass
 
@@ -468,21 +513,22 @@ async def run_location_listener(ctx):
                                         event_buffer
                                         and now - last_flush >= FLUSH_INTERVAL
                                     ):
-                                        entries = list(event_buffer)
+                                        players = _transform_snapshots(event_buffer)
                                         event_buffer.clear()
                                         last_flush = now
                                         await _process_location_batch(
-                                            ctx, entries, has_telemetry=True,
+                                            ctx, players, has_telemetry=True,
                                         )
                             else:
                                 current_lines.append(line)
 
                     finally:
                         if event_buffer:
-                            await _process_location_batch(
-                                ctx, list(event_buffer), has_telemetry=True,
-                            )
+                            players = _transform_snapshots(event_buffer)
                             event_buffer.clear()
+                            await _process_location_batch(
+                                ctx, players, has_telemetry=True,
+                            )
 
         except asyncio.CancelledError:
             await cache.adelete("location_sse_active")
