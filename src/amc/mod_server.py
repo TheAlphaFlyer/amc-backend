@@ -473,6 +473,14 @@ async def make_suspect(session, character_guid, duration_seconds=300):
         return None
 
 
+async def remove_event(session, event_guid):
+    await _write_limiter.acquire()
+    async with session.delete(f"/events/{event_guid}") as resp:
+        if resp.status not in (200, 204):
+            body = await resp.text()
+            raise Exception(f"Failed to remove event {event_guid} (status={resp.status}, body={body[:200]})")
+
+
 async def clear_suspect(session, character_guid):
     """Remove every active UGE_PoliceSuspect_C gameplay effect from the player.
 

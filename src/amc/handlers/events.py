@@ -141,6 +141,7 @@ async def _upsert_game_event(event_data: dict):
             discord_message_id=discord_message_id,
             owner=owner,
             scheduled_event=scheduled_event,
+            auto_created=(owner is None),
         )
 
     return game_event, transition

@@ -866,6 +866,7 @@ class GameEvent(models.Model):
         RaceSetup, on_delete=models.SET_NULL, null=True, related_name="game_events"
     )
     state = models.IntegerField()
+    auto_created = models.BooleanField(default=False)
     discord_message_id = models.PositiveBigIntegerField(null=True)
     owner = models.ForeignKey(Character, models.SET_NULL, null=True, blank=True)
 

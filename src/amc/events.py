@@ -8,7 +8,7 @@ from urllib.parse import quote
 from django.conf import settings
 from django.db.models import F, Prefetch, Exists, OuterRef, Window
 from django.db.models.functions import RowNumber
-from amc.mod_server import show_popup, send_message_as_player, teleport_player
+from amc.mod_server import show_popup, send_message_as_player, teleport_player, remove_event
 from amc.game_server import announce
 from amc.utils import skip_if_running
 from amc.models import (
@@ -765,3 +765,87 @@ async def auto_starting_grid(http_client_mod, game_event):
             player_location,
             player_rotation,
         )
+
+
+@skip_if_running
+async def post_random_events(ctx):
+    http_client_mod = ctx["http_client_mod"]
+
+    stale_events = GameEvent.objects.filter(
+        auto_created=True,
+        state=0,
+    )
+    async for game_event in stale_events:
+        try:
+            await remove_event(http_client_mod, game_event.guid)
+        except Exception:
+            pass
+        game_event.state = 3
+        await game_event.asave(update_fields=["state"])
+
+    active_auto = await GameEvent.objects.filter(
+        auto_created=True,
+        state__gte=0,
+        state__lt=3,
+    ).acount()
+
+    TARGET_EVENTS = 3
+    slots_to_fill = TARGET_EVENTS - active_auto
+    if slots_to_fill <= 0:
+        return
+
+    active_race_setup_ids = (
+        GameEvent.objects.filter(auto_created=True, state__lt=3)
+        .values_list("race_setup_id", flat=True)
+    )
+
+    candidates = [
+        se
+        async for se in ScheduledEvent.objects.filter(
+            time_trial=True,
+            race_setup__isnull=False,
+        )
+        .exclude(race_setup_id__in=active_race_setup_ids)
+        .select_related("race_setup")
+        .order_by("?")[:slots_to_fill]
+    ]
+
+    if not candidates:
+        return
+
+    for scheduled_event in candidates:
+        race_setup = scheduled_event.race_setup
+        config = dict(race_setup.config)
+        config["Route"]["Waypoints"] = [
+            {
+                "Translation": wp["Location"],
+                "Scale3D": wp["Scale3D"],
+                "Rotation": wp["Rotation"],
+            }
+            for wp in config["Route"]["Waypoints"]
+        ]
+        if not config.get("VehicleKeys"):
+            config["VehicleKeys"] = []
+        if not config.get("EngineKeys"):
+            config["EngineKeys"] = []
+
+        data = {
+            "EventGuid": generate_guid(),
+            "EventName": scheduled_event.name,
+            "EventType": 1,
+            "RaceSetup": config,
+        }
+
+        try:
+            async with http_client_mod.post("/events", json=data) as resp:
+                if resp.status >= 400:
+                    error_body = await resp.text()
+                    print(f"Failed to post auto event: {resp.status} {error_body}")
+        except Exception as e:
+            print(f"Failed to post auto event: {e}")
+
+    names = [se.name for se in candidates]
+    await announce(
+        f"New time trial events available: {', '.join(names)}! Use /events to see them.",
+        ctx["http_client"],
+    )
