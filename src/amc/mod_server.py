@@ -564,23 +564,6 @@ async def set_world_vehicle_decal(
             raise Exception("Failed to set vehicle decals")
 
 
-async def set_custom_destination(session, character_guid, location):
-    """Set a player's custom destination marker.
-
-    Args:
-        character_guid: Character GUID (hex string).
-        location: dict with X, Y, Z floats.
-    """
-    await _write_limiter.acquire()
-    data = {"Location": location}
-    async with session.post(f"/players/{character_guid}/destination", json=data) as resp:
-        if resp.status not in (200, 204):
-            body = await resp.text()
-            raise Exception(
-                f"Failed to set custom destination (status={resp.status}, body={body[:200]})"
-            )
-
-
 async def spawn_assets(session, assets):
     await _write_limiter.acquire()
     data = assets
