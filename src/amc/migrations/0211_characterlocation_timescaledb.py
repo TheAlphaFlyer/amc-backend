@@ -80,6 +80,10 @@ def migrate_to_timescaledb(apps, schema_editor):
         relkind = row[0]
 
         if relkind == "r":
+            cursor.execute(
+                "ALTER TABLE amc_characterlocation "
+                "DROP CONSTRAINT IF EXISTS amc_characterlocation_pkey"
+            )
             _add_telemetry_columns(cursor)
             cursor.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
             cursor.execute("""
@@ -87,6 +91,10 @@ def migrate_to_timescaledb(apps, schema_editor):
                     by_range('timestamp', INTERVAL '1 month'),
                     migrate_data => true, if_not_exists => true)
             """)
+            cursor.execute(
+                "ALTER TABLE amc_characterlocation "
+                "ADD PRIMARY KEY (id, \"timestamp\")"
+            )
             _enable_compression(cursor)
 
         elif relkind == "p":
