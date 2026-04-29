@@ -1,22 +1,6 @@
 from django.db import migrations, models
 
 
-def _add_telemetry_columns(cursor):
-    cols = [
-        ("yaw", "double precision"),
-        ("speed", "double precision"),
-        ("velocity_x", "double precision"),
-        ("velocity_y", "double precision"),
-        ("velocity_z", "double precision"),
-        ("rpm", "double precision"),
-        ("gear", "smallint"),
-    ]
-    for name, dtype in cols:
-        cursor.execute(
-            f"ALTER TABLE amc_characterlocation ADD COLUMN IF NOT EXISTS {name} {dtype}"
-        )
-
-
 def _create_fresh_hypertable(cursor):
     cursor.execute("""
         CREATE TABLE amc_characterlocation (
@@ -62,10 +46,6 @@ def _enable_compression(cursor):
     )
 
 
-def _drop_old_table(cursor):
-    cursor.execute("DROP TABLE IF EXISTS amc_characterlocation_old CASCADE")
-
-
 def migrate_to_timescaledb(apps, schema_editor):
     from django.db import connection
 
@@ -80,26 +60,44 @@ def migrate_to_timescaledb(apps, schema_editor):
         relkind = row[0]
 
         if relkind == "r":
-            cursor.execute(
-                "ALTER TABLE amc_characterlocation "
-                "DROP CONSTRAINT IF EXISTS amc_characterlocation_pkey"
-            )
-            _add_telemetry_columns(cursor)
             cursor.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
-            cursor.execute("""
-                SELECT create_hypertable('amc_characterlocation',
-                    by_range('timestamp', INTERVAL '1 month'),
-                    migrate_data => true, if_not_exists => true)
-            """)
+            cursor.execute(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'amc_characterlocation'::regclass"
+            )
+            for (conname,) in cursor.fetchall():
+                cursor.execute(
+                    f'ALTER TABLE amc_characterlocation DROP CONSTRAINT IF EXISTS "{conname}"'
+                )
+            cursor.execute(
+                "SELECT indexname FROM pg_indexes "
+                "WHERE tablename = 'amc_characterlocation'"
+            )
+            for (indexname,) in cursor.fetchall():
+                cursor.execute(f'DROP INDEX IF EXISTS "{indexname}"')
             cursor.execute(
                 "ALTER TABLE amc_characterlocation "
-                "ADD PRIMARY KEY (id, \"timestamp\")"
+                "RENAME TO amc_characterlocation_old"
             )
+            _create_fresh_hypertable(cursor)
+            cursor.execute("""
+                INSERT INTO amc_characterlocation
+                    (id, "timestamp", character_id, location, vehicle_key)
+                SELECT id, "timestamp", character_id, location, vehicle_key
+                FROM amc_characterlocation_old
+            """)
+            cursor.execute("""
+                SELECT setval(
+                    pg_get_serial_sequence('amc_characterlocation', 'id'),
+                    COALESCE((SELECT MAX(id) FROM amc_characterlocation), 0)
+                )
+            """)
             _enable_compression(cursor)
 
         elif relkind == "p":
             cursor.execute(
-                "ALTER TABLE amc_characterlocation RENAME TO amc_characterlocation_archive"
+                "ALTER TABLE amc_characterlocation "
+                "RENAME TO amc_characterlocation_archive"
             )
             cursor.execute(
                 "ALTER TABLE amc_characterlocation_archive "
@@ -109,7 +107,7 @@ def migrate_to_timescaledb(apps, schema_editor):
             _create_fresh_hypertable(cursor)
             _enable_compression(cursor)
 
-        _drop_old_table(cursor)
+        cursor.execute("DROP TABLE IF EXISTS amc_characterlocation_old CASCADE")
 
 
 class Migration(migrations.Migration):
