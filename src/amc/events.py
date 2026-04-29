@@ -46,30 +46,36 @@ async def setup_event(timestamp, player_id, scheduled_event, http_client_mod):
             raise Exception("Player not found")
         player = players[0]
 
-    race_setup = scheduled_event.race_setup.config
-    race_setup["Route"]["Waypoints"] = [
-        {
-            "Translation": waypoint["Location"],
-            "Scale3D": waypoint["Scale3D"],
-            "Rotation": waypoint["Rotation"],
-        }
-        for waypoint in race_setup["Route"]["Waypoints"]
-    ]
-    if len(race_setup["VehicleKeys"]) == 0:
-        race_setup["VehicleKeys"] = []
-    if len(race_setup["EngineKeys"]) == 0:
-        race_setup["EngineKeys"] = []
+    event_type = getattr(scheduled_event, "event_type", 1) or 1
 
     data = {
         "EventGuid": generate_guid(),
         "EventName": scheduled_event.name,
-        "RaceSetup": race_setup,
-        "EventType": 1,
+        "EventType": event_type,
         "OwnerCharacterId": {
             "CharacterGuid": player["CharacterGuid"].rjust(32, "0"),
             "UniqueNetId": str(player_id),
         },
     }
+
+    if event_type == 1:
+        race_setup = scheduled_event.race_setup.config
+        race_setup["Route"]["Waypoints"] = [
+            {
+                "Translation": waypoint["Location"],
+                "Scale3D": waypoint["Scale3D"],
+                "Rotation": waypoint["Rotation"],
+            }
+            for waypoint in race_setup["Route"]["Waypoints"]
+        ]
+        if len(race_setup["VehicleKeys"]) == 0:
+            race_setup["VehicleKeys"] = []
+        if len(race_setup["EngineKeys"]) == 0:
+            race_setup["EngineKeys"] = []
+        data["RaceSetup"] = race_setup
+    elif event_type == 2:
+        data["CaptureTheFlagSetup"] = scheduled_event.capture_the_flag_setup.config
+
     async with http_client_mod.post("/events", json=data) as response:
         if response.status >= 400:
             error_body = await response.json()
@@ -81,14 +87,16 @@ async def setup_event(timestamp, player_id, scheduled_event, http_client_mod):
 
 async def process_event(event):
     transition = None
-    race_setup_hash = RaceSetup.calculate_hash(event["RaceSetup"])
-    race_setup, _ = await RaceSetup.objects.aget_or_create(
-        hash=race_setup_hash,
-        defaults={
-            "config": event["RaceSetup"],
-            "name": event["RaceSetup"].get("Route", {}).get("RouteName"),
-        },
-    )
+    race_setup = None
+    if "RaceSetup" in event:
+        race_setup_hash = RaceSetup.calculate_hash(event["RaceSetup"])
+        race_setup, _ = await RaceSetup.objects.aget_or_create(
+            hash=race_setup_hash,
+            defaults={
+                "config": event["RaceSetup"],
+                "name": event["RaceSetup"].get("Route", {}).get("RouteName"),
+            },
+        )
     owner = await Character.objects.filter(
         player__unique_id=event["OwnerCharacterId"]["UniqueNetId"],
         guid=event["OwnerCharacterId"]["CharacterGuid"],
