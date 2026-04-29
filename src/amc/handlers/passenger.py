@@ -124,6 +124,9 @@ async def handle_passenger_arrived(event, player, character, ctx):
         log.payment += bonus
         await log.asave(update_fields=["guild_session", "payment"])
 
+        from amc.guilds import check_guild_achievements
+        await check_guild_achievements(character, session, log, ctx.http_client_mod)
+
     subsidy = get_passenger_subsidy(log)
     return log.payment, subsidy, 0, 0
 

@@ -139,6 +139,11 @@ async def handle_cargo_arrived(event, player, character, ctx):
     if guild_bonus_total > 0:
         await ServerCargoArrivedLog.objects.abulk_update(logs, ["guild_session", "payment"])
 
+    for log in logs:
+        if log.guild_session:
+            from amc.guilds import check_guild_achievements
+            await check_guild_achievements(character, log.guild_session, log, ctx.http_client_mod)
+
     # --- 5. Special cargo side effects are handled per-key inside the loop below
 
     # --- 6. Per-cargo-group: subsidy, delivery, job, supply chain ---

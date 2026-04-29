@@ -91,6 +91,8 @@ from .models import (
     GuildVehiclePart,
     GuildCargoRequirement,
     GuildPassengerRequirement,
+    GuildAchievement,
+    GuildCharacterAchievement,
 )
 from amc_finance.services import send_fund_to_player
 from amc_finance.admin import AccountInlineAdmin
@@ -1580,11 +1582,16 @@ class GuildPassengerRequirementInline(admin.StackedInline):
     max_num = 1
 
 
+class GuildAchievementInline(admin.TabularInline):
+    model = GuildAchievement
+    extra = 0
+
+
 @admin.register(Guild)
 class GuildAdmin(admin.ModelAdmin):
     list_display = ["name", "abbreviation"]
     search_fields = ["name", "abbreviation"]
-    inlines = [GuildVehicleInline, GuildCargoRequirementInline, GuildPassengerRequirementInline]
+    inlines = [GuildVehicleInline, GuildCargoRequirementInline, GuildPassengerRequirementInline, GuildAchievementInline]
 
 
 class GuildVehiclePartInline(admin.TabularInline):
@@ -1617,3 +1624,18 @@ class GuildCharacterAdmin(admin.ModelAdmin):
     list_select_related = ["guild", "character"]
     list_filter = ["guild"]
     search_fields = ["character__name"]
+
+
+@admin.register(GuildAchievement)
+class GuildAchievementAdmin(admin.ModelAdmin):
+    list_display = ["name", "guild", "order"]
+    list_filter = ["guild"]
+    search_fields = ["name"]
+
+
+@admin.register(GuildCharacterAchievement)
+class GuildCharacterAchievementAdmin(admin.ModelAdmin):
+    list_display = ["guild_character", "achievement", "progress", "completed_at"]
+    list_select_related = ["guild_character", "achievement"]
+    list_filter = ["achievement__guild"]
+    search_fields = ["guild_character__character__name"]
