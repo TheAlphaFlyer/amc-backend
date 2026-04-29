@@ -59,6 +59,26 @@ async def transfer_money(session, amount, message, player_id):
             raise Exception("Failed to transfer money")
 
 
+async def transfer_exp(session, player_id, level_type, exp, message=""):
+    """Grant experience points to a player.
+
+    Args:
+        player_id: Player **unique ID** (NOT character GUID).
+        level_type: EMTCharacterLevelType value (0=Driver, 1=Taxi, 2=Bus, 3=Truck, 4=Racer, 5=Wrecker, 6=Police).
+        exp: Amount of experience to grant.
+        message: Optional chat message shown to the player.
+    """
+    await _write_limiter.acquire()
+    data = {
+        "LevelType": level_type,
+        "Exp": exp,
+        "Message": message,
+    }
+    async with session.post(f"/players/{player_id}/exp", json=data) as resp:
+        if resp.status != 200:
+            raise Exception("Failed to transfer exp")
+
+
 async def toggle_rp_session(session, player_guid, despawn=False):
     await _write_limiter.acquire()
     data = {"despawn": despawn}
