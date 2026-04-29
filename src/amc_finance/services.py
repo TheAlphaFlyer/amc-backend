@@ -274,6 +274,32 @@ async def record_treasury_confiscation_income(
     )
 
 
+async def record_treasury_rent_income(amount, description="House Rent"):
+    """Record rent payment as treasury revenue (Dr. Treasury Fund / Cr. Rent Revenue)."""
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    rent_revenue, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.REVENUE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Rent Revenue",
+    )
+
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        None,
+        [
+            {"account": rent_revenue, "debit": 0, "credit": amount},
+            {"account": treasury_fund, "debit": amount, "credit": 0},
+        ],
+    )
+
+
 async def send_fund_to_player(amount, character, reason):
     if not await check_treasury_floor(amount):
         return
