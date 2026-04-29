@@ -2295,6 +2295,8 @@ class VehicleDecal(models.Model):
 class Guild(models.Model):
     name = models.CharField(max_length=128, unique=True)
     abbreviation = models.CharField(max_length=10, unique=True)
+    welcome_message = models.TextField(blank=True, default="")
+    discord_thread_id = models.CharField(max_length=32, null=True, blank=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     @override
@@ -2351,7 +2353,7 @@ class GuildCargoRequirement(models.Model):
     max_damage = models.FloatField(null=True, blank=True)
     min_payment = models.PositiveIntegerField(null=True, blank=True)
     max_payment = models.PositiveIntegerField(null=True, blank=True)
-    bonus_pct = models.PositiveIntegerField(default=0)
+    bonus_pct = models.FloatField(default=0, help_text="Bonus percentage applied to payment when criteria are met (e.g. 10 = +10%).")
 
     @override
     def __str__(self):
@@ -2370,7 +2372,7 @@ class GuildPassengerRequirement(models.Model):
     require_offroad = models.BooleanField(null=True, blank=True)
     min_comfort_rating = models.IntegerField(null=True, blank=True)
     max_comfort_rating = models.IntegerField(null=True, blank=True)
-    bonus_pct = models.PositiveIntegerField(default=0)
+    bonus_pct = models.FloatField(default=0, help_text="Bonus percentage applied to payment when criteria are met (e.g. 10 = +10%).")
 
     @override
     def __str__(self):
@@ -2421,6 +2423,43 @@ class GuildCharacter(models.Model):
     @override
     def __str__(self):
         return f"{self.guild.abbreviation} — {self.character.name} (Lv{self.level})"
+
+
+@final
+class GuildAchievement(models.Model):
+    guild = models.ForeignKey(Guild, on_delete=models.CASCADE, related_name="achievements")
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True)
+    icon = models.CharField(max_length=50, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    criteria = models.JSONField()
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    @override
+    def __str__(self):
+        return f"{self.guild.abbreviation} — {self.name}"
+
+
+@final
+class GuildCharacterAchievement(models.Model):
+    guild_character = models.ForeignKey(
+        GuildCharacter, on_delete=models.CASCADE, related_name="achievements"
+    )
+    achievement = models.ForeignKey(
+        GuildAchievement, on_delete=models.CASCADE, related_name="completions"
+    )
+    progress = models.IntegerField(default=0)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ("guild_character", "achievement")
+
+    @override
+    def __str__(self):
+        status = "done" if self.completed_at else f"{self.progress}"
+        return f"{self.guild_character} — {self.achievement.name} ({status})"
 
 
 @final
