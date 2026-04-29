@@ -250,6 +250,12 @@ EVENT_GAME_SERVER_API_URL = os.environ.get(
 EVENT_MOD_SERVER_API_URL = os.environ.get(
     "EVENT_MOD_SERVER_API_URL", "http://127.0.0.1:5011"
 )
+MOD_MANAGEMENT_API_URL = os.environ.get(
+    "MOD_MANAGEMENT_API_URL", "http://127.0.0.1:5000"
+)
+EVENT_MOD_MANAGEMENT_API_URL = os.environ.get(
+    "EVENT_MOD_MANAGEMENT_API_URL", "http://127.0.0.1:5010"
+)
 
 # Timezone used by the game server for log timestamps.
 # The Motor Town game server writes log timestamps in the system's local timezone,

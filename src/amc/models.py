@@ -1366,6 +1366,13 @@ class CharacterLocation(models.Model):
     )
     location = models.PointField(srid=0, dim=3)
     vehicle_key = models.CharField(max_length=100, null=True, choices=VehicleKey)
+    yaw = models.FloatField(null=True, blank=True)
+    speed = models.FloatField(null=True, blank=True)
+    velocity_x = models.FloatField(null=True, blank=True)
+    velocity_y = models.FloatField(null=True, blank=True)
+    velocity_z = models.FloatField(null=True, blank=True)
+    rpm = models.FloatField(null=True, blank=True)
+    gear = models.SmallIntegerField(null=True, blank=True)
     objects: ClassVar[CharacterLocationManager] = CharacterLocationManager()
 
     class Meta:

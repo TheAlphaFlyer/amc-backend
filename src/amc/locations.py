@@ -1,8 +1,11 @@
 import asyncio
+import json
 import logging
 import os
 
+import aiohttp
 from django.contrib.gis.geos import Point
+from django.core.cache import cache
 from django.utils import timezone
 from django.conf import settings
 
@@ -14,7 +17,7 @@ from amc.models import (
 )
 from amc.utils import skip_if_running
 from amc.mod_server import show_popup, teleport_player
-from amc.game_server import get_players_with_location
+from amc.game_server import get_players_with_location, get_players_locations
 
 logger = logging.getLogger("amc.locations")
 
@@ -269,26 +272,14 @@ async def _check_pois_and_portals(character, old_location, new_location, ctx):
             await asyncio.sleep(0.1)
 
 
-@skip_if_running
-async def monitor_locations(ctx):
-    # Use the native game API instead of the Lua mod server to avoid
-    # game-thread dispatch pressure from ExecuteInGameThreadSync.
-    # The native /player/list endpoint is thread-safe and cached for 1s.
-    http_client = ctx.get("http_client")
-    players = await get_players_with_location(http_client)
-
-    if not players:
-        return
-
-    # Build lookup: CharacterGuid -> player_info
+async def _process_location_batch(ctx, players, has_telemetry):
+    """Process a batch of player location data: checks, DB writes, character updates."""
     guid_to_player_info = {
         p["CharacterGuid"]: p for p in players if p.get("CharacterGuid")
     }
-
     if not guid_to_player_info:
         return
 
-    # Single batch query: fetch all matching characters
     characters = {
         c.guid: c
         async for c in Character.objects.select_related("player").filter(
@@ -311,8 +302,6 @@ async def monitor_locations(ctx):
         )
         vehicle_key = player_info["VehicleKey"]
 
-        # Use cached last_location instead of querying 175M-row table
-        # Jail boundary check runs unconditionally (needs only new_point)
         await _check_jail_boundary(character, new_point, ctx)
 
         if character.last_location:
@@ -323,12 +312,25 @@ async def monitor_locations(ctx):
                 character, character.last_location, new_point, ctx
             )
 
-        # Queue for bulk operations
+        loc_kwargs = {}
+        if has_telemetry:
+            vel = player_info.get("Velocity", {})
+            loc_kwargs = {
+                "yaw": player_info.get("Yaw"),
+                "speed": player_info.get("Speed"),
+                "velocity_x": vel.get("X"),
+                "velocity_y": vel.get("Y"),
+                "velocity_z": vel.get("Z"),
+                "rpm": player_info.get("RPM"),
+                "gear": player_info.get("Gear"),
+            }
+
         new_locations.append(
             CharacterLocation(
                 character=character,
                 location=new_point,
                 vehicle_key=vehicle_key,
+                **loc_kwargs,
             )
         )
         character.last_location = new_point
@@ -336,13 +338,11 @@ async def monitor_locations(ctx):
         character.last_online = now
         characters_to_update.append(character)
 
-    # Bulk insert all locations in one query (ignore timestamp conflicts)
     if new_locations:
         await CharacterLocation.objects.abulk_create(
             new_locations, ignore_conflicts=True
         )
 
-    # Bulk update cached locations on Character
     if characters_to_update:
         await Character.objects.abulk_update(
             characters_to_update,
@@ -354,3 +354,173 @@ async def monitor_locations(ctx):
                 "jailed_until",
             ],
         )
+
+
+async def run_location_listener(ctx):
+    """Long-running SSE consumer for /players/locations/stream.
+
+    Probes the endpoint on startup — if unavailable, returns immediately and
+    monitor_locations cron stays active.  Sets a Redis flag
+    ``location_sse_active`` (TTL 30s) each iteration so monitor_locations can
+    skip when SSE is capturing data.
+    """
+    base_url = settings.MOD_MANAGEMENT_API_URL
+    http_client_mgmt = ctx.get("http_client_mgmt")
+    if http_client_mgmt is None:
+        return
+
+    # Probe: check if the endpoint exists
+    try:
+        async with http_client_mgmt.get(
+            "/players/locations/stream",
+            timeout=aiohttp.ClientTimeout(total=3),
+        ) as resp:
+            if resp.status == 404:
+                logger.info(
+                    "Location SSE endpoint not available — monitor_locations cron stays active"
+                )
+                return
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        logger.info(
+            "Location SSE probe failed — monitor_locations cron stays active"
+        )
+        return
+
+    INITIAL_BACKOFF = 1
+    MAX_BACKOFF = 30
+    HEALTHY_SESSION_SECONDS = 60
+    FLUSH_INTERVAL = 1.0
+    SSE_TIMEOUT = aiohttp.ClientTimeout(
+        total=None, sock_connect=10, sock_read=90,
+    )
+
+    backoff = INITIAL_BACKOFF
+    event_loop = asyncio.get_event_loop()
+
+    while True:
+        connected_at = event_loop.time()
+        try:
+            async with aiohttp.ClientSession(
+                base_url=base_url, timeout=SSE_TIMEOUT,
+            ) as session:
+                logger.info("Location SSE connecting to %s/players/locations/stream", base_url)
+
+                async with session.get("/players/locations/stream") as resp:
+                    if resp.status != 200:
+                        logger.warning(
+                            "Location SSE returned %s, retrying in %ss",
+                            resp.status, backoff,
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, MAX_BACKOFF)
+                        continue
+
+                    logger.info("Location SSE connected")
+                    connected_at = event_loop.time()
+                    backoff = INITIAL_BACKOFF
+
+                    event_buffer: list[dict] = []
+                    current_lines: list[str] = []
+                    last_flush = event_loop.time()
+
+                    try:
+                        while True:
+                            await cache.aset("location_sse_active", True, timeout=30)
+
+                            try:
+                                raw_line = await asyncio.wait_for(
+                                    resp.content.readline(), timeout=120.0,
+                                )
+                            except asyncio.TimeoutError:
+                                logger.warning(
+                                    "Location SSE read timeout, forcing reconnect"
+                                )
+                                break
+
+                            if not raw_line:
+                                break
+
+                            line = (
+                                raw_line.decode("utf-8", errors="replace")
+                                .rstrip("\n")
+                                .rstrip("\r")
+                            )
+
+                            if line == "":
+                                if current_lines:
+                                    data_parts = [
+                                        ln[5:].strip()
+                                        for ln in current_lines
+                                        if ln.startswith("data:")
+                                    ]
+                                    current_lines = []
+                                    if data_parts:
+                                        try:
+                                            event_obj = json.loads(
+                                                "\n".join(data_parts)
+                                            )
+                                            event_buffer.append(event_obj)
+                                        except json.JSONDecodeError:
+                                            pass
+
+                                    now = event_loop.time()
+                                    if (
+                                        event_buffer
+                                        and now - last_flush >= FLUSH_INTERVAL
+                                    ):
+                                        entries = list(event_buffer)
+                                        event_buffer.clear()
+                                        last_flush = now
+                                        await _process_location_batch(
+                                            ctx, entries, has_telemetry=True,
+                                        )
+                            else:
+                                current_lines.append(line)
+
+                    finally:
+                        if event_buffer:
+                            await _process_location_batch(
+                                ctx, list(event_buffer), has_telemetry=True,
+                            )
+                            event_buffer.clear()
+
+        except asyncio.CancelledError:
+            await cache.adelete("location_sse_active")
+            logger.info("Location SSE listener shutting down")
+            return
+
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            session_duration = event_loop.time() - connected_at
+            if session_duration >= HEALTHY_SESSION_SECONDS:
+                backoff = INITIAL_BACKOFF
+            logger.warning(
+                "Location SSE error: %s, retrying in %ss", e, backoff,
+            )
+
+        except Exception:
+            logger.exception(
+                "Location SSE unexpected error, retrying in %ss", backoff,
+            )
+
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 2, MAX_BACKOFF)
+
+
+@skip_if_running
+async def monitor_locations(ctx):
+    if await cache.aget("location_sse_active"):
+        return
+
+    http_client_mgmt = ctx.get("http_client_mgmt")
+    players = None
+    if http_client_mgmt:
+        players = await get_players_locations(http_client_mgmt)
+
+    if players is not None:
+        await _process_location_batch(ctx, players, has_telemetry=True)
+    else:
+        http_client = ctx.get("http_client")
+        players = await get_players_with_location(http_client)
+        if not players:
+            return
+        await _process_location_batch(ctx, players, has_telemetry=False)

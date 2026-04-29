@@ -12,7 +12,7 @@ from amc.tasks import process_log_line  # noqa: E402
 import amc.tasks as tasks_module  # noqa: E402
 from necesse.tasks import process_necesse_log  # noqa: E402
 from amc.events import monitor_events, send_event_embeds  # noqa: E402
-from amc.locations import monitor_locations  # noqa: E402
+from amc.locations import monitor_locations, run_location_listener  # noqa: E402
 from amc.characterlocation_stats import refresh_all_vehicle_stats  # noqa: E402
 from amc.webhook import monitor_webhook, WEBHOOK_SSE_ENABLED  # noqa: E402
 from amc.sse_client import run_sse_listener  # noqa: E402
@@ -46,6 +46,7 @@ GAME_SERVER_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 bot_task_handle = None
 sse_task_handle = None
+location_sse_task_handle = None
 # pyrefly: ignore [unknown-name]
 loop = None
 
@@ -68,7 +69,7 @@ async def run_discord():
 
 
 async def startup(ctx):
-    global bot_task_handle, sse_task_handle
+    global bot_task_handle, sse_task_handle, location_sse_task_handle
     ctx["startup_time"] = timezone.now()
     ctx["http_client"] = aiohttp.ClientSession(
         base_url=settings.GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
@@ -78,6 +79,9 @@ async def startup(ctx):
     )
     ctx["http_client_webhook"] = aiohttp.ClientSession(
         base_url=settings.WEBHOOK_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
+    )
+    ctx["http_client_mgmt"] = aiohttp.ClientSession(
+        base_url=settings.MOD_MANAGEMENT_API_URL, timeout=GAME_SERVER_TIMEOUT
     )
     ctx["http_client_event"] = aiohttp.ClientSession(
         base_url=settings.EVENT_GAME_SERVER_API_URL, timeout=GAME_SERVER_TIMEOUT
@@ -94,6 +98,8 @@ async def startup(ctx):
 
     if WEBHOOK_SSE_ENABLED:
         sse_task_handle = asyncio.create_task(run_sse_listener(ctx))
+
+    location_sse_task_handle = asyncio.create_task(run_location_listener(ctx))
 
     # Bootstrap webhook dedup high-water marks from DB / mod buffer if Redis is cold.
     # Only bootstrap LAST_SEQ from DB IDs when using polling mode — SSE uses
@@ -132,7 +138,15 @@ async def startup(ctx):
 
 
 async def shutdown(ctx):
-    global sse_task_handle
+    global sse_task_handle, location_sse_task_handle
+
+    if location_sse_task_handle:
+        location_sse_task_handle.cancel()
+        try:
+            await location_sse_task_handle
+        except asyncio.CancelledError:
+            pass
+        location_sse_task_handle = None
 
     if sse_task_handle:
         sse_task_handle.cancel()
@@ -151,6 +165,9 @@ async def shutdown(ctx):
     if http_client_mod := ctx.get("http_client_webhook"):
         await http_client_mod.close()
 
+    if http_client_mgmt := ctx.get("http_client_mgmt"):
+        await http_client_mgmt.close()
+
     if http_client := ctx.get("http_client_event"):
         await http_client.close()
 
@@ -166,6 +183,7 @@ async def monitor_event_locations(ctx):
     await monitor_locations({
         "http_client": ctx["http_client_event"],
         "http_client_mod": ctx["http_client_event_mod"],
+        "http_client_mgmt": ctx.get("http_client_mgmt"),
     })
 
 

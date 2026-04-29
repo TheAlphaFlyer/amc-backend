@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from typing import Any, cast
 import urllib.parse
 import aiohttp
@@ -105,6 +106,56 @@ async def get_players_with_location(session):
             "VehicleKey": vehicle_key,
         })
 
+    cache.set(cache_key, result, timeout=1)
+    return result
+
+
+_FALLBACK_SENTINEL = "__fallback__"
+
+
+async def get_players_locations(session):
+    """Fetch from /players/locations on the C++ mod management API.
+
+    Returns None if the endpoint is unavailable (cached 30s to avoid retries).
+    Returns a list of dicts with telemetry data when available.
+    """
+    cache_key = "mod_players_locations"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return None if cached == _FALLBACK_SENTINEL else cached
+
+    try:
+        async with session.get(
+            "/players/locations",
+            timeout=aiohttp.ClientTimeout(total=3),
+        ) as resp:
+            if resp.status == 404:
+                cache.set(cache_key, _FALLBACK_SENTINEL, timeout=30)
+                return None
+            data = await resp.json()
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        cache.set(cache_key, _FALLBACK_SENTINEL, timeout=30)
+        return None
+
+    result = []
+    for e in data.get("entries", []):
+        loc = e.get("location", {})
+        vel = e.get("velocity", {})
+        vx, vy, vz = vel.get("x", 0), vel.get("y", 0), vel.get("z", 0)
+        speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+        vehicle_key = e.get("vehicle_key", "") or None
+        result.append(
+            {
+                "CharacterGuid": e["character_guid"].upper(),
+                "Location": {"X": loc["x"], "Y": loc["y"], "Z": loc["z"]},
+                "VehicleKey": vehicle_key,
+                "Yaw": e.get("yaw", 0),
+                "Speed": speed,
+                "Velocity": {"X": vx, "Y": vy, "Z": vz},
+                "RPM": e.get("rpm", 0),
+                "Gear": e.get("gear", 0),
+            }
+        )
     cache.set(cache_key, result, timeout=1)
     return result
 
