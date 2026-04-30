@@ -320,7 +320,7 @@ async def monitor_jobs(ctx):
             is_destination_empty = True
         else:
             is_destination_empty = (
-                (destination_amount / destination_capacity) <= 0.15
+                (destination_amount / destination_capacity) <= 0.3
             ) or (destination_capacity - destination_amount >= quantity_requested)
 
         if destination_capacity > 0:
@@ -349,7 +349,7 @@ async def monitor_jobs(ctx):
         base_bonus = int(
             template.completion_bonus * quantity_requested / template.default_quantity
         )
-        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
+        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.95, 1.1)))
         completion_bonus = int(base_bonus * scaling_factor)
 
         if active_term:
