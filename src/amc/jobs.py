@@ -19,6 +19,7 @@ from amc.models import (
     JobPostingConfig,
 )
 from amc.game_server import get_players, announce
+from amc import config
 from amc_finance.services import (
     get_treasury_fund_balance,
     escrow_ministry_funds,
@@ -395,6 +396,12 @@ async def monitor_jobs(ctx):
             reserved_source[key] = reserved_source.get(key, 0) + quantity_requested
 
 
+def get_cargo_fulfillment_weight(cargo_key: str | None) -> int:
+    if not cargo_key:
+        return 1
+    return config.CARGO_FULFILLMENT_WEIGHTS.get(cargo_key, 1)
+
+
 async def payout_partial_contributors(job, http_client):
     """
     Finds all players who contributed to a job and rewards them proportionally.
@@ -415,13 +422,20 @@ async def payout_partial_contributors(job, http_client):
     log_qs = Delivery.objects.filter(job=job).order_by("timestamp")
 
     # Cap each delivery to what actually counted toward fulfillment.
+    # `quantity_requested` and `quantity_fulfilled` are in *weighted* units, see amc.config.CARGO_FULFILLMENT_WEIGHTS
     contributing_logs = []
     qr = job.quantity_requested
     async for log in log_qs:
         if qr <= 0:
             break
-        log.quantity = min(log.quantity, qr)
-        qr = qr - log.quantity
+        weight = get_cargo_fulfillment_weight(log.cargo_key)
+        weighted = log.quantity * weight
+        weighted = min(weighted, qr)
+        # Store the weighted contribution back on log.quantity for the
+        # downstream sum/groupby — this is a transient in-memory mutation,
+        # not persisted.
+        log.quantity = weighted
+        qr = qr - weighted
         contributing_logs.append(log)
 
     total_deliveries = job.quantity_fulfilled
@@ -507,11 +521,16 @@ async def on_delivery_job_fulfilled(job, http_client):
     log_qs = Delivery.objects.filter(job=job).order_by("timestamp")
 
     # Get the exact N logs that fulfilled the job by taking the most recent ones.
+    # `quantity_requested` / `quantity_fulfilled` are in *weighted* units
+    # (see amc.config.CARGO_FULFILLMENT_WEIGHTS), so weigh each log here too.
     contributing_logs = []
     acc = job.quantity_requested
     async for log in log_qs:
-        log.quantity = min(log.quantity, acc)
-        acc = acc - log.quantity
+        weight = get_cargo_fulfillment_weight(log.cargo_key)
+        weighted = log.quantity * weight
+        weighted = min(weighted, acc)
+        log.quantity = weighted
+        acc = acc - weighted
         contributing_logs.append(log)
 
     total_deliveries = job.quantity_fulfilled
@@ -583,3 +602,4 @@ async def on_delivery_job_fulfilled(job, http_client):
         )
 
     asyncio.create_task(announce(message, http_client, color="90EE90"))
+
