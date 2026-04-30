@@ -13,3 +13,6 @@ CARGO_FULFILLMENT_WEIGHTS: dict[str, int] = {
     # "CARGO_KEY": multiplier"
     "Container_40ft_01": 2,
 }
+
+# Depot restock subsidy amount. Set to 0 to disable.
+DEPOT_RESTOCK_SUBSIDY_AMOUNT = 10_000

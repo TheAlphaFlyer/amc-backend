@@ -80,6 +80,7 @@ from amc.vehicles import spawn_registered_vehicle
 import logging
 from collections import deque
 from typing import TYPE_CHECKING
+from amc import config
 
 if TYPE_CHECKING:
     from amc.discord_client import AMCDiscordBot
@@ -1071,7 +1072,7 @@ async def process_log_event(
                     settings.DISCORD_GAME_CHAT_CHANNEL_ID,
                     f"**📦 Player Restocked Depot:** {player_name} (Depot: {depot_name})",
                 )
-                subsidy_amount = 10_000
+                subsidy_amount = config.DEPOT_RESTOCK_SUBSIDY_AMOUNT
                 asyncio.create_task(
                     on_player_profit(character, subsidy_amount, 0, http_client_mod)
                 )
