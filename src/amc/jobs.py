@@ -340,9 +340,9 @@ async def monitor_jobs(ctx):
         if not is_destination_empty or not is_source_enough:
             continue
 
-        # Treasury multiplier influences bonus amounts
+        # Treasury multiplier influences bonus amounts (Bonus multiplier)
         bonus_multiplier = round(
-            template.bonus_multiplier * random.uniform(0.8, 1.2), 2
+            template.bonus_multiplier * random.uniform(0.95, 1.05), 2 # 5% random variance
         )
         bonus_multiplier = bonus_multiplier * treasury_mult
         base_bonus = int(
