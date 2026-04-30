@@ -1063,6 +1063,11 @@ async def process_log_event(
                 character=character,
                 depot_name=depot_name,
             )
+            if is_current_event:
+                subsidy_amount = config.DEPOT_RESTOCK_SUBSIDY_AMOUNT
+                asyncio.create_task(
+                    on_player_profit(character, subsidy_amount, 0, http_client_mod)
+                )
             if (
                 discord_client
                 and ctx.get("startup_time")
@@ -1071,10 +1076,6 @@ async def process_log_event(
                 forward_message = (
                     settings.DISCORD_GAME_CHAT_CHANNEL_ID,
                     f"**📦 Player Restocked Depot:** {player_name} (Depot: {depot_name})",
-                )
-                subsidy_amount = config.DEPOT_RESTOCK_SUBSIDY_AMOUNT
-                asyncio.create_task(
-                    on_player_profit(character, subsidy_amount, 0, http_client_mod)
                 )
 
         case PlayerCreatedCompanyLogEvent(timestamp, player_name, company_name):
