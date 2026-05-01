@@ -225,7 +225,7 @@ def get_welcome_message(player_name, is_new, last_online=None):
     sec_since_online = (timezone.now() - last_online).total_seconds()
     if sec_since_online > (3600 * 24 * 7):
         return f"Long time no see! Welcome back {player_name}", False
-    if sec_since_online > 3600:
+    if sec_since_online >= 3600:
         return f"Welcome back {player_name}!", False        
     if sec_since_online < 3600:
         return f"That was quick! Welcome back {player_name}", False
@@ -256,9 +256,13 @@ async def _resolve_guid_for_login(http_client, http_client_mod, player_id, playe
 
     Login log lines arrive before the game server has fully loaded the player,
     so the first (cached) attempt often misses them.  This method:
-    1. Bypasses the cache on the first attempt.
+    1. Bypasses the cache on every attempt to avoid poisoning by other
+       workers (e.g. monitor_locations) that constantly refresh the same
+       cache key with snapshots taken before the new player loaded.
     2. Retries up to *max_attempts* times with a short sleep between each.
     3. Falls back to the mod server if the game server keeps returning nothing.
+    4. Relies on the single-flight in get_players / get_player to prevent
+      overload due concurrent logins.
 
     Returns (character_guid, player_info) — player_info may be None.
     """
@@ -271,23 +275,27 @@ async def _resolve_guid_for_login(http_client, http_client_mod, player_id, playe
         except Exception:
             logger.debug(f"Game server GUID lookup (force-refresh) failed for {player_name}")
 
-    # Retry loop: alternate between game server (with cache) and mod server
+    # Retry loop: alternate between game server and mod server. Force-refresh both on every attempt
     for i in range(max_attempts):
         await asyncio.sleep(min(0.5 + i * 0.3, 3))
 
-        # Try game server (with cache, which may now contain the player)
+        # Try game server (cache-busting; single-flight in get_players, coalesces concurrent logins into one HTTP request).
         if http_client:
             try:
-                guid = await _resolve_guid_from_game_server(http_client, player_id)
+                guid = await _resolve_guid_from_game_server(
+                    http_client, player_id, force_refresh=True
+                )
                 if guid:
                     return guid, None
             except Exception:
                 logger.debug(f"Game server GUID lookup retry {i+1} failed for {player_name}")
 
-        # Try mod server
+        # Try mod server (cache-busting; avoids the 5s negative-sentinel poisoning that otherwise persists across the retry loop).
         if http_client_mod:
             try:
-                player_info = await get_player(http_client_mod, player_id)
+                player_info = await get_player(
+                    http_client_mod, player_id, force_refresh=True
+                )
                 if player_info:
                     guid = player_info.get("CharacterGuid")
                     if guid and guid != Character.INVALID_GUID:

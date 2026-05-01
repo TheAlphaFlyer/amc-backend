@@ -40,16 +40,36 @@ async def get_players(session, password="", force_refresh=False):
         if cached is not None:
             return cached
 
-    data = await game_api_request(session, "/player/list")
-    if not data or "data" not in data:
-        return []
-    players = [
-        (player["unique_id"], player)
-        for player in data["data"].values()
-        if player is not None
-    ]
-    cache.set(cache_key, players, timeout=1)
-    return players
+    # Single-flight: while one fetch is in progress, concurrent callers (e.g. login retry loops + monitor_locations) await the same future instead of issuing duplicate /player/list requests
+    # Should prevent HTTP endpoint overload
+    pending = _get_players_inflight.get(cache_key)
+    if pending is not None:
+        return await pending
+
+    future = asyncio.get_running_loop().create_future()
+    _get_players_inflight[cache_key] = future
+    try:
+        data = await game_api_request(session, "/player/list")
+        if not data or "data" not in data:
+            result = []
+        else:
+            result = [
+                (player["unique_id"], player)
+                for player in data["data"].values()
+                if player is not None
+            ]
+        cache.set(cache_key, result, timeout=1)
+        future.set_result(result)
+        return result
+    except Exception as exc:
+        if not future.done():
+            future.set_exception(exc)
+        raise
+    finally:
+        _get_players_inflight.pop(cache_key, None)
+
+
+_get_players_inflight: dict[str, asyncio.Future] = {}
 
 
 def _parse_location_string(loc_str):
