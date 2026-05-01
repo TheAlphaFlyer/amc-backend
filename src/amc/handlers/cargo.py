@@ -40,7 +40,16 @@ from amc.fraud_detection import validate_cargo_payment
 from amc.pipeline.discord import post_discord_delivery_embed
 from amc.pipeline.delivery import atomic_process_delivery
 from amc.police import SECURITY_BONUS_RATE, SECURITY_BONUS_MAX, get_active_police_count
-from amc.subsidies import get_subsidy_for_cargo, subsidise_player
+from amc.subsidies import (
+    apply_subsidy_player_cuts,
+    get_subsidy_for_cargo,
+    subsidise_player,
+)
+from amc.tax import (
+    get_tax_for_cargo,
+    record_tax_rule_collection,
+    tax_player,
+)
 from amc_finance.services import record_ministry_subsidy_spend
 from asgiref.sync import sync_to_async
 
@@ -163,21 +172,48 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         is_illicit = cargo_key in ILLICIT_CARGO_KEYS
 
+        cargo_name = group_list[0].get_cargo_key_display()
+
+        # --- ASEAN Tax (applied BEFORE subsidies, on raw base cargo payment) ---
+        # Tax flows IN to the treasury. Computed on the pre-subsidy payment so
+        # the player is taxed on the true base cargo value, not on the post-
+        # subsidy boosted figure. Skipped for illicit cargo (criminal flow has
+        # its own clawback) and for gov employees (their pay already redirects
+        # to the treasury via wage-redirect; double-taxing is pointless).
+        cargo_tax = 0
+        if not is_illicit and not (character and character.is_gov_employee):
+            tax_amount, _tax_factor, tax_rule = await get_tax_for_cargo(
+                group_list[0], treasury_balance=ctx.treasury_balance
+            )
+            cargo_tax = (tax_amount or 0) * quantity
+            if cargo_tax > 0:
+                await tax_player(
+                    cargo_tax,
+                    character,
+                    ctx.http_client_mod,
+                    message=f"ASEAN Tax: {cargo_name}",
+                )
+                if tax_rule:
+                    await record_tax_rule_collection(tax_rule, cargo_tax)
+
         cargo_subsidy = 0
-        if not is_illicit:
+        if not is_illicit and character and not character.is_gov_employee:
             cargo_subsidy_res = await get_subsidy_for_cargo(
                 group_list[0], treasury_balance=ctx.treasury_balance
             )
             cargo_subsidy = cargo_subsidy_res[0] * quantity
             rule = cargo_subsidy_res[2]
+            # Apply player-side cuts (rich/modded). Gov skip is enforced above
+            # so we never reach apply_subsidy_player_cuts for a gov employee.
+            cargo_subsidy = await apply_subsidy_player_cuts(
+                cargo_subsidy, character, ctx.http_client_mod
+            )
             if rule and cargo_subsidy > 0:
                 await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
                     spent=F("spent") + cargo_subsidy
                 )
                 if ctx.active_term:
                     await record_ministry_subsidy_spend(cargo_subsidy, ctx.active_term.id)
-
-        cargo_name = group_list[0].get_cargo_key_display()
 
         # Modded vehicle / on-foot detection for illicit cargo
         is_modded = False
@@ -310,6 +346,11 @@ async def handle_cargo_arrived(event, player, character, ctx):
             )
 
         total_subsidy += delivery_subsidy
+        # Net out tax from the reported base payment so downstream savings,
+        # loan repayment and profit calculations operate on the player''s
+        # actual take-home from this cargo group.
+        if cargo_tax > 0:
+            total_payment -= cargo_tax
 
         # Risk premium for Money deliveries
         if cargo_key == "Money" and ctx.http_client_mod:

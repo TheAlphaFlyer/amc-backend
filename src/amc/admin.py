@@ -63,6 +63,8 @@ from .models import (
     WorldObject,
     SubsidyArea,
     SubsidyRule,
+    TaxArea,
+    TaxRule,
     ShortcutZone,
     DeliveryJobTemplate,
     MinistryElection,
@@ -1356,6 +1358,95 @@ class SubsidyRuleAdmin(admin.ModelAdmin):
 
             return HttpResponse("Ordered")
         return HttpResponse("Method not allowed", status=405)
+
+
+@admin.register(TaxArea)
+class TaxAreaAdmin(admin.ModelAdmin):
+    list_display = ["name"]
+    search_fields = ["name"]
+
+    class Media:
+        js = (
+            "https://cdn.jsdelivr.net/npm/ol@v7.2.2/dist/ol.js",
+            "amc/js/OLMapWidget.js",
+        )
+        css = {
+            "all": (
+                "https://cdn.jsdelivr.net/npm/ol@v7.2.2/ol.css",
+                "gis/css/ol3.css",
+            )
+        }
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        defaults = {
+            "widgets": {
+                "polygon": AMCOpenLayersWidget,
+            }
+        }
+        defaults.update(kwargs)
+        return super().get_form(request, obj, change, **defaults)
+
+
+@admin.register(TaxRule)
+class TaxRuleAdmin(admin.ModelAdmin):
+    list_display = [
+        "name",
+        "active",
+        "priority",
+        "tax_type",
+        "tax_value",
+        "collected",
+    ]
+    list_filter = ["active", "tax_type", "scales_with_damage", "requires_on_time"]
+    search_fields = ["name"]
+    filter_horizontal = ["cargos", "source_areas", "destination_areas"]
+    autocomplete_fields = ["source_delivery_points", "destination_delivery_points"]
+    readonly_fields = ["collected"]
+    ordering = ["-priority"]
+
+    class Media:
+        css = {"all": ("amc/admin/subsidy_admin.css",)}
+
+    fieldsets = (
+        (
+            None,
+            {
+                "fields": (
+                    "name",
+                    "active",
+                    "priority",
+                    "tax_type",
+                    "tax_value",
+                    "scales_with_damage",
+                    "requires_on_time",
+                    "collected",
+                )
+            },
+        ),
+        (
+            "Requirements",
+            {
+                "fields": ("cargos",),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "Source",
+            {
+                "fields": ("source_areas", "source_delivery_points"),
+                "classes": ("collapse",),
+                "description": "Leave empty to apply to ANY source.",
+            },
+        ),
+        (
+            "Destination",
+            {
+                "fields": ("destination_areas", "destination_delivery_points"),
+                "classes": ("collapse",),
+                "description": "Leave empty to apply to ANY destination.",
+            },
+        ),
+    )
 
 
 @admin.register(MinistryElection)

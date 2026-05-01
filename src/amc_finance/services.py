@@ -300,6 +300,37 @@ async def record_treasury_rent_income(amount, description="House Rent"):
     )
 
 
+async def record_treasury_tax_collection(amount, character=None, description="ASEAN Tax"):
+    """
+    Record an ASEAN Tax collection as treasury revenue.
+    Mirrors `record_treasury_rent_income` / `record_treasury_confiscation_income`:
+    """
+    if amount <= 0:
+        return
+    treasury_fund, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.ASSET,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Treasury Fund",
+    )
+    tax_revenue, _ = await Account.objects.aget_or_create(
+        account_type=Account.AccountType.REVENUE,
+        book=Account.Book.GOVERNMENT,
+        character=None,
+        name="Tax Revenue",
+    )
+
+    await sync_to_async(create_journal_entry)(
+        timezone.now(),
+        description,
+        character,
+        [
+            {"account": tax_revenue, "debit": 0, "credit": amount},
+            {"account": treasury_fund, "debit": amount, "credit": 0},
+        ],
+    )
+
+
 async def send_fund_to_player(amount, character, reason):
     if not await check_treasury_floor(amount):
         return

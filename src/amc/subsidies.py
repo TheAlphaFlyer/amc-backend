@@ -1,75 +1,165 @@
 import asyncio
+import logging
 from decimal import Decimal
-from django.db.models import Q
+
 from django.contrib.gis.geos import Point
+from django.db.models import Q
 from django.utils.translation import gettext as _
-from amc.mod_server import show_popup, transfer_money
-from amc.models import ServerPassengerArrivedLog, SubsidyRule
-from amc_finance.services import (
-    send_fund_to_player_wallet,
-    register_player_deposit,
-    get_treasury_fund_balance,
+
+from amc import config as amc_config
+from amc.mod_server import (
+    get_player_last_vehicle_parts,
+    show_popup,
+    transfer_money,
 )
+from amc.mod_detection import POLICE_DUTY_WHITELIST, detect_custom_parts
+from amc.models import (
+    PoliceSession,
+    ServerPassengerArrivedLog,
+    SubsidyRule,
+    TaxRule,
+)
+from amc_finance.services import (
+    get_treasury_fund_balance,
+    register_player_deposit,
+    send_fund_to_player_wallet,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _format_reward(reward_type, reward_value):
+    """Format a SubsidyRule/TaxRule reward field for player display."""
+    if reward_type == SubsidyRule.RewardType.PERCENTAGE:
+        return f"{int(float(reward_value) * 100)}%"
+    return f"{int(reward_value):,} coins"
+
+
+def _rule_rate_fields(rule):
+    """Return (type, value) for either a SubsidyRule (reward_*) or a TaxRule (tax_*). Both share the same PERCENTAGE/FLAT semantics"""
+    if hasattr(rule, "tax_value"):
+        return rule.tax_type, rule.tax_value
+    return rule.reward_type, rule.reward_value
+
+
+def _rule_sort_key(rule):
+    """Sort rules by *display magnitude*, highest first.
+
+    Percentages are converted into a comparable scalar by treating
+    `reward_value` as a fraction (so 1.5 = 150% comes before 0.10 = 10%).
+    Flat amounts use their raw value. We can't mix the two units perfectly
+    so we keep flat amounts in their own bucket but still ordered by size.
+    """
+    _, value = _rule_rate_fields(rule)
+    return -float(value)
+
+
+async def _format_rule_block(rule):
+    """Render one rule as a block of lines (cargo + reward + areas)."""
+    rtype, rvalue = _rule_rate_fields(rule)
+    reward_str = _format_reward(rtype, rvalue)
+    if rule.requires_on_time:
+        reward_str += " (Must be on time)"
+
+    cargos = [c async for c in rule.cargos.all()]
+    if cargos:
+        cargo_str = ", ".join(c.label for c in cargos)
+    else:
+        cargo_str = "Any Cargo"
+
+    lines = [f"<Bold>{cargo_str}</> - <Money>{reward_str}</>"]
+
+    source_areas = [a async for a in rule.source_areas.all()]
+    source_points = [p async for p in rule.source_delivery_points.all()]
+    all_sources = source_areas + source_points
+    if all_sources:
+        names = ", ".join(obj.name for obj in all_sources)
+        lines.append(f"<Secondary>From: {names}</>")
+
+    dest_areas = [a async for a in rule.destination_areas.all()]
+    dest_points = [p async for p in rule.destination_delivery_points.all()]
+    all_dests = dest_areas + dest_points
+    if all_dests:
+        names = ", ".join(obj.name for obj in all_dests)
+        lines.append(f"<Secondary>To: {names}</>")
+
+    return "\n".join(lines)
 
 
 async def get_subsidies_text():
-    text = _("<Title>ASEAN Server Subsidies</>\n\n")
+    """Player-facing text for `/subsidies`.
 
-    rules = SubsidyRule.objects.filter(active=True).order_by("-priority")
+    Subsidies first, sorted by reward magnitude (highest -> lowest) with a
+    blank line between each rule. ASEAN Tax rules listed underneath in a
+    separate section so players can see exactly what is being collected.
+    """
+    parts = [_("<Title>ASEAN Server Subsidies</>")]
 
-    async for rule in rules:
-        # Build Reward String
-        if rule.reward_type == SubsidyRule.RewardType.PERCENTAGE:
-            reward_str = f"{int(rule.reward_value * 100)}%"
-        else:
-            reward_str = f"{int(rule.reward_value)} coins"
+    subsidies = [
+        rule
+        async for rule in SubsidyRule.objects.filter(active=True).prefetch_related(
+            "cargos",
+            "source_areas",
+            "source_delivery_points",
+            "destination_areas",
+            "destination_delivery_points",
+        )
+    ]
+    subsidies.sort(key=_rule_sort_key)
 
-        if rule.requires_on_time:
-            reward_str += " (Must be on time)"
+    if subsidies:
+        blocks = [await _format_rule_block(r) for r in subsidies]
+        parts.append("\n\n".join(blocks))
+    else:
+        parts.append(_("<Secondary>No active subsidies.</>"))
 
-        # Build Cargo String
-        cargos = [c async for c in rule.cargos.all()]
-        if cargos:
-            cargo_names_list = [c.label for c in cargos]
-            cargo_str = ", ".join(cargo_names_list)
-        else:
-            cargo_str = "Any Cargo"
-
-        text += f"<Bold>{cargo_str}</> - <Money>{reward_str}</>\n"
-
-        # Secondary info (Areas & Points)
-        source_areas = [a async for a in rule.source_areas.all()]
-        source_points = [p async for p in rule.source_delivery_points.all()]
-        all_sources = source_areas + source_points
-
-        dest_areas = [a async for a in rule.destination_areas.all()]
-        dest_points = [p async for p in rule.destination_delivery_points.all()]
-        all_dests = dest_areas + dest_points
-
-        if all_sources:
-            source_names = ", ".join([obj.name for obj in all_sources])
-            text += f"<Secondary>From: {source_names}</>\n"
-
-        if all_dests:
-            dest_names = ", ".join([obj.name for obj in all_dests])
-            text += f"<Secondary>To: {dest_names}</>\n"
-
-    # Tow Request Subsidies
-    text += "\n"
-    text += _("<Title>Wrecker Subsidies</>\n")
-    text += _(
-        "<Bold>Flipped Vehicle</> - <Money>2,000</> + <Money>100%</> of payment\n"
-        "<Bold>Other Tow Requests</> - <Money>2,000</> + <Money>50%</> of payment\n"
-        "\n"
-        "<Title>Body Damage Bonus</>\n"
-        "<Secondary>Tow requests include a body damage bonus up to <Money>55%</> of base payment.</>\n"
-        "<Secondary>Keep the towed vehicle's body intact for maximum bonus!</>\n"
+    # Tow Request Subsidies (legacy, hard-coded)
+    parts.append(
+        _(
+            "<Title>Wrecker Subsidies</>\n"
+            "<Bold>Flipped Vehicle</> - <Money>2,000</> + <Money>100%</> of payment\n"
+            "<Bold>Other Tow Requests</> - <Money>2,000</> + <Money>50%</> of payment\n"
+            "\n"
+            "<Title>Body Damage Bonus</>\n"
+            "<Secondary>Tow requests include a body damage bonus up to <Money>55%</> of base payment.</>\n"
+            "<Secondary>Keep the towed vehicle's body intact for maximum bonus!</>"
+        )
     )
 
-    return text
+    # ASEAN Tax section
+    taxes = [
+        rule
+        async for rule in TaxRule.objects.filter(active=True).prefetch_related(
+            "cargos",
+            "source_areas",
+            "source_delivery_points",
+            "destination_areas",
+            "destination_delivery_points",
+        )
+    ]
+    taxes.sort(key=_rule_sort_key)
+    if taxes:
+        parts.append(_("<Title>ASEAN Server Taxes</>"))
+        parts.append(
+            _(
+                "<Secondary>The following taxes are deducted from the base cargo "
+                "payment and credited to the Treasury. Taxes scale down as the "
+                "Treasury grows.</>"
+            )
+        )
+        blocks = [await _format_rule_block(r) for r in taxes]
+        parts.append("\n\n".join(blocks))
+
+    return "\n\n".join(parts)
 
 
 SUBSIDIES_TEXT = "Use await get_subsidies_text()"
+
+
+# ---------------------------------------------------------------------------
+# Player savings (auto-deposit a portion of profit into bank)
+# ---------------------------------------------------------------------------
+
 
 cargo_names = {
     "MeatBox": "Meat Box",
@@ -96,9 +186,14 @@ async def set_aside_player_savings(character, payment, session):
 
         saving = Decimal(saving_rate) * Decimal(payment)
         if saving > 0:
-            message = "Earnings Bank Deposit"
+            # Phrased as a transfer rather than a payment so the in-game chat
+            # entry reads as a routing of funds, not a charge.
+            # NOTE: the leading "-$" in chat is rendered by the game server
+            # itself based on the sign of the amount and cannot be suppressed
+            # without a mod-server change.
+            message = "Auto-Save to Bank"
             if character.saving_rate is None:
-                message = "Automated Bank Deposit (Use /bank to check your balance)"
+                message = "Auto-Save to Bank (use /bank, /set_saving_rate)"
 
             await transfer_money(
                 session,
@@ -121,6 +216,11 @@ async def set_aside_player_savings(character, payment, session):
         raise e
 
 
+# ---------------------------------------------------------------------------
+# Subsidy lookup
+# ---------------------------------------------------------------------------
+
+
 async def get_subsidy_for_cargos(cargos, treasury_balance=None):
     total = 0
     for cargo in cargos:
@@ -133,40 +233,25 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
     rules = SubsidyRule.objects.filter(active=True).order_by("-priority")
 
     # 1. Cargo Key Filter
-    # Cargo type hierarchy checking is tricky in a single query if not explicitly linked.
-    # For now, we assume simple key match or explicit Cargo object link.
-    # cargo.cargo_key is a string. `SubsidyRule.cargos` is a ManyToMany to `Cargo`.
-    # We should match rules where cargos IS NULL OR cargos__key = cargo.cargo_key
     rules = rules.filter(Q(cargos__isnull=True) | Q(cargos__key=cargo.cargo_key))
 
     # 2. Source Area Filter
     if cargo.sender_point and cargo.sender_point.coord:
-        # Match rules that have NO source requirement
-        # OR source area contains point
-        # OR source delivery point is within 1m
         rules = rules.filter(
             Q(source_areas__isnull=True, source_delivery_points__isnull=True)
             | Q(source_areas__polygon__contains=cargo.sender_point.coord)
             | Q(source_delivery_points__coord__dwithin=(cargo.sender_point.coord, 1.0))
         )
     else:
-        # If unknown source, only allow rules with NO source requirement
         rules = rules.filter(
             source_areas__isnull=True, source_delivery_points__isnull=True
         )
 
     # 3. Destination Area Filter
-    # Special case: 'TrashBag' | 'Trash_Big' logic in old code used dynamic point distance.
-    # We assume new system uses predefined areas for Trash too.
     destination_coord = None
     if cargo.destination_point and cargo.destination_point.coord:
         destination_coord = cargo.destination_point.coord
     elif destination_location := cargo.data.get("Net_DestinationLocation"):
-        # Handle dynamic destinations (e.g. Trash logic provided explicit coords in data)
-        # Note: Coords in data are likely raw game coords. We need to respect SRID=3857.
-        # Assuming input is consistent with DeliveryPoint (srid=3857) or needs casting?
-        # Old code: Point(x,y,z) implied srid0 or default. Now we are strict.
-        # Constructing point with srid=3857 is safe if we assume same coordinate system.
         destination_coord = Point(
             destination_location["X"],
             destination_location["Y"],
@@ -190,10 +275,6 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
     if not is_on_time:
         rules = rules.exclude(requires_on_time=True)
 
-    # Evaluate first match
-    # Because of the complexity of the query (DISTINCT might be needed due to joins?),
-    # we iterate or take first.
-    # Using .distinct() to avoid duplicate rule returned largely due to M2M joins.
     best_rule = await rules.distinct().afirst()
 
     subsidy_factor = 0.0
@@ -203,49 +284,28 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
         factor = float(best_rule.reward_value)
         if best_rule.reward_type == SubsidyRule.RewardType.PERCENTAGE:
             subsidy_factor = factor
-
             subsidy_amount = int(int(cargo.payment) * subsidy_factor)
         else:
-            # Flat Amount
             subsidy_amount = int(factor)
-            # Recalculate effective factor for display?
             if cargo.payment > 0:
                 subsidy_factor = subsidy_amount / cargo.payment
 
-        # Ministry Allocation Check
-        # Skipping for now
-        # TODO: Refactor, move this payment scaling responbility to the parent
-        # remaining = best_rule.allocation - best_rule.spent
-        # if remaining <= 0:
-        #     subsidy_amount = 0
-        #     subsidy_factor = 0
-        # elif subsidy_amount > remaining:
-        #     subsidy_amount = int(remaining)
-        #     # Recalculate factor for reporting
-        #     if cargo.payment > 0:
-        #         subsidy_factor = subsidy_amount / cargo.payment
-
-    # Treasury Cap Logic
+    # Treasury cap: subsidies scale down when treasury is low (preserve floor;
+    # below FLOOR -> zero, above CEILING -> full, linear in between).
     if treasury_balance is not None and subsidy_amount > 0:
-        # Cap based on treasury health (legacy logic preserved)
-        # "subsidy_factor = min(subsidy_factor, subsidy_factor * int(treasury_balance) / 50_000_000)"
-        # This logic seems to scale down the subsidy if treasury is low?
-        # If treasury < 50M, factor reduces linearly?
-        # let's duplicate the logic exactly.
-
-        current_factor = subsidy_factor
-        scaling = int(treasury_balance) / 30_000_000
-        effective_factor = min(current_factor, current_factor * scaling)
-
-        # Recalculate amount based on effective factor?
-        # Or just cap the amount?
-        # Old code:
-        # subsidy = min(int(int(cargo.payment) * subsidy_factor), int(treasury_balance))
-        # Wait, old code line 208 updates subsidy_factor!
-
-        subsidy_amount = int(int(cargo.payment) * effective_factor)
+        floor = amc_config.TREASURY_SUBSIDY_FLOOR
+        ceiling = amc_config.TREASURY_SUBSIDY_CEILING
+        bal = float(treasury_balance)
+        if bal <= floor:
+            scale = 0.0
+        elif bal >= ceiling:
+            scale = 1.0
+        else:
+            scale = (bal - floor) / (ceiling - floor)
+        subsidy_amount = int(subsidy_amount * scale)
         subsidy_amount = min(subsidy_amount, int(treasury_balance))
-        subsidy_factor = effective_factor
+        if cargo.payment > 0:
+            subsidy_factor = subsidy_amount / cargo.payment
 
     return subsidy_amount, subsidy_factor, best_rule
 
@@ -260,26 +320,126 @@ def get_passenger_subsidy(passenger):
             return 0
 
 
-TREASURY_SUBSIDY_FLOOR = 5_000_000
-TREASURY_SUBSIDY_CEILING = 30_000_000
+# ---------------------------------------------------------------------------
+# Modded vehicle detection (delivery-time, no popup, no zero-out)
+# ---------------------------------------------------------------------------
+
+
+async def is_player_in_modded_vehicle(character, http_client_mod) -> bool:
+    """Return True if the character is currently in a vehicle whose parts
+    fail the same custom-parts check used to drive the [M] tag.
+
+    Does NOT depend on the [M] tag being present yet (the tag is updated
+    asynchronously). Returns False on any error so a transient mod-server
+    hiccup never punishes a player.
+    """
+    if not http_client_mod or not character:
+        return False
+    try:
+        parts_data = await get_player_last_vehicle_parts(
+            http_client_mod, str(character.guid), complete=False
+        )
+        whitelist = None
+        is_on_duty = await PoliceSession.objects.filter(
+            character=character, ended_at__isnull=True
+        ).aexists()
+        if is_on_duty:
+            whitelist = POLICE_DUTY_WHITELIST
+        custom_parts = detect_custom_parts(
+            parts_data.get("parts", []), whitelist=whitelist
+        )
+        return bool(custom_parts)
+    except Exception as e:
+        logger.warning("is_player_in_modded_vehicle check failed: %s", e)
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Subsidy player-side cuts (gov skip, rich players, modded vehicle)
+# ---------------------------------------------------------------------------
+
+
+async def apply_subsidy_player_cuts(subsidy, character, http_client_mod=None):
+    """Apply player-specific reductions to a positive subsidy amount.
+
+    - Gov employees: skipped
+    - Rich players: subsidy scales down with curve, until reaches ceiling
+    - Modded current vehicle: scaled by MODDED_SUBSIDY_MULTIPLIER.
+
+    Cuts compose multiplicatively. Returns the adjusted integer amount.
+    """
+    if subsidy <= 0 or character is None:
+        return 0
+
+    if getattr(character, "is_gov_employee", False):
+        return 0
+
+    # Rich player check - bank balance only (wallet money is not exposed by
+    # the mod server; bank balance is the persistent-wealth proxy).
+    #
+    # The cut scales smoothly between WEALTH_RICH_THRESHOLD and WEALTH_RICH_CEILING using a curve 
+    # Poorer player more support, rich player less support
+    try:
+        from amc_finance.loans import get_player_bank_balance
+
+        bank_balance = int(await get_player_bank_balance(character) or 0)
+        threshold = amc_config.WEALTH_RICH_THRESHOLD
+        ceiling = amc_config.WEALTH_RICH_CEILING
+        if bank_balance >= threshold and ceiling > threshold:
+            t = min(1.0, (bank_balance - threshold) / (ceiling - threshold))
+            # Slow at first then accelerating with curve
+            full_cut = 1.0 - amc_config.WEALTH_RICH_SUBSIDY_MULTIPLIER
+            cut_now = full_cut * (t * t)
+            subsidy = int(subsidy * (1.0 - cut_now))
+        elif bank_balance >= threshold:
+            # if ceiling <= threshold apply full cut to subsidy. subsidy become 0
+            subsidy = int(subsidy * amc_config.WEALTH_RICH_SUBSIDY_MULTIPLIER)
+    except Exception as e:
+        logger.warning("Wealth-cut bank lookup failed for %s: %s", character.name, e)
+
+    if subsidy <= 0:
+        return 0
+
+    if http_client_mod and await is_player_in_modded_vehicle(
+        character, http_client_mod
+    ):
+        subsidy = int(subsidy * amc_config.MODDED_SUBSIDY_MULTIPLIER)
+
+    return max(0, subsidy)
+
+
+# ---------------------------------------------------------------------------
+# Subsidy payout (positive amounts only)
+# ---------------------------------------------------------------------------
 
 
 async def subsidise_player(subsidy, character, session, message=None):
-    if subsidy > 0:
-        treasury_balance = await get_treasury_fund_balance()
-        if treasury_balance <= TREASURY_SUBSIDY_FLOOR:
-            return
-        scale = min(
-            1.0,
-            (float(treasury_balance) - TREASURY_SUBSIDY_FLOOR)
-            / (TREASURY_SUBSIDY_CEILING - TREASURY_SUBSIDY_FLOOR),
-        )
-        subsidy = int(subsidy * scale)
-        if subsidy <= 0:
-            return
+    """Pay a subsidy from the Treasury into the player's in-game wallet
+    AND credit their bank ledger.
+
+    This function is positive-only; tax flow lives in `amc.tax.tax_player`.
+    Treasury floor scaling is preserved (low treasury -> zero subsidy).
+    """
+    if subsidy <= 0:
+        return
+
+    treasury_balance = await get_treasury_fund_balance()
+    if treasury_balance <= amc_config.TREASURY_SUBSIDY_FLOOR:
+        return
+    scale = min(
+        1.0,
+        (float(treasury_balance) - amc_config.TREASURY_SUBSIDY_FLOOR)
+        / (
+            amc_config.TREASURY_SUBSIDY_CEILING
+            - amc_config.TREASURY_SUBSIDY_FLOOR
+        ),
+    )
+    subsidy = int(subsidy * scale)
+    if subsidy <= 0:
+        return
 
     if message is None:
-        message = "ASEAN Subsidy" if subsidy > 0 else "ASEAN Tax"
+        message = "ASEAN Subsidy"
     await transfer_money(
         session,
         int(subsidy),

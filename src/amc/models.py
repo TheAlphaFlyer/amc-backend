@@ -2759,6 +2759,85 @@ class SubsidyRule(models.Model):
 
 
 @final
+class TaxArea(models.Model):
+    """
+    Polygonal area used by TaxRule for source/destination matching.
+    Mirrors Subsidy area
+    """
+
+    name = models.CharField(max_length=200)
+    polygon = models.PolygonField(srid=3857, dim=2)
+    description = models.TextField(blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+@final
+class TaxRule(models.Model):
+    """
+    Per-cargo / per-route tax that flows INTO the treasury.
+    Mirrors Subsidy rule
+    """
+
+    class TaxType(models.TextChoices):
+        PERCENTAGE = "PERCENTAGE", _("Percentage")
+        FLAT = "FLAT", _("Flat Amount")
+
+    name = models.CharField(max_length=200)
+    active = models.BooleanField(default=True)
+    priority = models.IntegerField(
+        default=0, help_text="Higher number = evaluated first"
+    )
+
+    # Conditions
+    cargos = models.ManyToManyField(
+        "Cargo",
+        blank=True,
+        related_name="tax_rules",
+        help_text="If empty, applies to ALL cargos",
+    )
+    source_areas = models.ManyToManyField(
+        TaxArea, related_name="source_tax_rules", blank=True
+    )
+    destination_areas = models.ManyToManyField(
+        TaxArea, related_name="destination_tax_rules", blank=True
+    )
+    source_delivery_points = models.ManyToManyField(
+        "DeliveryPoint", related_name="source_tax_rules", blank=True
+    )
+    destination_delivery_points = models.ManyToManyField(
+        "DeliveryPoint", related_name="destination_tax_rules", blank=True
+    )
+    requires_on_time = models.BooleanField(default=False)
+
+    # Rates
+    tax_type = models.CharField(max_length=20, choices=TaxType)
+    tax_value = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Percentage (e.g. 0.10 for 10%) or Flat Amount, deducted from base cargo payment",
+    )
+    scales_with_damage = models.BooleanField(
+        default=False, help_text="If true, multiplies tax by health %"
+    )
+
+    # Audit
+    collected = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        default=0,
+        help_text="Lifetime amount collected by this rule",
+    )
+
+    if TYPE_CHECKING:
+        tax_percentage: int
+
+    def __str__(self):
+        return f"{self.name} ({self.priority})"
+
+
+@final
 class JobPostingConfig(models.Model):
     """Server-wide job posting configuration. Singleton (pk=1 always)."""
 
