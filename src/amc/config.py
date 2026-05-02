@@ -48,7 +48,7 @@ WEALTH_TAX_FLOOR_PCT = 0.15
 
 # Multiplier applied to subsidies when the delivering player is sitting in a
 # vehicle with detected modded parts. 0.0 = no subsidy, 1.0 = no cut.
-MODDED_SUBSIDY_MULTIPLIER = 0.5
+MODDED_SUBSIDY_MULTIPLIER = 1.0
 
 
 
@@ -87,3 +87,29 @@ SUBSIDY_HEALTH_EXPONENT = 2.0
 # Applied INDEPENDENTLY to `bonus_multiplier` and `completion_bonus` AFTER the unified treasury scale above. Set both to 0 to disable jitter.
 JOB_BONUS_VARIANCE_UP = 0.05 
 JOB_BONUS_VARIANCE_DOWN = 0.05
+
+
+
+
+#########
+# JOB BONUS — PLAYER-POOL EXPERIENCE/WEALTH BALANCING
+#########
+# Mirrors the subsidy `clamp_subsidy_for_treasury_health` philosophy but for /jobs
+# postings, which are global (not per-player). When the treasury is at/above
+# `TREASURY_GOOD_HEALTH_T` health, posted job bonuses are paid in full. When the
+# treasury is hurting, bonuses are dimmed *more aggressively* in lobbies that
+# are dominated by veteran/established players (they don't need the help) and
+# kept full in lobbies dominated by new/poor players (they do).
+#
+# Set FACTOR_AT_NEW == FACTOR_AT_VETERAN to disable the player-pool tilt.
+JOB_PLAYER_POOL_FACTOR_AT_NEW = 1.0      # multiplier when 0% of online chars are veteran/established-rich
+JOB_PLAYER_POOL_FACTOR_AT_VETERAN = 0.6  # multiplier when 100% are veteran/established-rich
+# Wealth-fraction threshold: an `established` character counts as "rich" once
+# their `compute_wealth_state` t-value (0..1 between WEALTH_POOR_FLOOR and
+# WEALTH_RICH_CEILING) is at/above this. Lower = more chars classified as rich.
+JOB_PLAYER_POOL_FACTOR_WEALTH_T = 0.5
+# Curve exponent applied to the veteran-fraction before the lerp.
+#   < 1.0  = even a small veteran share starts dimming bonuses
+#   = 1.0  = linear
+#   > 1.0  = bonuses stay near full until the lobby is mostly veterans
+JOB_PLAYER_POOL_FACTOR_EXPONENT = 1.5
