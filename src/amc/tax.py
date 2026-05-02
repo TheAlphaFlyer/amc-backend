@@ -206,6 +206,12 @@ async def apply_tax_player_cuts(tax_amount, character, treasury_balance=None, we
     from amc.subsidies import compute_wealth_state
     from amc import config
 
+    # Tax hardcutoff once the treasury is at/above CEILING.
+    if treasury_balance is not None:
+        ceiling = float(config.TREASURY_CEILING)
+        if float(treasury_balance) >= ceiling:
+            return 0
+
     floor_pct = float(config.WEALTH_TAX_FLOOR_PCT)
     is_experienced = _is_experienced(character)
 
