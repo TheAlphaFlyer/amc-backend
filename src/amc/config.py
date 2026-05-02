@@ -21,7 +21,7 @@ DEPOT_RESTOCK_SUBSIDY_AMOUNT = 10_000
 
 
 #########
-# SUBSIDIES
+# PLAYER WEALTH CONTROLS
 #########
 
 # RICH_CEILING is the max tax point —
@@ -59,6 +59,7 @@ MODDED_SUBSIDY_MULTIPLIER = 0.5
 
 TREASURY_FLOOR = 50_000_000
 TREASURY_CEILING = 150_000_000
+TREASURY_GOOD_HEALTH_T = 0.9
 
 #   < 1.0  = drop off slower, only drops off heavily near the top/ceiling
 #   = 1.0  = linear interpolation
@@ -68,6 +69,12 @@ TREASURY_CURVE_EXPONENT = 0.7
 # Upper clamp on treasury payouts if treasury is above celing
 # Higher = more aggressive self-correction
 TREASURY_BOOM_CAP = 2.0
+
+# Curve exponent for the veteran subsidy clamp
+#   < 1.0  = gentler ramp (subsidy stays high until treasury near floor)
+#   = 1.0  = linear
+#   > 1.0  = sharper ramp (subsidy collapses fast when treasury low, so the system self-heals faster)
+SUBSIDY_HEALTH_EXPONENT = 2.0
 
 
 

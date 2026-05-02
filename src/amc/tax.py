@@ -24,7 +24,69 @@ from amc_finance.services import record_treasury_tax_collection
 logger = logging.getLogger(__name__)
 
 
-async def get_tax_for_cargo(cargo, treasury_balance=None):
+def _is_experienced(character) -> bool:
+    """
+    `EXPERIENCED_DRIVER_LEVEL_THRESHOLD`. 
+    Experienced players bypass tax throttling
+    """
+    if character is None:
+        return False
+    from amc import config
+
+    threshold = int(config.EXPERIENCED_DRIVER_LEVEL_THRESHOLD or 0)
+    if threshold <= 0:
+        return False
+    driver_level = int(getattr(character, "driver_level", 0) or 0)
+    return driver_level >= threshold
+
+
+def _experienced_bypass_strength(treasury_balance) -> float:
+    """Return experienced-player bypass strength in [0, 1].
+
+    1.0 = full bypass (player ignores throttles entirely).
+    0.0 = no bypass (player uses normal throttled tax).
+
+    Below `TREASURY_GOOD_HEALTH_T` the bypass is at full strength. Between
+    `TREASURY_GOOD_HEALTH_T` and 1.0 (ceiling) it ramps linearly down to 0
+    so a near-ceiling treasury stops over-collecting from veterans.
+    """
+    if treasury_balance is None:
+        # No treasury context — assume worst case (poor) so experienced
+        # players pay full.
+        return 1.0
+    from amc import config
+
+    floor = float(config.TREASURY_FLOOR)
+    ceiling = float(config.TREASURY_CEILING)
+    if ceiling <= floor:
+        return 0.0
+    bal = float(treasury_balance)
+    t = max(0.0, min(1.0, (bal - floor) / (ceiling - floor)))
+    good_t = max(0.0, min(1.0, float(config.TREASURY_GOOD_HEALTH_T)))
+    if t <= good_t:
+        return 1.0
+    if good_t >= 1.0:
+        return 1.0
+    return max(0.0, 1.0 - (t - good_t) / (1.0 - good_t))
+
+
+def _compute_tax_scale(treasury_balance) -> float:
+    """Inverted treasury scale: poor -> 1.0, at/above ceiling -> 0.0."""
+    from amc import config
+
+    floor = float(config.TREASURY_FLOOR)
+    ceiling = float(config.TREASURY_CEILING)
+    bal = float(treasury_balance)
+    if ceiling <= floor or bal >= ceiling:
+        return 0.0
+    if bal <= floor:
+        return 1.0
+    t = (bal - floor) / (ceiling - floor)
+    exponent = max(0.0001, float(config.TREASURY_CURVE_EXPONENT))
+    return (1.0 - t) ** exponent
+
+
+async def get_tax_for_cargo(cargo, treasury_balance=None, character=None):
     """Find the highest-priority TaxRule that matches this cargo log.
 
     Returns (tax_amount, tax_factor, best_rule).
@@ -96,20 +158,15 @@ async def get_tax_for_cargo(cargo, treasury_balance=None):
     # inverted: poor treasury -> full tax, rich treasury -> zero tax.
     #   t = clamp01((balance - FLOOR) / (CEILING - FLOOR))
     #   tax_scale = (1 - t) ** EXPONENT   (mirror of subsidy_scale = t ** EXPONENT)
+    # Experienced players blend between full-bypass (tax_scale=1) and
+    # normal scale based on `_experienced_bypass_strength`.
     if treasury_balance is not None and tax_amount > 0:
-        from amc import config
-
-        floor = float(config.TREASURY_FLOOR)
-        ceiling = float(config.TREASURY_CEILING)
-        bal = float(treasury_balance)
-        if ceiling <= floor or bal >= ceiling:
-            tax_scale = 0.0
-        elif bal <= floor:
-            tax_scale = 1.0
+        normal_scale = _compute_tax_scale(treasury_balance)
+        if _is_experienced(character):
+            bypass = _experienced_bypass_strength(treasury_balance)
+            tax_scale = bypass * 1.0 + (1.0 - bypass) * normal_scale
         else:
-            t = (bal - floor) / (ceiling - floor)
-            exponent = max(0.0001, float(config.TREASURY_CURVE_EXPONENT))
-            tax_scale = (1.0 - t) ** exponent
+            tax_scale = normal_scale
         tax_amount = int(tax_amount * tax_scale)
         if cargo.payment > 0:
             tax_factor = tax_amount / cargo.payment
@@ -117,7 +174,7 @@ async def get_tax_for_cargo(cargo, treasury_balance=None):
     return tax_amount, tax_factor, best_rule
 
 
-async def apply_tax_player_cuts(tax_amount, character):
+async def apply_tax_player_cuts(tax_amount, character, treasury_balance=None):
     """Apply the established-player wealth curve to a positive tax amount.
 
     Mirrors `amc.subsidies.apply_subsidy_player_cuts`. NEW players (lifetime
@@ -135,6 +192,11 @@ async def apply_tax_player_cuts(tax_amount, character):
     *some* tax from a rich player while broke established players pay near
     the minimum floor.
 
+    Experienced players (`driver_level ≥ EXPERIENCED_DRIVER_LEVEL_THRESHOLD`)
+    bypass the wealth curve entirely while the treasury is below
+    `TREASURY_GOOD_HEALTH_T`. Once the treasury enters good health the
+    bypass blends linearly toward the normal wealth-curve cut.
+
     Caller is responsible for the gov-employee skip (handler does it
     upstream so we don't pay for the bank/lifetime lookup unnecessarily).
     """
@@ -145,7 +207,9 @@ async def apply_tax_player_cuts(tax_amount, character):
     from amc import config
 
     floor_pct = float(config.WEALTH_TAX_FLOOR_PCT)
+    is_experienced = _is_experienced(character)
 
+    # Compute the wealth-driven tax percentage that would normally apply.
     state = await compute_wealth_state(character)
     if state is None:
         # Lookup failed — apply minimum tax (config floor) so we still
@@ -153,17 +217,29 @@ async def apply_tax_player_cuts(tax_amount, character):
         # player whose wealth we can't verify. Subsidy path returns 0
         # in the same situation, so the player is no worse off than
         # the floor.
-        return max(0, int(tax_amount * floor_pct))
-    is_established, wealth_t = state
-    if not is_established:
-        # NEW player — exempt from tax.
-        return 0
+        normal_pct = floor_pct
+        is_established = True  # treat as taxable so experienced bypass still applies
+    else:
+        is_established, wealth_t = state
+        if not is_established and not is_experienced:
+            # NEW player, not yet experienced — fully exempt from tax.
+            return 0
+        if is_established:
+            punish_exp = max(0.0001, float(config.WEALTH_EXPONENT))
+            t_warp = wealth_t ** punish_exp
+            normal_pct = floor_pct + (1.0 - floor_pct) * t_warp
+        else:
+            # NEW + experienced — grinder who hasn't accumulated wealth.
+            # Use floor_pct as the "normal" so the experienced bypass can
+            # still pull them up toward 100% while treasury is hurting.
+            normal_pct = floor_pct
 
-    punish_exp = max(0.0001, float(config.WEALTH_EXPONENT))
-    # Warp wealth_t: same curve as subsidy so the rich pay disproportionately
-    # more tax while broke-established stay near the floor.
-    t_warp = wealth_t ** punish_exp
-    tax_pct = floor_pct + (1.0 - floor_pct) * t_warp
+    if is_experienced:
+        bypass = _experienced_bypass_strength(treasury_balance)
+        tax_pct = bypass * 1.0 + (1.0 - bypass) * normal_pct
+    else:
+        tax_pct = normal_pct
+
     return max(0, int(tax_amount * tax_pct))
 
 

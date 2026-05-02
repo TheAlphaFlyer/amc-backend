@@ -490,59 +490,55 @@ async def apply_subsidy_player_cuts(
     return max(0, subsidy)
 
 
-async def clamp_subsidy_to_tax(subsidy: int, tax: int, character) -> int:
-    """Net-loss clamp: ensure raw $ subsidy <= raw $ tax for veterans.
-
-    Subsidies are designed as a *carrot* to entice deliveries; taxes are
-    the *clawback* to keep the treasury healthy. For brand-new and
-    low-level players we want subsidies to flow freely (onboarding).
-    For rich or experienced players we want progression to slow down so
-    the system stays stable — they can still earn subsidies, but never
-    at a net cost to the treasury on a given delivery.
-
-    Eligibility (clamp applies if EITHER is true):
-      - established player (`compute_wealth_state` -> is_established=True),
-        i.e. lifetime income above the newbie cutoff.
-      - experienced player (`character.driver_level` at or above
-        `EXPERIENCED_DRIVER_LEVEL_THRESHOLD`). This catches grinders who
-        haven't accumulated wealth yet but are already past the early
-        learning curve.
-
-    NEW + inexperienced players are exempt -> full subsidy preserved.
-
-    The clamp is `min(subsidy, tax)`, applied *after* all other player
-    cuts (treasury cap, wealth lerp, modded vehicle multiplier). This
-    means:
-      - Treasury healthy -> tax curve drops to ~0 -> subsidy clamped to ~0
-        for veterans, but treasury didn't need the money anyway.
-      - Treasury hurting -> tax curve at full -> subsidy can equal tax,
-        net flow is zero or positive into the treasury.
-
-    Returns the (possibly reduced) subsidy. Tax is read-only here — this
-    function never mutates or charges anything.
+async def clamp_subsidy_for_treasury_health(
+    subsidy: int, character, treasury_balance
+) -> int:
     """
-    if subsidy <= 0 or character is None:
+    Self healing clamp for subsidies when treasury is below the good-health threshold.
+    """
+    if subsidy <= 0:
+        return 0
+    if treasury_balance is None or character is None:
+        return subsidy
+
+    floor = float(amc_config.TREASURY_FLOOR)
+    ceiling = float(amc_config.TREASURY_CEILING)
+    if ceiling <= floor:
+        return subsidy
+    bal = float(treasury_balance)
+    t = max(0.0, min(1.0, (bal - floor) / (ceiling - floor)))
+    good_t = max(0.0, min(1.0, float(amc_config.TREASURY_GOOD_HEALTH_T)))
+    if t >= good_t:
+        # Treasury healthy — let subsidies flow at full strength so they
+        # can guide/entice players to the right cargo and routes.
         return subsidy
 
     threshold = int(amc_config.EXPERIENCED_DRIVER_LEVEL_THRESHOLD or 0)
     driver_level = int(getattr(character, "driver_level", 0) or 0)
     is_experienced = threshold > 0 and driver_level >= threshold
 
+    is_established = False
     if not is_experienced:
-        # Wealth check only matters if the experience gate didn't trip.
         state = await compute_wealth_state(character)
         if state is None:
-            # Lookup failed — be conservative and treat as not-clamped
-            # rather than possibly punishing a new player. The wealth
-            # lookup failure is already reported via error_reporter
-            # inside compute_wealth_state.
+            # Lookup failed — keep subsidy unchanged here. Upstream
+            # `apply_subsidy_player_cuts` already returns 0 on None
+            # state, so we generally won't reach this branch.
             return subsidy
         is_established, _ = state
-        if not is_established:
-            return subsidy
 
-    # Player is rich or experienced -> enforce no-net-loss.
-    return max(0, min(int(subsidy), int(tax)))
+    if not is_experienced and not is_established:
+        # NEW + non-experienced — onboarding flow stays full even when
+        # the treasury is hurting.
+        return subsidy
+
+    # Veteran / experienced / established player AND treasury below
+    # good-health threshold. Linear ramp: 0 at FLOOR, full at good_t.
+    if good_t <= 0:
+        return subsidy
+    exponent = max(0.0001, float(amc_config.SUBSIDY_HEALTH_EXPONENT))
+    health_strength = (t / good_t) ** exponent
+    return max(0, int(subsidy * health_strength))
 
 
 # ---------------------------------------------------------------------------

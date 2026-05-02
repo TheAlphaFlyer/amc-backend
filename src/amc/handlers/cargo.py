@@ -184,11 +184,15 @@ async def handle_cargo_arrived(event, player, character, ctx):
         cargo_tax = 0
         if not is_illicit and not (character and character.is_gov_employee):
             tax_amount, _tax_factor, tax_rule = await get_tax_for_cargo(
-                group_list[0], treasury_balance=ctx.treasury_balance
+                group_list[0],
+                treasury_balance=ctx.treasury_balance,
+                character=character,
             )
             cargo_tax = (tax_amount or 0) * quantity
             # Wealth-aware insulation: NEW players pay no tax (lifetime income < cap), established players pay between TAX_FLOOR_PCT
-            cargo_tax = await apply_tax_player_cuts(cargo_tax, character)
+            cargo_tax = await apply_tax_player_cuts(
+                cargo_tax, character, treasury_balance=ctx.treasury_balance
+            )
             if cargo_tax > 0:
                 await tax_player(
                     cargo_tax,
@@ -214,12 +218,12 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 ctx.http_client_mod,
                 treasury_balance=ctx.treasury_balance,
             )
-            # Net-loss clamp for rich/experienced players: raw $ subsidy must never exceed raw $ tax on the same delivery
+            # Treasury self-heal clamp
             if cargo_subsidy > 0:
-                from amc.subsidies import clamp_subsidy_to_tax
+                from amc.subsidies import clamp_subsidy_for_treasury_health
 
-                cargo_subsidy = await clamp_subsidy_to_tax(
-                    cargo_subsidy, cargo_tax, character
+                cargo_subsidy = await clamp_subsidy_for_treasury_health(
+                    cargo_subsidy, character, ctx.treasury_balance
                 )
             if rule and cargo_subsidy > 0:
                 await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
