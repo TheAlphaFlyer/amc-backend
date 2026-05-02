@@ -290,20 +290,6 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
             if cargo.payment > 0:
                 subsidy_factor = subsidy_amount / cargo.payment
 
-    # Subsidies are intentionally NOT throttled by treasury health here —
-    # they exist to entice players into taking jobs, so we always pay the
-    # rule's full reward_value when the rule matches. Treasury balancing
-    # is handled by:
-    #   - the tax curve in `amc.tax.get_tax_for_cargo` (clawback that
-    #     scales up when the treasury is hurting and down when rich),
-    #   - the per-player wealth lerp in `apply_subsidy_player_cuts` (rich
-    #     players get less subsidy, broke/new keep full),
-    #   - and the net-loss clamp in `clamp_subsidy_to_tax` (rich OR
-    #     experienced players never receive raw $ subsidy greater than
-    #     the raw $ tax on the same delivery, so a single transaction
-    #     can never be a net loss to the treasury for veterans).
-    # The only treasury-side check at this layer is a hard cap so we
-    # never promise more cash than the treasury actually holds.
     if treasury_balance is not None and subsidy_amount > 0:
         # Hard floor only: never promise more than the treasury holds.
         subsidy_amount = min(subsidy_amount, max(0, int(treasury_balance)))
