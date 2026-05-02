@@ -92,24 +92,14 @@ JOB_BONUS_VARIANCE_DOWN = 0.05
 
 
 #########
-# JOB BONUS — PLAYER-POOL EXPERIENCE/WEALTH BALANCING
+# /jobs Bonus Multiplier
 #########
-# Mirrors the subsidy `clamp_subsidy_for_treasury_health` philosophy but for /jobs
-# postings, which are global (not per-player). When the treasury is at/above
-# `TREASURY_GOOD_HEALTH_T` health, posted job bonuses are paid in full. When the
-# treasury is hurting, bonuses are dimmed *more aggressively* in lobbies that
-# are dominated by veteran/established players (they don't need the help) and
-# kept full in lobbies dominated by new/poor players (they do).
-#
-# Set FACTOR_AT_NEW == FACTOR_AT_VETERAN to disable the player-pool tilt.
-JOB_PLAYER_POOL_FACTOR_AT_NEW = 1.0      # multiplier when 0% of online chars are veteran/established-rich
-JOB_PLAYER_POOL_FACTOR_AT_VETERAN = 0.6  # multiplier when 100% are veteran/established-rich
-# Wealth-fraction threshold: an `established` character counts as "rich" once
-# their `compute_wealth_state` t-value (0..1 between WEALTH_POOR_FLOOR and
-# WEALTH_RICH_CEILING) is at/above this. Lower = more chars classified as rich.
-JOB_PLAYER_POOL_FACTOR_WEALTH_T = 0.5
-# Curve exponent applied to the veteran-fraction before the lerp.
-#   < 1.0  = even a small veteran share starts dimming bonuses
+
+# Set AT_NEW == AT_VETERAN to disable per-player payout scaling.
+JOB_BONUS_PAYOUT_FACTOR_AT_NEW = 1.0      # multiplier for new / broke contributors
+JOB_BONUS_PAYOUT_FACTOR_AT_VETERAN = 0.75  # multiplier for veteran / established-rich contributors
+# Curve exponent applied to the player's wealth_t before the lerp.
+#   < 1.0  = a little wealth/xp already dims payout noticeably
 #   = 1.0  = linear
-#   > 1.0  = bonuses stay near full until the lobby is mostly veterans
-JOB_PLAYER_POOL_FACTOR_EXPONENT = 1.5
+#   > 1.0  = payout stays near full until the player is clearly veteran/rich
+JOB_BONUS_PAYOUT_FACTOR_EXPONENT = 3

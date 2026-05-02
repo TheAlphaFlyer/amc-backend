@@ -15,6 +15,7 @@ from amc.mod_server import (
     get_players as get_players_mod,
     teleport_player,
     transfer_money,
+    get_player_money,
     get_vehicle_cargos,
     set_world_vehicle_decal,
     mute_player,
@@ -37,6 +38,7 @@ from django.utils.translation import gettext as _, gettext_lazy
 from amc.utils import fuzzy_find_player
 from amc.player_tags import strip_all_tags
 from amc_finance.services import player_donation
+from amc_finance.loans import get_player_bank_balance
 
 
 @registry.register(
@@ -723,3 +725,96 @@ async def cmd_admin(ctx: CommandContext):
         await ctx.reply(
             _("<Title>Admin Granted</>\n\nYou are now an admin.")
         )
+
+
+@registry.register(
+    ["/cash", "/wallet"],
+    description=gettext_lazy(
+        "Inspect a player's live in-game cash + bank balance (Admin)"
+    ),
+    category="Admin",
+)
+async def cmd_cash(ctx: CommandContext, target_player_name: str):
+    """Admin-only diagnostic. Reads the live runtime ``Money`` UProperty
+    via the mod server and combines it with the backend bank ledger so
+    operators can verify the new ``GET /players/<id>/money`` integration
+    is working. Reply is sent as a private popup to the calling admin
+    only — the target player sees nothing.
+    """
+    if not ctx.player_info or not ctx.player_info.get("bIsAdmin"):
+        await ctx.reply(_("Admin-only"))
+        return
+
+    players = await get_players(ctx.http_client)
+    target_pid = fuzzy_find_player(players, target_player_name)
+    if not target_pid:
+        await ctx.reply(
+            _(
+                "<Title>Player not found</>\n\n"
+                "No online player matches '{name}'."
+            ).format(name=target_player_name)
+        )
+        return
+
+    target_player_data = next(
+        (p for pid, p in players if str(pid) == str(target_pid)), None
+    )
+    if not target_player_data:
+        await ctx.reply(_("Could not resolve player data."))
+        return
+
+    display_name = target_player_data.get("name", target_player_name)
+    target_guid = target_player_data.get("character_guid")
+
+    # Live cash from mod server (mod GET /players/<id>/money).
+    wallet, source = await get_player_money(ctx.http_client_mod, str(target_pid))
+    if wallet is None and target_guid:
+        # Fallback: try via character GUID in case the mod resolver
+        # disagrees with the game-server unique id (rare, but cheap to try).
+        wallet, source = await get_player_money(ctx.http_client_mod, target_guid)
+
+    # Bank balance (backend ledger). Best-effort — if the character isn't
+    # in the DB yet, we still want to surface the wallet read.
+    bank_balance = None
+    target_character = None
+    if target_guid:
+        try:
+            target_character = await Character.objects.aget(guid=target_guid)
+            bank_balance = await get_player_bank_balance(target_character)
+        except Character.DoesNotExist:
+            target_character = None
+
+    lines = [
+        _("<Title>Cash — {name}</>").format(name=display_name),
+    ]
+
+    if wallet is not None:
+        lines.append(
+            _("In-game cash: <Money>${amount:,}</> ").format(amount=wallet)
+        )
+        if source:
+            lines.append(_("  source: {src}").format(src=source))
+    else:
+        lines.append(
+            _(
+                "In-game cash: <unavailable> "
+                "(target offline or mod endpoint unresolved)"
+            )
+        )
+
+    if bank_balance is not None:
+        lines.append(
+            _("Bank balance: <Money>${amount:,}</>").format(
+                amount=int(bank_balance)
+            )
+        )
+        if wallet is not None:
+            lines.append(
+                _("Total: <Money>${amount:,}</>").format(
+                    amount=wallet + int(bank_balance)
+                )
+            )
+    elif target_character is None and target_guid:
+        lines.append(_("Bank: character not in backend DB yet"))
+
+    await ctx.reply("\n".join(str(line) for line in lines))

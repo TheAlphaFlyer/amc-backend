@@ -183,6 +183,66 @@ async def aget_treasury_scale(treasury_balance: float | None = None) -> float:
     return calculate_treasury_scale(float(treasury_balance))
 
 
+async def compute_payout_factor_for_character(character, treasury_balance) -> float:
+    """
+    Per-player bonus payout factor (0..1) applied at job-payout time.
+
+    Mirrors `clamp_subsidy_for_treasury_health` (see `amc.subsidies`) but
+    layered onto each contributor's slice of the completion bonus instead
+    of the headline `bonus_multiplier` / `completion_bonus` shown on /jobs.
+    The advertised numbers stay unchanged so players see a stable bounty;
+    this factor scales what each individual actually receives.
+
+    Behavior:
+      - Treasury at/above `TREASURY_GOOD_HEALTH_T` -> 1.0 (no dimming).
+      - Below good-health, per character:
+          * `is_experienced` (driver_level >= threshold) -> wealth_t := 1.0
+          * else `compute_wealth_state` -> use returned wealth_t (0..1);
+            non-established (newbie / lifetime-income below cutoff) -> 0.0
+          * factor = AT_NEW + (wealth_t ** EXPONENT) * (AT_VETERAN - AT_NEW)
+      - Lookup failure / missing character -> 1.0 (fail-open: never punish
+        a player because of a transient DB hiccup).
+    """
+    floor = float(config.TREASURY_FLOOR)
+    ceiling = float(config.TREASURY_CEILING)
+    if ceiling <= floor:
+        return 1.0
+    bal = float(treasury_balance)
+    t = max(0.0, min(1.0, (bal - floor) / (ceiling - floor)))
+    good_t = max(0.0, min(1.0, float(config.TREASURY_GOOD_HEALTH_T)))
+    if t >= good_t:
+        return 1.0
+
+    if character is None:
+        return 1.0
+
+    at_new = float(config.JOB_BONUS_PAYOUT_FACTOR_AT_NEW)
+    at_vet = float(config.JOB_BONUS_PAYOUT_FACTOR_AT_VETERAN)
+    if at_new == at_vet:
+        return at_new
+
+    threshold = int(config.EXPERIENCED_DRIVER_LEVEL_THRESHOLD or 0)
+    driver_level = int(getattr(character, "driver_level", 0) or 0)
+    is_experienced = threshold > 0 and driver_level >= threshold
+
+    if is_experienced:
+        wealth_t = 1.0
+    else:
+        # Lazy import — `subsidies` pulls in the wider economy module graph.
+        from amc.subsidies import compute_wealth_state
+
+        state = await compute_wealth_state(character)
+        if state is None:
+            # Lookup failed — fail open so a transient hiccup
+        is_established, wealth_t = state
+        if not is_established:
+            wealth_t = 0.0
+
+    exponent = max(0.0001, float(config.JOB_BONUS_PAYOUT_FACTOR_EXPONENT))
+    strength = max(0.0, min(1.0, wealth_t)) ** exponent
+    return at_new + strength * (at_vet - at_new)
+
+
 def weighted_shuffle(templates: list, weight_fn) -> list:
     """Shuffle templates with weighted probability — higher-weight templates
     are more likely to appear earlier in the sequence."""
@@ -518,8 +578,15 @@ async def payout_partial_contributors(job, http_client):
     character_ids = character_contributions.keys()
     characters = {c.id: c async for c in Character.objects.filter(id__in=character_ids)}
 
+    # Per-player payout factor depends on treasury health — fetched once,
+    # then applied per character below. Mirrors subsidy clamp philosophy:
+    # treasury healthy -> everyone full; treasury hurting -> veteran/wealthy
+    # contributors absorb the dim, newbies stay near full.
+    treasury_balance = float(await get_treasury_fund_balance())
+
     # Distribute the bonus proportionally.
     contributors_names: List[str] = []
+    total_distributed = 0
     for character_id, character_contribution in character_contributions.items():
         character_obj = characters.get(character_id)
         if not character_obj:
@@ -527,6 +594,13 @@ async def payout_partial_contributors(job, http_client):
         count = character_contribution["count"]
         reward = character_contribution["reward"]
         if reward > 0:
+            payout_factor = await compute_payout_factor_for_character(
+                character_obj, treasury_balance
+            )
+            reward = max(0, int(reward * payout_factor))
+            if reward <= 0:
+                continue
+            total_distributed += reward
             if character_obj.is_gov_employee:
                 from amc.gov_employee import redirect_income_to_treasury
 
@@ -547,7 +621,7 @@ async def payout_partial_contributors(job, http_client):
         return
 
     contributors_str = ", ".join(contributors_names)
-    message = f'"{job.name}" expired at {ratio * 100:.0f}% completion. +${partial_bonus:,} has been deposited into your bank accounts. Thanks to: {contributors_str}'
+    message = f'"{job.name}" expired at {ratio * 100:.0f}% completion. +${total_distributed:,} has been deposited into your bank accounts. Thanks to: {contributors_str}'
 
     # Ministry Rebate Logic
     if job.funding_term_id:
@@ -615,8 +689,15 @@ async def on_delivery_job_fulfilled(job, http_client):
     character_ids = character_contributions.keys()
     characters = {c.id: c async for c in Character.objects.filter(id__in=character_ids)}
 
+    # Per-player payout factor depends on treasury health — fetched once,
+    # then applied per character below. Mirrors subsidy clamp philosophy:
+    # treasury healthy -> everyone full; treasury hurting -> veteran/wealthy
+    # contributors absorb the dim, newbies stay near full.
+    treasury_balance = float(await get_treasury_fund_balance())
+
     # Distribute the bonus proportionally.
     contributors_names: List[str] = []
+    total_distributed = 0
     for character_id, character_contribution in character_contributions.items():
         character_obj = characters.get(character_id)
         if not character_obj:
@@ -624,6 +705,13 @@ async def on_delivery_job_fulfilled(job, http_client):
         count = character_contribution["count"]
         reward = character_contribution["reward"]
         if reward > 0:
+            payout_factor = await compute_payout_factor_for_character(
+                character_obj, treasury_balance
+            )
+            reward = max(0, int(reward * payout_factor))
+            if reward <= 0:
+                continue
+            total_distributed += reward
             if character_obj.is_gov_employee:
                 from amc.gov_employee import redirect_income_to_treasury
 
@@ -641,7 +729,7 @@ async def on_delivery_job_fulfilled(job, http_client):
             contributors_names.append(f"{character_obj.name} ({count})")
 
     contributors_str = ", ".join(contributors_names)
-    message = f'"{job.name}" Completed! +${completion_bonus:,} has been deposited into your bank accounts. Thanks to: {contributors_str}'
+    message = f'"{job.name}" Completed! +${total_distributed:,} has been deposited into your bank accounts. Thanks to: {contributors_str}'
 
     # Ministry Rebate Logic
     if job.funding_term_id:

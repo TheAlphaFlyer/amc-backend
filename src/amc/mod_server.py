@@ -59,6 +59,33 @@ async def transfer_money(session, amount, message, player_id):
             raise Exception("Failed to transfer money")
 
 
+async def get_player_money(session, player_id):
+    """
+    Attempt to read a connected player's live in-game cash via the mod server.
+
+    Calls MTDediMod's ``GET /players/<id>/money`` endpoint, which reflects
+    the runtime ``Money`` UProperty on ``AMotorTownPlayerController`` (or
+    related fallbacks). Player must currently be online.
+    """
+    try:
+        async with session.get(
+            f"/players/{player_id}/money", timeout=FAST_TIMEOUT
+        ) as resp:
+            if resp.status != 200:
+                return None, None
+            data = await resp.json()
+            if not data or not data.get("data"):
+                return None, None
+            payload = data["data"]
+            money = payload.get("Money")
+            source = payload.get("Source")
+            if money is None:
+                return None, None
+            return int(money), source
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        return None, None
+
+
 async def transfer_exp(session, player_id, level_type, exp, message=""):
     """Grant experience points to a player.
 

@@ -25,11 +25,13 @@ async def cmd_jobs(ctx: CommandContext):
     # Calculate treasury boost
     treasury_balance = await get_treasury_fund_balance()
     treasury_scale = calculate_treasury_scale(float(treasury_balance))
-    boost_pct = int(treasury_scale * 100)
-    if treasury_scale >= 1.0:
-        boost_str = f"<EffectGood>{boost_pct}%</>"
+    delta_pct = int(round((treasury_scale - 1.0) * 100))
+    if delta_pct > 0:
+        boost_str = f"<EffectGood>+{delta_pct}%</>"
+    elif delta_pct < 0:
+        boost_str = f"<EffectBad>{delta_pct}%</>"
     else:
-        boost_str = f"<EffectBad>{boost_pct}%</>"
+        boost_str = "<Highlight>+0%</>"
 
     # Party bonus info (only when feature is enabled)
     party_str = ""
