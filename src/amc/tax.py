@@ -174,7 +174,7 @@ async def get_tax_for_cargo(cargo, treasury_balance=None, character=None):
     return tax_amount, tax_factor, best_rule
 
 
-async def apply_tax_player_cuts(tax_amount, character, treasury_balance=None):
+async def apply_tax_player_cuts(tax_amount, character, treasury_balance=None, wealth_state=None):
     """Apply the established-player wealth curve to a positive tax amount.
 
     Mirrors `amc.subsidies.apply_subsidy_player_cuts`. NEW players (lifetime
@@ -210,7 +210,10 @@ async def apply_tax_player_cuts(tax_amount, character, treasury_balance=None):
     is_experienced = _is_experienced(character)
 
     # Compute the wealth-driven tax percentage that would normally apply.
-    state = await compute_wealth_state(character)
+    if wealth_state is None:
+        state = await compute_wealth_state(character)
+    else:
+        state = wealth_state
     if state is None:
         # Lookup failed — apply minimum tax (config floor) so we still
         # collect *something* for the treasury without overcharging a
@@ -272,12 +275,39 @@ async def tax_player(amount, character, session, message="ASEAN Tax"):
     try:
         await record_treasury_tax_collection(amount, character, message)
     except Exception:
-        # Wallet was already debited; log but do not raise so we don't
-        # break delivery processing.
+        # Treasury credit failed — refund the wallet so the player isn't
+        # out money the treasury never received. If the refund itself
+        # fails we surface to the error reporter for manual reconciliation.
         logger.exception(
-            "ASEAN Tax wallet deducted from %s but treasury credit failed",
+            "ASEAN Tax wallet deducted from %s but treasury credit failed; refunding wallet",
             character.name,
         )
+        try:
+            await transfer_money(
+                session,
+                int(amount),
+                f"{message} (refund: treasury credit failed)",
+                str(character.player.unique_id),
+            )
+        except Exception as refund_exc:
+            logger.exception(
+                "ASEAN Tax refund ALSO failed for %s — manual reconciliation required",
+                character.name,
+            )
+            from amc import error_reporter
+
+            error_reporter.report_exception(
+                refund_exc,
+                subject="tax: wallet debited but neither treasury credited nor refunded",
+                context={
+                    "character": getattr(character, "name", "?"),
+                    "player_unique_id": str(
+                        getattr(getattr(character, "player", None), "unique_id", "")
+                    ),
+                    "amount": int(amount),
+                    "message": message,
+                },
+            )
 
 
 async def record_tax_rule_collection(rule, amount):

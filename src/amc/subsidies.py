@@ -432,7 +432,8 @@ async def compute_wealth_state(character) -> tuple[bool, float] | None:
 
 
 async def apply_subsidy_player_cuts(
-    subsidy, character, http_client_mod=None, treasury_balance=None
+    subsidy, character, http_client_mod=None, treasury_balance=None,
+    wealth_state=None,
 ):
     """Apply player-specific reductions to a positive subsidy amount.
 
@@ -453,6 +454,11 @@ async def apply_subsidy_player_cuts(
     the wealth lerp is layered on top so an established player's slice
     follows their bank balance, while a brand-new or broke player keeps
     the full payout.
+
+    `wealth_state` is the optional precomputed `compute_wealth_state(character)`
+    result. Pass it from the caller (e.g. cargo handler) when subsidy + tax
+    + clamp run on the same character to avoid 3+ duplicate DB lookups per
+    delivery. When omitted we fetch it ourselves.
     """
     if subsidy <= 0 or character is None:
         return 0
@@ -460,12 +466,19 @@ async def apply_subsidy_player_cuts(
     if getattr(character, "is_gov_employee", False):
         return 0
 
-    state = await compute_wealth_state(character)
+    if wealth_state is None:
+        state = await compute_wealth_state(character)
+    else:
+        state = wealth_state
     if state is None:
-        # Lookup failed — zero-net transfer (tax also returns 0). This
-        # surfaces backend issues instead of silently overpaying.
-        return 0
-    is_established, wealth_t = state
+        # Lookup failed — fail OPEN: pay the full subsidy. The error
+        # reporter already pinged Discord from compute_wealth_state, and
+        # punishing the player for a transient DB hiccup feels worse than
+        # rare overpayment. Skip the wealth ramp; treasury cap + modded
+        # cut still apply below.
+        is_established, wealth_t = False, 0.0
+    else:
+        is_established, wealth_t = state
     if is_established:
         punish_exp = max(0.0001, float(amc_config.WEALTH_EXPONENT))
         # Warp wealth_t so broke-established keep more support and rich get
@@ -491,10 +504,14 @@ async def apply_subsidy_player_cuts(
 
 
 async def clamp_subsidy_for_treasury_health(
-    subsidy: int, character, treasury_balance
+    subsidy: int, character, treasury_balance, wealth_state=None,
 ) -> int:
     """
     Self healing clamp for subsidies when treasury is below the good-health threshold.
+
+    `wealth_state` is the optional precomputed `compute_wealth_state(character)`
+    result; pass it through to avoid a duplicate DB lookup when the caller
+    already fetched it for `apply_subsidy_player_cuts`.
     """
     if subsidy <= 0:
         return 0
@@ -519,11 +536,14 @@ async def clamp_subsidy_for_treasury_health(
 
     is_established = False
     if not is_experienced:
-        state = await compute_wealth_state(character)
+        if wealth_state is None:
+            state = await compute_wealth_state(character)
+        else:
+            state = wealth_state
         if state is None:
-            # Lookup failed — keep subsidy unchanged here. Upstream
-            # `apply_subsidy_player_cuts` already returns 0 on None
-            # state, so we generally won't reach this branch.
+            # Lookup failed — fail open and keep the subsidy unchanged.
+            # Same principle as `apply_subsidy_player_cuts`: don't punish
+            # the player for a transient DB hiccup.
             return subsidy
         is_established, _ = state
 

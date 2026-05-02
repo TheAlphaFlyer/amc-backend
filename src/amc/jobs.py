@@ -183,7 +183,9 @@ async def aget_treasury_scale(treasury_balance: float | None = None) -> float:
     return calculate_treasury_scale(float(treasury_balance))
 
 
-async def compute_payout_factor_for_character(character, treasury_balance) -> float:
+async def compute_payout_factor_for_character(
+    character, treasury_balance, wealth_state=None,
+) -> float:
     """
     Per-player bonus payout factor (0..1) applied at job-payout time.
 
@@ -202,6 +204,10 @@ async def compute_payout_factor_for_character(character, treasury_balance) -> fl
           * factor = AT_NEW + (wealth_t ** EXPONENT) * (AT_VETERAN - AT_NEW)
       - Lookup failure / missing character -> 1.0 (fail-open: never punish
         a player because of a transient DB hiccup).
+
+    `wealth_state` is the optional precomputed `compute_wealth_state(character)`
+    result for callers that already fetched it (kept for API symmetry with
+    the subsidy/tax player cuts; payout flow currently fetches per-contributor).
     """
     floor = float(config.TREASURY_FLOOR)
     ceiling = float(config.TREASURY_CEILING)
@@ -231,9 +237,14 @@ async def compute_payout_factor_for_character(character, treasury_balance) -> fl
         # Lazy import — `subsidies` pulls in the wider economy module graph.
         from amc.subsidies import compute_wealth_state
 
-        state = await compute_wealth_state(character)
+        if wealth_state is None:
+            state = await compute_wealth_state(character)
+        else:
+            state = wealth_state
         if state is None:
-            # Lookup failed — fail open so a transient hiccup
+            # Lookup failed — fail open so a transient DB hiccup never
+            # silently zeroes a player's bonus payout.
+            return 1.0
         is_established, wealth_t = state
         if not is_established:
             wealth_t = 0.0

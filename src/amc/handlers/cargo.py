@@ -175,6 +175,16 @@ async def handle_cargo_arrived(event, player, character, ctx):
 
         cargo_name = group_list[0].get_cargo_key_display()
 
+        # Wealth state is consulted by tax cuts, subsidy cuts, AND the
+        # treasury-health subsidy clamp. Fetch it ONCE per delivery and
+        # pass it through so we don't issue 3 duplicate aggregate queries
+        # (lifetime income + bank balance) per cargo line.
+        wealth_state = None
+        if character and not character.is_gov_employee and not is_illicit:
+            from amc.subsidies import compute_wealth_state
+
+            wealth_state = await compute_wealth_state(character)
+
         # --- ASEAN Tax (applied BEFORE subsidies, on raw base cargo payment) ---
         # Tax flows IN to the treasury. Computed on the pre-subsidy payment so
         # the player is taxed on the true base cargo value, not on the post-
@@ -191,7 +201,10 @@ async def handle_cargo_arrived(event, player, character, ctx):
             cargo_tax = (tax_amount or 0) * quantity
             # Wealth-aware insulation: NEW players pay no tax (lifetime income < cap), established players pay between TAX_FLOOR_PCT
             cargo_tax = await apply_tax_player_cuts(
-                cargo_tax, character, treasury_balance=ctx.treasury_balance
+                cargo_tax,
+                character,
+                treasury_balance=ctx.treasury_balance,
+                wealth_state=wealth_state,
             )
             if cargo_tax > 0:
                 await tax_player(
@@ -217,13 +230,17 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 character,
                 ctx.http_client_mod,
                 treasury_balance=ctx.treasury_balance,
+                wealth_state=wealth_state,
             )
             # Treasury self-heal clamp
             if cargo_subsidy > 0:
                 from amc.subsidies import clamp_subsidy_for_treasury_health
 
                 cargo_subsidy = await clamp_subsidy_for_treasury_health(
-                    cargo_subsidy, character, ctx.treasury_balance
+                    cargo_subsidy,
+                    character,
+                    ctx.treasury_balance,
+                    wealth_state=wealth_state,
                 )
             if rule and cargo_subsidy > 0:
                 await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
