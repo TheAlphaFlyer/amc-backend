@@ -17,33 +17,63 @@ CARGO_FULFILLMENT_WEIGHTS: dict[str, int] = {
 # Depot restock subsidy amount. Set to 0 to disable.
 DEPOT_RESTOCK_SUBSIDY_AMOUNT = 10_000
 
-# ---------------------------------------------------------------------------
-# Subsidy modifiers
-# ---------------------------------------------------------------------------
 
-# Bank balance at which the wealth cut is fully applied. Scales via curve so a player who is just barely over the threshold isn't punished as hard as one who is TRULY rich
-WEALTH_RICH_THRESHOLD = 5_000_000 # Below this, no wealth cut is applied and players receive full subsidies
-WEALTH_RICH_CEILING = 50_000_000 # Above this, the full wealth cut is applied
 
-# Multiplier applied to subsidies for wealthy players (see WEALTH_RICH_THRESHOLD).
-# 0.0 = no subsidy, 1.0 = full subsidy. E.g. 0.25 → 75% cut.
-WEALTH_RICH_SUBSIDY_MULTIPLIER = 0.25
 
-# Multiplier applied to subsidies when the delivering player is sitting in a vehicle with detected modded parts
-# 0.0 = no subsidy, 1.0 = full subsidy. E.g. 0.5 → 50% cut.
+#########
+# SUBSIDIES
+#########
+
+# RICH_CEILING is the max tax point —
+# at/above it, subsidy = 0 and tax = 100% of base. Set this to the wealth
+# level at which players should fully self-sustain.
+WEALTH_POOR_FLOOR = 500_000      # at/below: established-broke — 100% subsidy / TAX_FLOOR_PCT tax
+WEALTH_RICH_CEILING = 1_000_000  # at/above: established-rich — 0% subsidy / 100% tax (break-even)
+
+# Curve warp exponent. 
+# Higher value = Protection drops off slower initially, fast later
+# Lower value = Protection drops off faster intially, slow later
+# 1.0 = linear
+WEALTH_EXPONENT = 1.3
+
+# Set to 0 to disable. Once cap exceeded, character subject to full scaling based on treasury
+WEALTH_NEW_PLAYER_LIFETIME_INCOME_CUTOFF = 3_000_000
+
+
+# Minimum tax amount for established players
+WEALTH_TAX_FLOOR_PCT = 0.15
+
+# Multiplier applied to subsidies when the delivering player is sitting in a
+# vehicle with detected modded parts. 0.0 = no subsidy, 1.0 = no cut.
 MODDED_SUBSIDY_MULTIPLIER = 0.5
 
-# ---------------------------------------------------------------------------
-# ASEAN Subsidy / Tax control based on wealth
-# ---------------------------------------------------------------------------
-# Below FLOOR: subsidies are zero, tax is at full strength (refill treasury).
-# Above CEILING: subsidies are at full strength, tax is zero (don't over-tax).
-# Subsidy interpolation is linear; tax interpolation uses TAX_CURVE_EXPONENT
-TREASURY_SUBSIDY_FLOOR = 50_000_000
-TREASURY_SUBSIDY_CEILING = 150_000_000
 
-# Exponent for the tax-vs-treasury curve. 
-#   < 1.0  → tax stays HIGH for most of the range and only drops sharply as the treasury approaches CEILING - 0.5 is a square root curve
-#   = 1.0  → linear
-#   > 1.0  → tax drops quickly off FLOOR (rarely desirable).
-TAX_CURVE_EXPONENT = 0.7
+
+
+#########
+# TREASURY RESPONSIVE SCALING
+#########
+
+TREASURY_FLOOR = 50_000_000
+TREASURY_CEILING = 150_000_000
+
+#   < 1.0  = drop off slower, only drops off heavily near the top/ceiling
+#   = 1.0  = linear interpolation
+#   > 1.0  = drops off quickly as soon as above floor
+TREASURY_CURVE_EXPONENT = 0.7
+
+# Upper clamp on treasury payouts if treasury is above celing
+# Higher = more aggressive self-correction
+TREASURY_BOOM_CAP = 2.0
+
+
+
+
+#########
+# PAYOUT VARIANCE
+#########
+
+# Per-job random variance applied at posting time so two otherwise-identical jobs aren't twins. Asymmetric allowed (e.g. UP=0.05, DOWN=0.03 -> +5/-3%).
+# Applied INDEPENDENTLY to `bonus_multiplier` and `completion_bonus` AFTER the unified treasury scale above. Set both to 0 to disable jitter.
+JOB_BONUS_VARIANCE_UP = 0.05 
+JOB_BONUS_VARIANCE_DOWN = 0.05

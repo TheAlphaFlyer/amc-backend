@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 from arq.connections import RedisSettings
@@ -95,6 +96,19 @@ async def startup(ctx):
         bot_task_handle = asyncio.create_task(run_discord())
         # Set Discord client reference for the message queue
         tasks_module._discord_client_ref = discord_client
+        # Wire the Discord error reporter (forwards logger.warning+ and
+        # explicit error_reporter.report_*() calls to the logs channel).
+        from amc import error_reporter
+
+        error_reporter.set_discord_client(discord_client)
+        if settings.DISCORD_LOGS_CHANNEL_ID:
+            _discord_log_handler = error_reporter.DiscordLogHandler(
+                level=logging.WARNING
+            )
+            # Attach to the broad subsystems we want eyes on. Children
+            # inherit automatically via the logging hierarchy.
+            for logger_name in ("amc", "amc_finance", "amc_cogs", "necesse"):
+                logging.getLogger(logger_name).addHandler(_discord_log_handler)
 
     if WEBHOOK_SSE_ENABLED:
         sse_task_handle = asyncio.create_task(run_sse_listener(ctx))

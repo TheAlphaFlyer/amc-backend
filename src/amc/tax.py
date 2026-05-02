@@ -17,7 +17,6 @@ import logging
 from django.contrib.gis.geos import Point
 from django.db.models import F, Q
 
-from amc import config
 from amc.models import TaxRule
 from amc.mod_server import transfer_money
 from amc_finance.services import record_treasury_tax_collection
@@ -92,26 +91,80 @@ async def get_tax_for_cargo(cargo, treasury_balance=None):
             if cargo.payment > 0:
                 tax_factor = tax_amount / cargo.payment
 
-    # Inverted, non-linear treasury cap.
-    # Tax scale = (1 - t) ** TAX_CURVE_EXPONENT, where t is the normalised position of the treasury between FLOOR (t=0, full tax) and CEILING (t=1, no tax). With EXPONENT < 1 the curve is convex: tax stays HIGH
-    # For most of the range and only collapses sharply as the treasury approaches the ceiling.Poor treasury = more tax. Rich treasury = less tax.
+    # Unified treasury scale — same FLOOR/CEILING/EXPONENT knobs in
+    # `amc.config` that drive ASEAN subsidies and /jobs payouts, just
+    # inverted: poor treasury -> full tax, rich treasury -> zero tax.
+    #   t = clamp01((balance - FLOOR) / (CEILING - FLOOR))
+    #   tax_scale = (1 - t) ** EXPONENT   (mirror of subsidy_scale = t ** EXPONENT)
     if treasury_balance is not None and tax_amount > 0:
-        floor = config.TREASURY_SUBSIDY_FLOOR
-        ceiling = config.TREASURY_SUBSIDY_CEILING
+        from amc import config
+
+        floor = float(config.TREASURY_FLOOR)
+        ceiling = float(config.TREASURY_CEILING)
         bal = float(treasury_balance)
-        if bal >= ceiling:
-            scale = 0.0
+        if ceiling <= floor or bal >= ceiling:
+            tax_scale = 0.0
         elif bal <= floor:
-            scale = 1.0
+            tax_scale = 1.0
         else:
             t = (bal - floor) / (ceiling - floor)
-            exponent = max(0.0001, float(config.TAX_CURVE_EXPONENT))
-            scale = (1.0 - t) ** exponent
-        tax_amount = int(tax_amount * scale)
+            exponent = max(0.0001, float(config.TREASURY_CURVE_EXPONENT))
+            tax_scale = (1.0 - t) ** exponent
+        tax_amount = int(tax_amount * tax_scale)
         if cargo.payment > 0:
             tax_factor = tax_amount / cargo.payment
 
     return tax_amount, tax_factor, best_rule
+
+
+async def apply_tax_player_cuts(tax_amount, character):
+    """Apply the established-player wealth curve to a positive tax amount.
+
+    Mirrors `amc.subsidies.apply_subsidy_player_cuts`. NEW players (lifetime
+    income still under the newbie cap) pay no tax; established players pay
+    between `WEALTH_TAX_FLOOR_PCT` (when broke) and 100% (when at/above
+    `WEALTH_RICH_CEILING`), with the curve warped by
+    `WEALTH_EXPONENT` so the rich pay disproportionately more.
+
+        t_warp  = wealth_t ** WEALTH_EXPONENT
+        tax_pct = TAX_FLOOR_PCT + (1 - TAX_FLOOR_PCT) * t_warp
+
+    The base `tax_amount` already has treasury-driven scaling baked in
+    (via `get_tax_for_cargo` against TREASURY_FLOOR/CEILING). This layer
+    adds the wealth shape on top so even a healthy treasury still pulls
+    *some* tax from a rich player while broke established players pay near
+    the minimum floor.
+
+    Caller is responsible for the gov-employee skip (handler does it
+    upstream so we don't pay for the bank/lifetime lookup unnecessarily).
+    """
+    if tax_amount <= 0 or character is None:
+        return 0
+
+    from amc.subsidies import compute_wealth_state
+    from amc import config
+
+    floor_pct = float(config.WEALTH_TAX_FLOOR_PCT)
+
+    state = await compute_wealth_state(character)
+    if state is None:
+        # Lookup failed — apply minimum tax (config floor) so we still
+        # collect *something* for the treasury without overcharging a
+        # player whose wealth we can't verify. Subsidy path returns 0
+        # in the same situation, so the player is no worse off than
+        # the floor.
+        return max(0, int(tax_amount * floor_pct))
+    is_established, wealth_t = state
+    if not is_established:
+        # NEW player — exempt from tax.
+        return 0
+
+    punish_exp = max(0.0001, float(config.WEALTH_EXPONENT))
+    # Warp wealth_t: same curve as subsidy so the rich pay disproportionately
+    # more tax while broke-established stay near the floor.
+    t_warp = wealth_t ** punish_exp
+    tax_pct = floor_pct + (1.0 - floor_pct) * t_warp
+    return max(0, int(tax_amount * tax_pct))
 
 
 async def tax_player(amount, character, session, message="ASEAN Tax"):

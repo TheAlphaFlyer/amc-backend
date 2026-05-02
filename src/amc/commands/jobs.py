@@ -1,8 +1,8 @@
 from amc.command_framework import registry, CommandContext
-from amc.models import DeliveryJob, JobPostingConfig, BotInvocationLog
+from amc.models import DeliveryJob, BotInvocationLog
 from amc.utils import get_time_difference_string
 from amc.subsidies import get_subsidies_text
-from amc.jobs import calculate_treasury_multiplier
+from amc.jobs import calculate_treasury_scale
 from amc_finance.services import get_treasury_fund_balance
 from amc.webhook import PARTY_BONUS_ENABLED, PARTY_BONUS_RATE
 from amc.mod_server import get_parties, get_party_size_for_character
@@ -23,16 +23,10 @@ async def cmd_jobs(ctx: CommandContext):
     ).prefetch_related("source_points", "destination_points", "cargos")
 
     # Calculate treasury boost
-    config = await JobPostingConfig.aget_config()
     treasury_balance = await get_treasury_fund_balance()
-    treasury_mult = calculate_treasury_multiplier(
-        float(treasury_balance),
-        equilibrium=float(config.treasury_equilibrium),
-        sensitivity=float(config.treasury_sensitivity),
-        cap_ratio=float(config.treasury_cap_ratio),
-    )
-    boost_pct = int(treasury_mult * 100)
-    if treasury_mult >= 1.0:
+    treasury_scale = calculate_treasury_scale(float(treasury_balance))
+    boost_pct = int(treasury_scale * 100)
+    if treasury_scale >= 1.0:
         boost_str = f"<EffectGood>{boost_pct}%</>"
     else:
         boost_str = f"<EffectBad>{boost_pct}%</>"

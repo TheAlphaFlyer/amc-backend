@@ -290,20 +290,11 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
             if cargo.payment > 0:
                 subsidy_factor = subsidy_amount / cargo.payment
 
-    # Treasury cap: subsidies scale down when treasury is low (preserve floor;
-    # below FLOOR -> zero, above CEILING -> full, linear in between).
+    # Below treasury equilibrium -> ratio**sensitivity (curve in [0, 1)).
+    # This code is now unified and is legacy. 
     if treasury_balance is not None and subsidy_amount > 0:
-        floor = amc_config.TREASURY_SUBSIDY_FLOOR
-        ceiling = amc_config.TREASURY_SUBSIDY_CEILING
-        bal = float(treasury_balance)
-        if bal <= floor:
-            scale = 0.0
-        elif bal >= ceiling:
-            scale = 1.0
-        else:
-            scale = (bal - floor) / (ceiling - floor)
-        subsidy_amount = int(subsidy_amount * scale)
-        subsidy_amount = min(subsidy_amount, int(treasury_balance))
+        # Hard floor only: never promise more than the treasury holds.
+        subsidy_amount = min(subsidy_amount, max(0, int(treasury_balance)))
         if cargo.payment > 0:
             subsidy_factor = subsidy_amount / cargo.payment
 
@@ -359,14 +350,111 @@ async def is_player_in_modded_vehicle(character, http_client_mod) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def apply_subsidy_player_cuts(subsidy, character, http_client_mod=None):
+async def compute_wealth_state(character) -> tuple[bool, float] | None:
+    """
+    Determine player's wealth state for subsidy/tax scaling and gov skip.
+    """
+    if character is None:
+        return None
+
+    newbie_cutoff = int(amc_config.WEALTH_NEW_PLAYER_LIFETIME_INCOME_CUTOFF or 0)
+    if newbie_cutoff > 0:
+        try:
+            from amc.models import Delivery
+            from django.db.models import Sum
+
+            agg = await Delivery.objects.filter(character=character).aaggregate(
+                total_payment=Sum("payment"),
+                total_subsidy=Sum("subsidy"),
+            )
+            lifetime_income = int(agg.get("total_payment") or 0) + int(
+                agg.get("total_subsidy") or 0
+            )
+        except Exception as e:
+            logger.warning(
+                "Lifetime-income lookup failed for %s: %s",
+                getattr(character, "name", "?"),
+                e,
+            )
+            # Surface to the Discord logs channel with structured context so we can see which players are affected
+            from amc import error_reporter
+
+            error_reporter.report_exception(
+                e,
+                subject="wealth: lifetime-income lookup failed",
+                context={
+                    "character": getattr(character, "name", "?"),
+                    "guid": str(getattr(character, "guid", "")),
+                },
+            )
+            # Lookup failed — surface as None so callers apply their
+            # explicit fallback (subsidy=0, tax=floor) instead of silently
+            # mis-classifying the player.
+            return None
+
+        if lifetime_income < newbie_cutoff:
+            return False, 0.0
+
+
+    wallet_balance = int(getattr(character, "money", 0) or 0)
+    try:
+        from amc_finance.loans import get_player_bank_balance
+
+        bank_balance = int(await get_player_bank_balance(character) or 0)
+    except Exception as e:
+        logger.warning(
+            "Bank-balance lookup failed for %s: %s",
+            getattr(character, "name", "?"),
+            e,
+        )
+        from amc import error_reporter
+
+        error_reporter.report_exception(
+            e,
+            subject="wealth: bank-balance lookup failed",
+            context={
+                "character": getattr(character, "name", "?"),
+                "guid": str(getattr(character, "guid", "")),
+            },
+        )
+        # Same policy as the lifetime-income failure above — don't guess.
+        return None
+
+    total_wealth = wallet_balance + bank_balance
+
+    poor_floor = float(amc_config.WEALTH_POOR_FLOOR)
+    rich_ceiling = float(amc_config.WEALTH_RICH_CEILING)
+    if total_wealth <= poor_floor:
+        return True, 0.0
+    if rich_ceiling <= poor_floor: # Misconfiguration error handling
+        return True, 1.0
+    if total_wealth >= rich_ceiling:
+        return True, 1.0
+    return True, (total_wealth - poor_floor) / (rich_ceiling - poor_floor)
+
+
+async def apply_subsidy_player_cuts(
+    subsidy, character, http_client_mod=None, treasury_balance=None
+):
     """Apply player-specific reductions to a positive subsidy amount.
 
-    - Gov employees: skipped
-    - Rich players: subsidy scales down with curve, until reaches ceiling
-    - Modded current vehicle: scaled by MODDED_SUBSIDY_MULTIPLIER.
+    Order of operations (composes multiplicatively):
+      1. Gov employees -> skipped entirely (their wages already redirect
+         to the treasury so paying them subsidies is pointless).
+      2. Wealth curve:
+           - NEW player (lifetime < cap)         -> 100% subsidy
+           - Established, broke (wealth_t=0)     -> 100% subsidy
+           - Established, rich (wealth_t=1)      -> 0%
+           - In between -> 1 - wealth_t**WEALTH_EXPONENT
+             (EXPONENT > 1 keeps the broke-established near full payout
+              and crashes subsidy steeply near the rich ceiling).
+      3. Treasury hard cap (never pay more than the treasury holds).
+      4. Modded vehicle -> flat MODDED_SUBSIDY_MULTIPLIER cut.
 
-    Cuts compose multiplicatively. Returns the adjusted integer amount.
+    Treasury health drives the *base* subsidy and tax amounts upstream;
+    the wealth lerp is layered on top so an established player's slice
+    follows their bank balance, while a brand-new or broke player keeps
+    the full payout.
     """
     if subsidy <= 0 or character is None:
         return 0
@@ -374,28 +462,24 @@ async def apply_subsidy_player_cuts(subsidy, character, http_client_mod=None):
     if getattr(character, "is_gov_employee", False):
         return 0
 
-    # Rich player check - bank balance only (wallet money is not exposed by
-    # the mod server; bank balance is the persistent-wealth proxy).
-    #
-    # The cut scales smoothly between WEALTH_RICH_THRESHOLD and WEALTH_RICH_CEILING using a curve 
-    # Poorer player more support, rich player less support
-    try:
-        from amc_finance.loans import get_player_bank_balance
+    state = await compute_wealth_state(character)
+    if state is None:
+        # Lookup failed — zero-net transfer (tax also returns 0). This
+        # surfaces backend issues instead of silently overpaying.
+        return 0
+    is_established, wealth_t = state
+    if is_established:
+        punish_exp = max(0.0001, float(amc_config.WEALTH_EXPONENT))
+        # Warp wealth_t so broke-established keep more support and rich get
+        # punished harder than linear. EXP > 1 keeps the curve near full
+        # payout at low wealth_t, then collapses sharply near the ceiling.
+        t_warp = wealth_t ** punish_exp
+        subsidy_pct = max(0.0, 1.0 - t_warp)
+        subsidy = int(subsidy * subsidy_pct)
 
-        bank_balance = int(await get_player_bank_balance(character) or 0)
-        threshold = amc_config.WEALTH_RICH_THRESHOLD
-        ceiling = amc_config.WEALTH_RICH_CEILING
-        if bank_balance >= threshold and ceiling > threshold:
-            t = min(1.0, (bank_balance - threshold) / (ceiling - threshold))
-            # Slow at first then accelerating with curve
-            full_cut = 1.0 - amc_config.WEALTH_RICH_SUBSIDY_MULTIPLIER
-            cut_now = full_cut * (t * t)
-            subsidy = int(subsidy * (1.0 - cut_now))
-        elif bank_balance >= threshold:
-            # if ceiling <= threshold apply full cut to subsidy. subsidy become 0
-            subsidy = int(subsidy * amc_config.WEALTH_RICH_SUBSIDY_MULTIPLIER)
-    except Exception as e:
-        logger.warning("Wealth-cut bank lookup failed for %s: %s", character.name, e)
+    if treasury_balance is not None:
+        # Hard cap: never pay more than the treasury holds.
+        subsidy = min(subsidy, max(0, int(treasury_balance)))
 
     if subsidy <= 0:
         return 0
@@ -418,25 +502,25 @@ async def subsidise_player(subsidy, character, session, message=None):
     AND credit their bank ledger.
 
     This function is positive-only; tax flow lives in `amc.tax.tax_player`.
-    Treasury floor scaling is preserved (low treasury -> zero subsidy).
+    Treasury responsiveness uses the unified `calculate_treasury_scale`
+    (driven by `amc.config` TREASURY_FLOOR/CEILING/EXPONENT/BOOM_CAP) so
+    this payout (e.g. Risk Premium) tracks the same lever as per-cargo
+    subsidies and /jobs completion bonuses.
     """
     if subsidy <= 0:
         return
 
+    from amc.jobs import calculate_treasury_scale
+
     treasury_balance = await get_treasury_fund_balance()
-    if treasury_balance <= amc_config.TREASURY_SUBSIDY_FLOOR:
+    if treasury_balance <= 0:
         return
-    scale = min(
-        1.0,
-        (float(treasury_balance) - amc_config.TREASURY_SUBSIDY_FLOOR)
-        / (
-            amc_config.TREASURY_SUBSIDY_CEILING
-            - amc_config.TREASURY_SUBSIDY_FLOOR
-        ),
-    )
+    scale = calculate_treasury_scale(float(treasury_balance))
     subsidy = int(subsidy * scale)
     if subsidy <= 0:
         return
+    # Never pay more than the treasury holds.
+    subsidy = min(subsidy, int(treasury_balance))
 
     if message is None:
         message = "ASEAN Subsidy"

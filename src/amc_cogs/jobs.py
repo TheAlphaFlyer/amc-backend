@@ -470,9 +470,10 @@ class JobsCog(commands.Cog):
     async def post_job(self, interaction: discord.Interaction, template: int):
         import random
         from datetime import timedelta
-        from amc.models import DeliveryJobTemplate, MinistryTerm, JobPostingConfig
+        from amc.models import DeliveryJobTemplate, MinistryTerm
         from amc.game_server import announce
-        from amc.jobs import calculate_treasury_multiplier
+        from amc.jobs import calculate_treasury_scale
+        from amc import config
         from amc_finance.services import (
             get_treasury_fund_balance,
             escrow_ministry_funds,
@@ -488,23 +489,26 @@ class JobsCog(commands.Cog):
             await interaction.followup.send("❌ Template not found.", ephemeral=True)
             return
 
-        # Treasury multiplier for bonus/duration scaling
-        config = await JobPostingConfig.aget_config()
+        # Treasury scale for bonus scaling.
+        # Mirrors monitor_jobs() so job payouts match the live curve.
         treasury_balance = await get_treasury_fund_balance()
-        treasury_mult = calculate_treasury_multiplier(
-            float(treasury_balance),
-            equilibrium=float(config.treasury_equilibrium),
-            sensitivity=float(config.treasury_sensitivity),
-            cap_ratio=float(config.treasury_cap_ratio),
-        )
+        treasury_scale = calculate_treasury_scale(float(treasury_balance))
+
+        # Per-job random variance — same knobs as monitor_jobs() so admin-forced jobs are statistically indistinguishable from organically-posted ones.
+        var_up = max(0.0, float(config.JOB_BONUS_VARIANCE_UP))
+        var_down = max(0.0, min(1.0, float(config.JOB_BONUS_VARIANCE_DOWN)))
+
+        def _jitter() -> float:
+            if var_up == 0.0 and var_down == 0.0:
+                return 1.0
+            return random.uniform(1.0 - var_down, 1.0 + var_up)
 
         quantity_requested = tmpl.default_quantity
-        bonus_multiplier = (
-            round(tmpl.bonus_multiplier * random.uniform(0.8, 1.2), 2) * treasury_mult
+        bonus_multiplier = round(
+            tmpl.bonus_multiplier * treasury_scale * _jitter(), 2
         )
         base_bonus = tmpl.completion_bonus
-        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.7, 1.3)))
-        completion_bonus = int(base_bonus * scaling_factor)
+        completion_bonus = int(base_bonus * treasury_scale * _jitter())
         duration_hours = tmpl.duration_hours
 
         active_term = await MinistryTerm.objects.filter(is_active=True).afirst()

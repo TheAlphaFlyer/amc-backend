@@ -46,6 +46,7 @@ from amc.subsidies import (
     subsidise_player,
 )
 from amc.tax import (
+    apply_tax_player_cuts,
     get_tax_for_cargo,
     record_tax_rule_collection,
     tax_player,
@@ -186,6 +187,8 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 group_list[0], treasury_balance=ctx.treasury_balance
             )
             cargo_tax = (tax_amount or 0) * quantity
+            # Wealth-aware insulation: NEW players pay no tax (lifetime income < cap), established players pay between TAX_FLOOR_PCT
+            cargo_tax = await apply_tax_player_cuts(cargo_tax, character)
             if cargo_tax > 0:
                 await tax_player(
                     cargo_tax,
@@ -203,10 +206,13 @@ async def handle_cargo_arrived(event, player, character, ctx):
             )
             cargo_subsidy = cargo_subsidy_res[0] * quantity
             rule = cargo_subsidy_res[2]
-            # Apply player-side cuts (rich/modded). Gov skip is enforced above
-            # so we never reach apply_subsidy_player_cuts for a gov employee.
+            # Apply player-side cuts (treasury scale,rich players modded). Gov skip is enforced above so we
+            # never reach apply_subsidy_player_cuts for a gov employee.
             cargo_subsidy = await apply_subsidy_player_cuts(
-                cargo_subsidy, character, ctx.http_client_mod
+                cargo_subsidy,
+                character,
+                ctx.http_client_mod,
+                treasury_balance=ctx.treasury_balance,
             )
             if rule and cargo_subsidy > 0:
                 await SubsidyRule.objects.filter(pk=rule.pk).aupdate(

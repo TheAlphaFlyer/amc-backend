@@ -122,6 +122,12 @@ def calculate_treasury_multiplier(
 ) -> float:
     """
     Asymmetric treasury multiplier for self-correcting spending control.
+
+    Now used only by NIRC (`amc_finance.services.transfer_nirc`) which needs
+    an unbounded boom value (>1.0) to inversely throttle daily reserve
+    transfers. All payout-amount scaling (jobs, subsidies, taxes) goes
+    through `calculate_treasury_scale` which is bounded 0..TREASURY_BOOM_CAP.
+
     Returns 0.0+:
     - At equilibrium balance: 1.0 (normal spending)
     - Below equilibrium: ratio^sensitivity (steep pullback, preserves money)
@@ -133,6 +139,48 @@ def calculate_treasury_multiplier(
     if ratio <= 1.0:
         return ratio ** sensitivity
     return 1.0 + math.log(ratio) / math.log(max(cap_ratio, 1.01))
+
+
+async def get_economy_treasury_multiplier(treasury_balance: float | None = None) -> float:
+    """
+    Compatibility shim: returns the raw JobPostingConfig curve value used by `monitor_jobs` for posting *frequency*. 
+    Payout *amount* scaling now in `calculate_treasury_scale` (driven by `amc.config` FLOOR/CEILING/ EXPONENT). 
+    """
+    if treasury_balance is None:
+        treasury_balance = float(await get_treasury_fund_balance())
+    job_config = await JobPostingConfig.aget_config()
+    return calculate_treasury_multiplier(
+        float(treasury_balance),
+        equilibrium=float(job_config.treasury_equilibrium),
+        sensitivity=float(job_config.treasury_sensitivity),
+        cap_ratio=float(job_config.treasury_cap_ratio),
+    )
+
+
+def calculate_treasury_scale(treasury_balance: float) -> float:
+    """Economy driven payout adjustment
+    """
+    floor = float(config.TREASURY_FLOOR)
+    ceiling = float(config.TREASURY_CEILING)
+    boom_cap = max(1.0, float(config.TREASURY_BOOM_CAP))
+    if ceiling <= floor: # Misconfiguration error handling
+        return 1.0 if treasury_balance >= ceiling else 0.0
+    bal = float(treasury_balance)
+    if bal <= floor:
+        return 0.0
+    t = (bal - floor) / (ceiling - floor)
+    exponent = max(0.0001, float(config.TREASURY_CURVE_EXPONENT))
+    return min(boom_cap, t ** exponent)
+
+
+async def aget_treasury_scale(treasury_balance: float | None = None) -> float:
+    """Async wrapper that fetches the live treasury balance if not supplied.
+    Use this from cargo handlers / payout paths that don't already have a
+    balance in hand. Returns the same 0..1 number as `calculate_treasury_scale`.
+    """
+    if treasury_balance is None:
+        treasury_balance = float(await get_treasury_fund_balance())
+    return calculate_treasury_scale(float(treasury_balance))
 
 
 def weighted_shuffle(templates: list, weight_fn) -> list:
@@ -162,30 +210,24 @@ def weighted_shuffle(templates: list, weight_fn) -> list:
 
 async def monitor_jobs(ctx):
     await cleanup_expired_jobs(ctx["http_client"])
-    config = await JobPostingConfig.aget_config()
+    job_config = await JobPostingConfig.aget_config()
     num_active_jobs = await DeliveryJob.objects.filter_active().acount()
     players = await get_players(ctx["http_client"])
     num_players = len(players)
     treasury_balance = await get_treasury_fund_balance()
-    treasury_mult = calculate_treasury_multiplier(
-        float(treasury_balance),
-        equilibrium=float(config.treasury_equilibrium),
-        sensitivity=float(config.treasury_sensitivity),
-        cap_ratio=float(config.treasury_cap_ratio),
-    )
 
     # Get adaptive multiplier from recent history
     success_rate, _, _ = await get_job_success_rate(hours_lookback=24)
     adaptive_mult = calculate_adaptive_multiplier(
         success_rate,
-        target_rate=config.target_success_rate,
-        min_mult=config.min_multiplier,
-        max_mult=config.max_multiplier,
+        target_rate=job_config.target_success_rate,
+        min_mult=job_config.min_multiplier,
+        max_mult=job_config.max_multiplier,
     )
 
     # Base formula: log2 curve — generous at low player counts, flattens at high
     # e.g. 0→1, 6→4, 10→4, 20→5, 30→6
-    base_max_jobs = config.min_base_jobs + round(math.log2(1 + num_players))
+    base_max_jobs = job_config.min_base_jobs + round(math.log2(1 + num_players))
     max_active_jobs = max(1, int(base_max_jobs * adaptive_mult))
 
     slots_to_fill = max_active_jobs - num_active_jobs
@@ -193,11 +235,13 @@ async def monitor_jobs(ctx):
         return
 
     # Rate-limit: don't post more than max_posts_per_tick per cron cycle
-    slots_to_fill = min(slots_to_fill, config.max_posts_per_tick)
+    slots_to_fill = min(slots_to_fill, job_config.max_posts_per_tick)
 
     # Probabilistic posting: each slot has posting_chance to actually post.
-    # treasury_mult + posting_rate_multiplier control the rate.
-    posting_chance = min(1.0, treasury_mult * config.posting_rate_multiplier)
+    #  treasury_mult + posting_rate_multiplier control the rate.
+    # posting_chance = min(1.0, treasury_mult * job_config.posting_rate_multiplier) --- IGNORE LEGACY CODE---
+    #  Treasury health does NOT throttle posting rat
+    posting_chance = min(1.0, float(job_config.posting_rate_multiplier))
     slots_to_fill = sum(
         1 for _ in range(slots_to_fill) if random.random() < posting_chance
     )
@@ -341,16 +385,25 @@ async def monitor_jobs(ctx):
         if not is_destination_empty or not is_source_enough:
             continue
 
-        # Treasury multiplier influences bonus amounts (Bonus multiplier)
+        # Per-job random variance so two  jobs aren't twinning
+        var_up = max(0.0, float(config.JOB_BONUS_VARIANCE_UP))
+        var_down = max(0.0, min(1.0, float(config.JOB_BONUS_VARIANCE_DOWN)))
+
+        def _jitter() -> float:
+            if var_up == 0.0 and var_down == 0.0:
+                return 1.0
+            return random.uniform(1.0 - var_down, 1.0 + var_up)
+
+        # Unified treasury scale - drives subsidy/tax.
+        treasury_scale = calculate_treasury_scale(float(treasury_balance))
+
         bonus_multiplier = round(
-            template.bonus_multiplier * random.uniform(0.95, 1.05), 2 # 5% random variance
+            template.bonus_multiplier * treasury_scale * _jitter(), 2
         )
-        bonus_multiplier = bonus_multiplier * treasury_mult
         base_bonus = int(
             template.completion_bonus * quantity_requested / template.default_quantity
         )
-        scaling_factor = max(treasury_mult * 0.5, min(2.0, treasury_mult * random.uniform(0.95, 1.1)))
-        completion_bonus = int(base_bonus * scaling_factor)
+        completion_bonus = int(base_bonus * treasury_scale * _jitter())
 
         if active_term:
             # Check if Ministry has enough budget
