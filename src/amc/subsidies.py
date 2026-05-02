@@ -290,8 +290,20 @@ async def get_subsidy_for_cargo(cargo, treasury_balance=None):
             if cargo.payment > 0:
                 subsidy_factor = subsidy_amount / cargo.payment
 
-    # Below treasury equilibrium -> ratio**sensitivity (curve in [0, 1)).
-    # This code is now unified and is legacy. 
+    # Subsidies are intentionally NOT throttled by treasury health here —
+    # they exist to entice players into taking jobs, so we always pay the
+    # rule's full reward_value when the rule matches. Treasury balancing
+    # is handled by:
+    #   - the tax curve in `amc.tax.get_tax_for_cargo` (clawback that
+    #     scales up when the treasury is hurting and down when rich),
+    #   - the per-player wealth lerp in `apply_subsidy_player_cuts` (rich
+    #     players get less subsidy, broke/new keep full),
+    #   - and the net-loss clamp in `clamp_subsidy_to_tax` (rich OR
+    #     experienced players never receive raw $ subsidy greater than
+    #     the raw $ tax on the same delivery, so a single transaction
+    #     can never be a net loss to the treasury for veterans).
+    # The only treasury-side check at this layer is a hard cap so we
+    # never promise more cash than the treasury actually holds.
     if treasury_balance is not None and subsidy_amount > 0:
         # Hard floor only: never promise more than the treasury holds.
         subsidy_amount = min(subsidy_amount, max(0, int(treasury_balance)))
@@ -490,6 +502,61 @@ async def apply_subsidy_player_cuts(
         subsidy = int(subsidy * amc_config.MODDED_SUBSIDY_MULTIPLIER)
 
     return max(0, subsidy)
+
+
+async def clamp_subsidy_to_tax(subsidy: int, tax: int, character) -> int:
+    """Net-loss clamp: ensure raw $ subsidy <= raw $ tax for veterans.
+
+    Subsidies are designed as a *carrot* to entice deliveries; taxes are
+    the *clawback* to keep the treasury healthy. For brand-new and
+    low-level players we want subsidies to flow freely (onboarding).
+    For rich or experienced players we want progression to slow down so
+    the system stays stable — they can still earn subsidies, but never
+    at a net cost to the treasury on a given delivery.
+
+    Eligibility (clamp applies if EITHER is true):
+      - established player (`compute_wealth_state` -> is_established=True),
+        i.e. lifetime income above the newbie cutoff.
+      - experienced player (`character.driver_level` at or above
+        `EXPERIENCED_DRIVER_LEVEL_THRESHOLD`). This catches grinders who
+        haven't accumulated wealth yet but are already past the early
+        learning curve.
+
+    NEW + inexperienced players are exempt -> full subsidy preserved.
+
+    The clamp is `min(subsidy, tax)`, applied *after* all other player
+    cuts (treasury cap, wealth lerp, modded vehicle multiplier). This
+    means:
+      - Treasury healthy -> tax curve drops to ~0 -> subsidy clamped to ~0
+        for veterans, but treasury didn't need the money anyway.
+      - Treasury hurting -> tax curve at full -> subsidy can equal tax,
+        net flow is zero or positive into the treasury.
+
+    Returns the (possibly reduced) subsidy. Tax is read-only here — this
+    function never mutates or charges anything.
+    """
+    if subsidy <= 0 or character is None:
+        return subsidy
+
+    threshold = int(amc_config.EXPERIENCED_DRIVER_LEVEL_THRESHOLD or 0)
+    driver_level = int(getattr(character, "driver_level", 0) or 0)
+    is_experienced = threshold > 0 and driver_level >= threshold
+
+    if not is_experienced:
+        # Wealth check only matters if the experience gate didn't trip.
+        state = await compute_wealth_state(character)
+        if state is None:
+            # Lookup failed — be conservative and treat as not-clamped
+            # rather than possibly punishing a new player. The wealth
+            # lookup failure is already reported via error_reporter
+            # inside compute_wealth_state.
+            return subsidy
+        is_established, _ = state
+        if not is_established:
+            return subsidy
+
+    # Player is rich or experienced -> enforce no-net-loss.
+    return max(0, min(int(subsidy), int(tax)))
 
 
 # ---------------------------------------------------------------------------

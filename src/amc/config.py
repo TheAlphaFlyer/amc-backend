@@ -39,6 +39,9 @@ WEALTH_EXPONENT = 1.3
 # Set to 0 to disable. Once cap exceeded, character subject to full scaling based on treasury
 WEALTH_NEW_PLAYER_LIFETIME_INCOME_CUTOFF = 3_000_000
 
+# `driver_level` at/above which a player is considered "experienced" for the net-loss clamp. Affects subsidies for these players to slow endgame prog
+EXPERIENCED_DRIVER_LEVEL_THRESHOLD = 200
+
 
 # Minimum tax amount for established players
 WEALTH_TAX_FLOOR_PCT = 0.15

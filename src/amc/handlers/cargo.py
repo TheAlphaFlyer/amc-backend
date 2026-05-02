@@ -214,6 +214,13 @@ async def handle_cargo_arrived(event, player, character, ctx):
                 ctx.http_client_mod,
                 treasury_balance=ctx.treasury_balance,
             )
+            # Net-loss clamp for rich/experienced players: raw $ subsidy must never exceed raw $ tax on the same delivery
+            if cargo_subsidy > 0:
+                from amc.subsidies import clamp_subsidy_to_tax
+
+                cargo_subsidy = await clamp_subsidy_to_tax(
+                    cargo_subsidy, cargo_tax, character
+                )
             if rule and cargo_subsidy > 0:
                 await SubsidyRule.objects.filter(pk=rule.pk).aupdate(
                     spent=F("spent") + cargo_subsidy
