@@ -196,12 +196,11 @@ async def compute_payout_factor_for_character(
     this factor scales what each individual actually receives.
 
     Behavior:
-      - Treasury at/above `TREASURY_GOOD_HEALTH_T` -> 1.0 (no dimming).
-      - Below good-health, per character:
+      - Treasury at/above `TREASURY_GOOD_HEALTH_T` -> 1.0 (no dimming).      - Below good-health, per character:
           * `is_experienced` (driver_level >= threshold) -> wealth_t := 1.0
           * else `compute_wealth_state` -> use returned wealth_t (0..1);
             non-established (newbie / lifetime-income below cutoff) -> 0.0
-          * factor = AT_NEW + (wealth_t ** EXPONENT) * (AT_VETERAN - AT_NEW)
+          * raw_factor = AT_NEW + (wealth_t ** EXPONENT) * (AT_VETERAN - AT_NEW)
       - Lookup failure / missing character -> 1.0 (fail-open: never punish
         a player because of a transient DB hiccup).
 
@@ -251,7 +250,13 @@ async def compute_payout_factor_for_character(
 
     exponent = max(0.0001, float(config.JOB_BONUS_PAYOUT_FACTOR_EXPONENT))
     strength = max(0.0, min(1.0, wealth_t)) ** exponent
-    return at_new + strength * (at_vet - at_new)
+    raw_factor = at_new + strength * (at_vet - at_new)
+
+    # Smooth ramp-in of the wealth drop with treasury
+    if good_t <= 0:
+        return raw_factor
+    health_deficit = max(0.0, min(1.0, (good_t - t) / good_t))
+    return 1.0 + health_deficit * (raw_factor - 1.0)
 
 
 def weighted_shuffle(templates: list, weight_fn) -> list:
