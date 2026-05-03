@@ -284,6 +284,16 @@ async def handle_cargo_arrived(event, player, character, ctx):
             ctx.is_rp_mode,
         )
 
+        # Per-player wealth/experience dim on the job's bonus_multiplier.
+        if job is not None and not ctx.used_shortcut and character is not None:
+            from amc.jobs import compute_payout_factor_for_character
+
+            delivery_data["payout_factor"] = await compute_payout_factor_for_character(
+                character,
+                ctx.treasury_balance if ctx.treasury_balance is not None else 0.0,
+                wealth_state=wealth_state,
+            )
+
         job_id = job.id if job and not ctx.used_shortcut else None
         job = await sync_to_async(atomic_process_delivery)(
             job_id, quantity, delivery_data

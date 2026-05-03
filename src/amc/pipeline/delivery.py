@@ -17,7 +17,9 @@ from amc import config
 
 
 def atomic_process_delivery(job_id, quantity, delivery_data):
-    """Atomically update the job and create the delivery log."""
+    """Atomically update the job and create the delivery log.
+    """
+    payout_factor = float(delivery_data.pop("payout_factor", 1.0))
     with transaction.atomic():
         job = None
         quantity_to_add = 0
@@ -39,7 +41,7 @@ def atomic_process_delivery(job_id, quantity, delivery_data):
 
         bonus = 0
         if job and quantity_to_add > 0:
-            multiplier = max(0, job.bonus_multiplier)
+            multiplier = max(0, job.bonus_multiplier) * max(0.0, payout_factor)
             bonus = int(
                 delivery_data["payment"]
                 * (quantity_to_add / weighted_quantity)

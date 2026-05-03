@@ -589,13 +589,7 @@ async def payout_partial_contributors(job, http_client):
     character_ids = character_contributions.keys()
     characters = {c.id: c async for c in Character.objects.filter(id__in=character_ids)}
 
-    # Per-player payout factor depends on treasury health — fetched once,
-    # then applied per character below. Mirrors subsidy clamp philosophy:
-    # treasury healthy -> everyone full; treasury hurting -> veteran/wealthy
-    # contributors absorb the dim, newbies stay near full.
-    treasury_balance = float(await get_treasury_fund_balance())
-
-    # Distribute the bonus proportionally.
+    # Distribute the partial bonus proportionally to contribution share.
     contributors_names: List[str] = []
     total_distributed = 0
     for character_id, character_contribution in character_contributions.items():
@@ -605,12 +599,6 @@ async def payout_partial_contributors(job, http_client):
         count = character_contribution["count"]
         reward = character_contribution["reward"]
         if reward > 0:
-            payout_factor = await compute_payout_factor_for_character(
-                character_obj, treasury_balance
-            )
-            reward = max(0, int(reward * payout_factor))
-            if reward <= 0:
-                continue
             total_distributed += reward
             if character_obj.is_gov_employee:
                 from amc.gov_employee import redirect_income_to_treasury
@@ -700,13 +688,7 @@ async def on_delivery_job_fulfilled(job, http_client):
     character_ids = character_contributions.keys()
     characters = {c.id: c async for c in Character.objects.filter(id__in=character_ids)}
 
-    # Per-player payout factor depends on treasury health — fetched once,
-    # then applied per character below. Mirrors subsidy clamp philosophy:
-    # treasury healthy -> everyone full; treasury hurting -> veteran/wealthy
-    # contributors absorb the dim, newbies stay near full.
-    treasury_balance = float(await get_treasury_fund_balance())
-
-    # Distribute the bonus proportionally.
+    # Distribute the completion bonus proportionally to contribution share.
     contributors_names: List[str] = []
     total_distributed = 0
     for character_id, character_contribution in character_contributions.items():
@@ -716,12 +698,6 @@ async def on_delivery_job_fulfilled(job, http_client):
         count = character_contribution["count"]
         reward = character_contribution["reward"]
         if reward > 0:
-            payout_factor = await compute_payout_factor_for_character(
-                character_obj, treasury_balance
-            )
-            reward = max(0, int(reward * payout_factor))
-            if reward <= 0:
-                continue
             total_distributed += reward
             if character_obj.is_gov_employee:
                 from amc.gov_employee import redirect_income_to_treasury
