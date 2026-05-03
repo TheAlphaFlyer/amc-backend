@@ -1268,6 +1268,7 @@ async def process_treasury_expiration_penalty(job):
     Handles Treasury penalty for expired unfulfilled jobs during government shutdown.
     Costs the treasury 50% of the completion bonus.
     Only applies when no MinistryTerm funded the job.
+    Controlled by config flag on off
     """
     from amc import config
 
